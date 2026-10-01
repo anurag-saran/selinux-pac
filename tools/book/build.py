@@ -211,6 +211,16 @@ def typography(text: str) -> str:
     return text
 
 
+def attr(value: str) -> str:
+    """Escape a value for an attribute.
+
+    The line is escaped for &, < and > before a link or an image is read, so only the
+    double quote is left to handle. Escaping the whole value again would turn one
+    ampersand into `&amp;amp;`.
+    """
+    return value.replace('"', "&quot;")
+
+
 class Renderer:
     """Renders one page of markdown into themed HTML."""
 
@@ -308,10 +318,10 @@ class Renderer:
 
         def image(match: re.Match) -> str:
             alt, target, title = match.group(1), match.group(2), match.group(3)
-            src = html.escape(self.rewrite_link(target), quote=True)
-            extra = f' title="{html.escape(title, quote=True)}"' if title else ""
+            src = attr(self.rewrite_link(target))
+            extra = f' title="{attr(title)}"' if title else ""
             raws.append(
-                f'<img src="{src}" alt="{html.escape(alt, quote=True)}"'
+                f'<img src="{src}" alt="{attr(alt)}"'
                 f' loading="lazy"{extra}>'
             )
             return RAW_TOKEN % (len(raws) - 1)
@@ -320,10 +330,10 @@ class Renderer:
 
         def link(match: re.Match) -> str:
             label, target, title = match.groups()
-            href = html.escape(self.rewrite_link(target), quote=True)
+            href = attr(self.rewrite_link(target))
             external = href.startswith(("http://", "https://"))
             rel = ' rel="noopener"' if external else ""
-            extra = f' title="{html.escape(title, quote=True)}"' if title else ""
+            extra = f' title="{attr(title)}"' if title else ""
             return f'<a href="{href}"{rel}{extra}>{label}</a>'
 
         text = _LINK.sub(link, text)
@@ -1318,6 +1328,29 @@ def lint_prose(book: Book, book_dir: Path) -> list:
     return findings
 
 
+def strip_fences(text: str) -> str:
+    """Blank every fenced code block, keeping the line count.
+
+    A callout or a heading inside a listing is listing text, so a check that reads the
+    page for structure must not see it.
+    """
+    out = []
+    marker = ""
+    for line in text.split("\n"):
+        if marker:
+            if re.match(r"^\s*" + re.escape(marker) + r"\s*$", line):
+                marker = ""
+            out.append("")
+            continue
+        fence = _FENCE.match(line)
+        if fence:
+            marker = fence.group(1)
+            out.append("")
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def shape_problems(book: Book, book_dir: Path) -> list:
     """Enforce the chapter contract that book/AUTHORING.md states.
 
@@ -1331,7 +1364,7 @@ def shape_problems(book: Book, book_dir: Path) -> list:
         source = book_dir / entry.file
         if not source.is_file():
             continue
-        lines = source.read_text(encoding="utf-8").split("\n")
+        lines = strip_fences(source.read_text(encoding="utf-8")).split("\n")
         text = "\n".join(lines)
         heading = next((n for n, line in enumerate(lines) if line.startswith("# ")), None)
         dek = next((n for n, line in enumerate(lines) if line.startswith("> ")), None)

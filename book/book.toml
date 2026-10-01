@@ -70,7 +70,7 @@ chapters = [
   { file = "part5/22-fleets-and-inherited-policy.md", title = "Fleets and Inherited Policy" },
   { file = "part5/23-containers.md", title = "Containers, Namespaces and MCS" },
   { file = "part5/24-audit-forensics.md", title = "Audit Forensics" },
-    { file = "part5/25-where-selinux-ends.md", title = "Where SELinux Ends" },
+  { file = "part5/25-where-selinux-ends.md", title = "Where SELinux Ends" },
 ]
 
 [[part]]

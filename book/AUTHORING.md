@@ -92,8 +92,8 @@ A code span that names a repository path is also a claim: `` `scripts/dev_genera
 `01-mislabeled-var-lib/expected.json`) claims nothing, so it is never checked and a reader cannot
 find the file. A host path (`/var/log/audit/audit.log`) and a distro path (`system/init.if`) are
 not repository claims. A path inside a listing is evidence, and the check does not read listings.
-`ansible/inventory.dev.yml`, `packaging/internal.env`) are exempt. See `_PATH_EXCEPTIONS` in
-`tools/book/build.py`.
+Two paths are exempt because they are gitignored: `ansible/inventory.dev.yml` and
+`packaging/internal.env`. See `_PATH_EXCEPTIONS` in `tools/book/build.py`.
 
 ## Voice and accuracy
 
@@ -149,12 +149,13 @@ Three exceptions exist because the structure carries information:
 without it:
 
 1. An H1, a dek, and an opening section that states the problem.
-2. At least one `::: why` and at least one `::: try`. The `try` says where it runs: Path A, B, or C
-   from `lab.md`.
+2. At least one `::: why` and at least one `::: try`. The `try` says where it runs, either by
+   naming the lab path (Path A, B, or C from `lab.md`) or by naming the host it needs. The check
+   enforces that the callout is present, not the wording.
 3. It closes with `## What you can do now` and three to five bullets of capability.
 
 The front matter and the appendices keep their own shape. Length is not enforced. A chapter runs
-between 850 and 2600 words outside code, and the short ones are short on purpose. Add a section
+between 1000 and 2700 words outside code, and the short ones are short on purpose. Add a section
 when the reader has a question left, not to reach a count.
 
 ## Publishing

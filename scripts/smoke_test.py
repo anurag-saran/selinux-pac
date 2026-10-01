@@ -2030,6 +2030,17 @@ def test_book_builder_never_renders_silently_wrong() -> None:
         assert '<img src="assets/diagram.svg" alt="Flow"' in page, page
         assert "!<a" not in page, page
 
+        # an ampersand is escaped once, in a target and in alt text
+        _fixture_book(
+            book_dir,
+            '# One\n\nSee [q](https://x.test/?a=1&b=2) and ![A & B](asset:diagram.svg).\n',
+        )
+        module.build(module.load_book(book_dir), book_dir, out)
+        page = (out / "01-one.html").read_text()
+        assert "&amp;amp;" not in page, page
+        assert 'href="https://x.test/?a=1&amp;b=2"' in page, page
+        assert 'alt="A &amp; B"' in page, page
+
         # a missing asset is still an error
         _fixture_book(book_dir, '# One\n\n![Flow](asset:nope.svg)\n')
         problems, _ = module.check(module.load_book(book_dir), book_dir)
@@ -2105,6 +2116,15 @@ def test_book_builder_enforces_the_chapter_shape() -> None:
         assert not any(
             (":::" in p or "dek" in p or "What you can do now" in p) for p in problems
         ), problems
+
+        # a callout inside a listing is listing text, not the chapter's shape
+        _fixture_book(
+            book_dir,
+            "# One\n\n> A dek.\n\n```text\n::: why fake\n:::\n::: try fake\n:::\n"
+            "## What you can do now\n```\n\nBody.\n",
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("::: why" in p for p in problems), problems
 
 
 def test_book_prose_lint_reports_and_stays_clean() -> None:
