@@ -123,6 +123,18 @@ def load_book(book_dir: Path) -> Book:
     except tomllib.TOMLDecodeError as exc:
         raise BookError(f"{cfg_path}: invalid TOML: {exc}") from exc
 
+    # A fork previews the book from its own branch, where these paths do not exist
+    # upstream yet. The three knobs let one checkout publish correct links. The
+    # defaults stay whatever book.toml says.
+    for key, variable in (
+        ("repo", "BOOK_REPO"),
+        ("branch", "BOOK_BRANCH"),
+        ("site_url", "BOOK_SITE_URL"),
+    ):
+        value = os.environ.get(variable)
+        if value:
+            cfg[key] = value
+
     entries = []
     for item in cfg.get("front", []):
         entries.append(Entry(file=item["file"], title=item["title"]))
@@ -1508,9 +1520,13 @@ def show_lan_addresses(port: int) -> None:
     import socket
 
     seen = set()
-    for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None):
-        if family == socket.AF_INET:
-            seen.add(sockaddr[0])
+    try:
+        for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None):
+            if family == socket.AF_INET:
+                seen.add(sockaddr[0])
+    except socket.gaierror:
+        # A host whose name does not resolve still serves the book on 127.0.0.1.
+        pass
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         probe.connect(("192.0.2.1", 9))  # no packet sent; just picks the egress address
