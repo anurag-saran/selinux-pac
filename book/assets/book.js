@@ -102,6 +102,7 @@
     if (index) return Promise.resolve(index);
     return fetch("search.json")
       .then(function (response) {
+        if (!response.ok) throw new Error("search.json: " + response.status);
         return response.json();
       })
       .then(function (pages) {
@@ -198,12 +199,24 @@
   }
 
   function openSearch() {
-    loadIndex().then(function () {
-      overlay.hidden = false;
-      searchInput.value = "";
-      render([], "");
-      searchInput.focus();
-    });
+    loadIndex().then(
+      function () {
+        overlay.hidden = false;
+        searchInput.value = "";
+        render([], "");
+        searchInput.focus();
+      },
+      function () {
+        /* file:// or a site built without search.json: say so instead of doing nothing */
+        overlay.hidden = false;
+        searchResults.innerHTML = "";
+        var item = document.createElement("li");
+        item.textContent =
+          "Search needs search.json. Build the book, then open it over http, not file://.";
+        searchResults.appendChild(item);
+        searchInput.focus();
+      }
+    );
   }
 
   function closeSearch() {
@@ -233,7 +246,8 @@
       if (event.target === overlay) closeSearch();
     });
     document.addEventListener("keydown", function (event) {
-      var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+      var focused = document.activeElement || document.body;
+      var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName);
       if (event.key === "Escape") closeSearch();
       if (typing) return;
       if (event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k")) {

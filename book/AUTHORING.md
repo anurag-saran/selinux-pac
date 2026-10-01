@@ -6,7 +6,8 @@ generator will complain if you get it wrong. The book is built by `tools/book/bu
 
 ```bash
 make book        # build the site into site/ (gitignored)
-make book-check  # validate: internal links, anchors, repo: targets, markdown subset
+make book-check  # validate: links, anchors, repo paths, the markdown subset, the chapter shape
+make book-lint   # book-check, then the prose rules below, with file:line and the fix
 make book-serve  # build, then serve at http://127.0.0.1:8080
 BOOK_HOST=0.0.0.0 BOOK_PORT=9000 make book-serve  # reachable from your phone or another machine
 ```
@@ -32,17 +33,26 @@ BOOK_HOST=0.0.0.0 BOOK_PORT=9000 make book-serve  # reachable from your phone or
 The generator implements a deliberate subset and fails the build on anything else, rather
 than silently dropping content. Stay inside this list.
 
-- Exactly one `# Title` per file, matching the title in `book.toml`.
+- Exactly one `# Title` per file, matching the title in `book.toml`. A different H1 is an error:
+  the sidebar, the contents and the search index all read the `book.toml` title.
 - The first `>` blockquote after the H1 becomes the chapter dek. Later blockquotes are quotes.
-- `##` and `###` headings. `##` entries appear in the "On this page" margin and in search.
+- `##` and `###` headings, and nothing deeper. A `####` is an error, because a fourth level
+  reaches neither the "On this page" margin nor the search index.
 - Pipe tables with a `|---|---|` rule row. Pipes inside `` `code spans` `` are handled. Escape a
   literal pipe as `\|`.
 - Fenced code with a language, optionally titled:
-  ```` ```bash title="Compile the module" ````. An empty info string is a warning: give it
+  ```` ```bash title="Compile the module" ````. An empty info string is an error: give it
   `text` if the listing is prose output or a directory tree. `mermaid` renders as a diagram. Write
   it top-down (`flowchart TD`), because a left-to-right flow is wider than the text column and the
   reader has to scroll sideways to read it.
-- Lists (`-`, `1.`, nested by indentation) and task items (`- [ ]`).
+- Lists (`-`, `1.`, nested by indentation) and task items (`- [ ]`). Put a listing inside a step in
+  a fenced block. Four spaces inside a list item is an indented listing, so the generator numbers
+  it as one and the text is no longer part of the step.
+- Images: `![alt](asset:name.svg)` or `![alt](repo:docs/diagram.png)`. The target validates like a
+  link target, and the page gets a lazy `<img>` with the alt text.
+- Inline links take an optional title: `[Label](https://example.test/a "Title")`.
+- Unclosed markup is an error, not a stray character in the page: `` ` ``, `**`, and `~~` each
+  need a partner on the same page.
 - Callouts, opened by three or more colons and closed by a line of three or more colons:
 
       ::: why Why this matters
@@ -50,8 +60,12 @@ than silently dropping content. Stay inside this list.
       :::
 
   Types: `why`, `how`, `try`, `note`, `warn`, `good`, `story`. `::: toc` (any shape) expands to
-  the generated table of contents on the cover page.
-- Raw HTML blocks pass through, but prefer markdown.
+  the generated table of contents on the cover page. A `:::` inside a listing inside a callout is
+  listing text, not the end of the callout.
+- Raw HTML blocks pass through, but prefer markdown. A line that starts with `<` opens a raw block
+  that runs to the next blank line, so put a blank line after one. Every block-level tag a raw
+  block opens must close in that block, or the build fails: an unclosed `<div>` otherwise swallows
+  the rest of the page.
 
 Not supported: footnotes, setext headings (`===` under a line), HTML comments, definition lists.
 
@@ -64,7 +78,6 @@ Not supported: footnotes, setext headings (`===` under a line), HTML comments, d
 | `../selinux/myapp.fc`, `../../cli/`, `selinux/` | repository paths written relative to the chapter | resolved and validated, then rendered as a GitHub URL |
 | `asset:name.svg` | a file in `book/assets/` | the file must exist |
 | `https://…` | external | not validated |
-
 A link to another chapter written as a repository path (`../part2/09-file-contexts-and-the-label-lifecycle.md`)
 resolves to that chapter's **page**, not to the GitHub copy. Any `.md` target whose basename is a
 page in `book.toml` is treated as a chapter link, and its anchor is validated like one.
@@ -74,7 +87,11 @@ Prefer adding an explicit anchor (`## Heading {#stable-id}`) for anything anothe
 
 A code span that names a repository path is also a claim: `` `scripts/dev_generate_policy.sh` ``,
 `` `selinux/myapp.fc` `` and `` `config/myapp.manifest.yml` `` must exist in the worktree, or
-`make book-check` fails. Build artifacts and gitignored runtime files (`selinux/myapp.pp`,
+`make book-check` fails. Write a claimed path from the repository root, or relative to the chapter
+(`part4/19-canary-soak-enforce.md`). A shorthand (`tasks/rollback.yml`,
+`01-mislabeled-var-lib/expected.json`) claims nothing, so it is never checked and a reader cannot
+find the file. A host path (`/var/log/audit/audit.log`) and a distro path (`system/init.if`) are
+not repository claims. A path inside a listing is evidence, and the check does not read listings.
 `ansible/inventory.dev.yml`, `packaging/internal.env`) are exempt. See `_PATH_EXCEPTIONS` in
 `tools/book/build.py`.
 
@@ -123,18 +140,35 @@ Three exceptions exist because the structure carries information:
 |---|---|
 | Heading text does not change | Anchors link to it. See Links above. |
 | Bold in a table's first column, and a bold label on a list item | Those are keys and labels, not emphasis |
-| Text inside a code block, a code span, or a quoted transcript | It is evidence. The correctness passes compare it byte for byte. |
+| Text inside a code block, a code span, a quotation, or an italic run | It is evidence, a term, or someone else's wording. The correctness passes compare it byte for byte, and the lint skips all four, so quote a manual instead of rewriting its hedge. |
+| An identifier keeps its real name | `validate_app_manifest.sh` is never called `check_...` in prose. Say "check the manifest", then show the command. |
 
 ## Chapter shape
 
-A chapter holds an H1 and a dek, an opening section that states the problem, and four to eight
-`##` sections that build the how. It needs at least one `::: why` and one `::: try`, and the
-`try` says where it runs. It closes with `## What you can do now` and three to five bullets of
-capability. Length: 1600–2400 words plus
-code.
+`tools/book/build.py` enforces this contract for every numbered chapter, and the build fails
+without it:
+
+1. An H1, a dek, and an opening section that states the problem.
+2. At least one `::: why` and at least one `::: try`. The `try` says where it runs: Path A, B, or C
+   from `lab.md`.
+3. It closes with `## What you can do now` and three to five bullets of capability.
+
+The front matter and the appendices keep their own shape. Length is not enforced. A chapter runs
+between 850 and 2600 words outside code, and the short ones are short on purpose. Add a section
+when the reader has a question left, not to reach a count.
 
 ## Publishing
 
 `.github/workflows/book.yml` validates every pull request that touches `book/` or
 `tools/book/`, and deploys `main` to GitHub Pages. Enable it once under
-*Settings → Pages → Build and deployment → Source: GitHub Actions*.
+*Settings → Pages → Build and deployment → Source: GitHub Actions*. Until you do, the deploy job
+has nowhere to publish and the site answers 404.
+
+`book.toml` carries `repo`, `branch` and `site_url`: the URLs a published book prints. They point
+at the upstream repository, so a preview built from a fork prints links that 404 until the change
+merges. Overwrite them for a preview without editing the file:
+
+```bash
+BOOK_REPO=https://github.com/your-fork/selinux-pac BOOK_BRANCH=preview make book
+BOOK_SITE_URL=https://your-fork.github.io/selinux-pac make book
+```

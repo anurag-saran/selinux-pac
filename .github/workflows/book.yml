@@ -37,8 +37,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Validate the manual (links, anchors, repo references)
-        run: python3 tools/book/build.py --check
+      - name: Validate the manual (links, anchors, paths, chapter shape)
+        run: python3 tools/book/build.py --check --strict
       - name: Build the manual
         run: python3 tools/book/build.py
       - uses: actions/configure-pages@v5

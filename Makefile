@@ -7,7 +7,7 @@ PIP ?= $(PYTHON) -m pip
 .PHONY: help deps test check lint fixtures test-smoke test-static test-manifest \
 	test-rpm test-forbidden test-version test-fixtures test-blast-radius \
 	lint-shell lint-yaml lint-ansible integration-compile integration-semantics \
-	training-lab demo-bootstrap book book-check book-serve
+	training-lab demo-bootstrap book book-check book-lint book-serve
 
 help: ## List targets (default)
 	@echo "SELinux demo — common targets:"
@@ -105,14 +105,17 @@ training-lab: ## Dry-run the customer talk (no SELinux required)
 book: ## Build the HTML manual into site/ (tools/book/build.py)
 	$(PYTHON) tools/book/build.py
 
-book-check: ## Validate the manual: internal links, anchors, repo: references
+book-check: ## Validate the manual: links, anchors, repo paths, chapter shape
 	$(PYTHON) tools/book/build.py --check
+
+book-lint: ## book-check, then the prose rules of book/AUTHORING.md (a hit fails the run)
+	$(PYTHON) tools/book/build.py --lint-prose --strict
 
 BOOK_HOST ?= 127.0.0.1
 BOOK_PORT ?= 8080
 
-book-serve: ## Build the manual and serve it (BOOK_HOST=0.0.0.0 BOOK_PORT=9000 to share it)
-	$(PYTHON) tools/book/build.py --serve $(BOOK_PORT) --host $(BOOK_HOST)
+book-serve: ## Build and serve (BOOK_HOST=0.0.0.0 BOOK_PORT=9000; BOOK_REPO/BOOK_BRANCH for a fork)
+	$(PYTHON) tools/book/build.py --check --serve $(BOOK_PORT) --host $(BOOK_HOST)
 
 demo-bootstrap: ## Stand up App A/B + shopapi on RHEL (idempotent; not for macOS)
 	bash scripts/demo_bootstrap.sh
