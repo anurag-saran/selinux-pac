@@ -217,7 +217,7 @@ The reviewer reads the proof before signing off.
 The two fixtures that demonstrate how the generator reaches for each verdict are under
 `docs/examples/fixtures/deterministic/`. Each fixture supplies an AVC line, a mock of `sepolgen`
 that records whether the engine matched an interface or failed, and an `expected.json` that pins
-the verdict. Running the generator against them is what the golden test asserts: *the tool
+the verdict. Running the generator against them is what the golden fixture asserts: *the tool
 produces these verdicts for these inputs, and only these*.
 
 ### `08-interface-match` — an interface matched

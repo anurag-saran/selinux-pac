@@ -118,7 +118,7 @@ That writes gitignored inventories (`ansible/inventory.dev.yml` for QA,
 
 Six terms carry the whole book. If you memorize nothing else, memorize these.
 
-| Term | Short definition | First used in |
+| Term | Short definition | Taught in |
 |---|---|---|
 | **Label / context** | the four-part security tag on every process and object. Its third field is the type | Chapter 2 |
 | **Type** | the name of a category, for example `shopapi_t`, or a file type, for example `shopapi_var_lib_t` | Chapter 2 |

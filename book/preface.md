@@ -67,7 +67,7 @@ $ command        run as your normal user (repo checkout, controller laptop)
 | `rhel-qa` | the host where you generate and test policy. It is the only host with a git checkout that compiles policy |
 | `rhel-prod` | the production-shaped host: RPMs and Ansible only, no git clone |
 | controller | the Ansible controller. A laptop is fine, and macOS is included |
-| Boxes like this | A callout: intent (`why`), procedure (`how`), a runnable exercise (`try`), a hazard (`warn`), or expected output (`good`) |
+| Boxes like this | A callout: intent (`why`), a runnable exercise (`try`), a note (`note`), a hazard (`warn`), expected output (`good`), or a short story (`story`) |
 | `chapter-name.md#anchor` | A cross-reference. The build checks every link in this book. |
 
 ::: warn Permissions and privilege

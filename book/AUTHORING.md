@@ -152,7 +152,8 @@ without it:
 2. At least one `::: why` and at least one `::: try`. The `try` says where it runs, either by
    naming the lab path (Path A, B, or C from `lab.md`) or by naming the host it needs. The check
    enforces that the callout is present, not the wording.
-3. It closes with `## What you can do now` and three to five bullets of capability.
+3. It closes with `## What you can do now` and a short list of capabilities, usually three to five
+   items, as bullets, a table, or a paragraph.
 
 The front matter and the appendices keep their own shape. Length is not enforced. A chapter runs
 between 1000 and 2700 words outside code, and the short ones are short on purpose. Add a section

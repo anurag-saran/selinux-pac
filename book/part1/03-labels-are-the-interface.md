@@ -34,7 +34,7 @@ decision:
 
 In this project everything uses `system_u`, `system_r`/`object_r`, and `s0`. The third field
 carries the decision, and that field is the type. That is why
-`docs/policy/102-SELINUX_BASICS.md` §3 spends half its page telling readers to look at the third
+`docs/training/102-SELINUX_BASICS.md` §3 spends half its page telling readers to look at the third
 field. It is also why `docs/training/101-SELINUX.md` lab 0 asks readers to "explain what is the
 difference between the type on the file and the type on the running process".
 

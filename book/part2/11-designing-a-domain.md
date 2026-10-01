@@ -16,7 +16,7 @@ Three answers are real:
 
 The trade-off is not a free choice. Every extra domain you create costs you a review signature on a policy PR. Every rule you add inside it costs you the same signature. But every missing domain you merge costs you a blast radius on compromise.
 
-The recommendation for service authors is the one that matches the privilege of the process it protects. **Each long-running component with a different privilege profile owns its own domain.** That is what `selinux/myapp.te` demonstrates, and it is the answer we land on in §5.
+The recommendation for service authors is the one that matches the privilege of the process it protects. **Each long-running component with a different privilege profile owns its own domain.** That is what `selinux/myapp.te` demonstrates, and it is the answer we land on in [Two processes, one application](#two-processes-one-application).
 
 :::: why One domain per service is the default
 If every process is one domain, you have a clean blast radius. The same domain, the same allows, the same review. The cost is rule volume: every process you add inherits the rule template, and each gets reviewed once. The alternative, one `unconfined_t` for everything, pays no rule tax and trades all of it in. A compromise of any process becomes a compromise of the host.

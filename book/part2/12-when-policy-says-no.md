@@ -151,7 +151,7 @@ and `tunable_policy` gates the rule against it. The `if` form above is the same 
 expansion. The administrator owns the decision. A conditional rule is a deferential rule. The admin
 can say yes or no without changing the binary.
 
-[§10 Ports, Booleans and Transitions](../part2/10-ports-booleans-and-transitions.md) covers the full decision surface for booleans and transitions.
+[Chapter 10, Ports, Booleans and Transitions](../part2/10-ports-booleans-and-transitions.md) covers the full decision surface for booleans and transitions.
 
 ## `needs_review`: execmem
 
@@ -198,9 +198,9 @@ Three alternatives when the tuple refuses. Each one points to a different chapte
 
 | Alternative | Change | Chapter |
 |---|---|---|
-| **Rename the path** | write state to `/run` or `/var/lib/myapp` with a dedicated type | [§9 File Contexts and the Label Lifecycle](../part2/09-file-contexts-and-the-label-lifecycle.md) |
-| **Drop the port** | bind to an unreserved port, run as an unprivileged user, accept the risk | [§10 Ports, Booleans and Transitions](../part2/10-ports-booleans-and-transitions.md) |
-| **Accept the denial** | design around the tuple. The app runs in permissive during soak | [§5 Modes and the Cost of Off](../part1/05-modes-and-the-cost-of-off.md) |
+| **Rename the path** | write state to `/run` or `/var/lib/myapp` with a dedicated type | [Chapter 9, File Contexts and the Label Lifecycle](../part2/09-file-contexts-and-the-label-lifecycle.md) |
+| **Drop the port** | bind to an unreserved port, run as an unprivileged user, accept the risk | [Chapter 10, Ports, Booleans and Transitions](../part2/10-ports-booleans-and-transitions.md) |
+| **Accept the denial** | design around the tuple. The app runs in permissive during soak | [Chapter 5, Modes and the Cost of Off](../part1/05-modes-and-the-cost-of-off.md) |
 
 Rename the path. If the tuple is `allow myapp_t var_t:file write;` and the gate says *forbidden*, label `/var/lib/myapp` with `myapp_var_lib_t`. The rule becomes `allow myapp_t myapp_var_lib_t:file write;`. The gate is satisfied, the domain is narrowed, and the baseline is preserved.
 

@@ -6,7 +6,7 @@ You are on the bridge. The app team calls: requests are failing, the dashboard i
 
 Every incident under this chapter is about one decision: is the domain still permissive, or is it already enforcing? That single fact routes every command, every playbook, and every call to the app team.
 
-The rules are the same as the whole book (§2, §6): the OS stays Enforcing. Only the application's own domain is ever made permissive. Production is never mutated by hand.
+The rules are the same as the whole book, and as §2 and §6 of the production runbook: the OS stays Enforcing. Only the application's own domain is ever made permissive. Production is never mutated by hand.
 
 ```mermaid
 flowchart TD
@@ -151,7 +151,7 @@ The controller is the only machine that ships the policy. The role's comments sp
 
 > `generate_emergency_patch.yml is controller-only. It writes policy_out/ for a PR. Do not run it on production hosts and do not semodule -i the result.`
 
-Read [§13 From denial to pull request](../part3/13-from-denial-to-pull-request.md) for the PR flow. Read [§19 Canary, soak, enforce](../part4/19-canary-soak-enforce.md) for the canary and soak gates that shape the timeline. This chapter covers the failure state. Those chapters cover the success state.
+Read [Chapter 13, From Denial to Pull Request](../part3/13-from-denial-to-pull-request.md) for the PR flow. Read [Chapter 19, Canary, Soak, Enforce](../part4/19-canary-soak-enforce.md) for the canary and soak gates that shape the timeline. This chapter covers the failure state. Those chapters cover the success state.
 
 ## Postmortem questions specific to SELinux
 

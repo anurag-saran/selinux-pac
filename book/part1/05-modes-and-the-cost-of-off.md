@@ -25,7 +25,7 @@ $ sudo semanage permissive -l
 shopapi_t
 ```
 
-Both of those lines agree. The host is *enforcing* globally. Only `shopapi_t` (or whatever domain is on the list) is log-only. Three places state the same rule: Chapter 1 restates it, `docs/policy/102-SELINUX_BASICS.md` §7 repeats it, and `docs/admin/302-PRODUCTION_READINESS.md` §6 enforces it. The rule is that the host *always* stays in Enforcing, and only the app's own domain is made permissive.
+Both of those lines agree. The host is *enforcing* globally. Only `shopapi_t` (or whatever domain is on the list) is log-only. Three places state the same rule: Chapter 1 restates it, `docs/training/102-SELINUX_BASICS.md` §7 repeats it, and `docs/admin/302-PRODUCTION_READINESS.md` §6 enforces it. The rule is that the host *always* stays in Enforcing, and only the app's own domain is made permissive.
 
 :::: why Two checks, not one
 `setenforce 0` is the wrong answer at the level of *immediate recovery*. It stops the kernel from blocking the service. It is the right answer at the level of *immediate damage*. An attacker walks away with the Unix privileges of the account, with no denials to read and no rule to review. The argument for the two checks is the same one Chapter 1 built: cost over a year, and evidence at the change board.
@@ -73,7 +73,7 @@ $ sudo semanage permissive -l
 # (empty output — no domains listed)
 ```
 
-Both phases keep `getenforce` = Enforcing. Only `shopapi_t` is log-only, so the OS stays protected. The two-phase timeline from `docs/policy/102-SELINUX_BASICS.md` §7.5 repeats: staging discovery permissive while `dev_generate_policy.sh` collects AVCs, and canary soak permissive after the full module is installed. Both phases share the same state: **the host stays enforcing, only the app domain is log-only**.
+Both phases keep `getenforce` = Enforcing. Only `shopapi_t` is log-only, so the OS stays protected. The two-phase timeline from `docs/training/102-SELINUX_BASICS.md` §7.5 repeats: staging discovery permissive while `dev_generate_policy.sh` collects AVCs, and canary soak permissive after the full module is installed. Both phases share the same state: **the host stays enforcing, only the app domain is log-only**.
 
 ::::: note Domain vs system permissive: not interchangeable
 `semanage permissive -a shopapi_t` is *not* `setenforce 0`. The first is granularity: the hook consults a permissive list only for one domain. The second is blanket: every hook answers log-only on every domain. The book uses only the first. Production workflows never run `setenforce 0`.

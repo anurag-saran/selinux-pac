@@ -96,5 +96,5 @@ with.
 ::: note Reading order
 Chapters 1–5 build the mental model. Read them in order, even if you know RHEL well. They are the
 vocabulary that every later chapter assumes. From Part II onward, you can jump freely. Each
-chapter states its own prerequisites in the opening paragraph.
+chapter opens with the problem it solves.
 :::

@@ -1,9 +1,9 @@
 # Glossary
 
-> Every term in this book is a name for something the kernel actually checks. The glossary
-> does not explain SELinux in general. Each entry names the meaning a term holds in this book,
-> and a chapter that teaches it. That chapter is usually the place the term is used hardest,
-> not the first mention.
+> Most terms in this book name something the kernel actually checks. A few name the tools and
+> files that read or write those checks. The glossary does not explain SELinux in general. Each
+> entry names the meaning a term holds in this book, and a chapter that teaches it. That chapter
+> is usually the place the term is used hardest, not the first mention.
 
 | Term | What it means | Taught in |
 |---|---|---|

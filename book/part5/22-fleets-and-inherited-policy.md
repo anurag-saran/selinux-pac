@@ -63,7 +63,7 @@ Every consumer reads the manifest for paths, ports, domain, and probes: `cli/det
 
 ## Many domains on one host
 
-A fleet is not one app per host. It is one host per app. Each app holds its own domain, its own `.te`, its own manifest, and its own soak. Per-domain permissive stays per domain: `semanage permissive -a shopapi_t` is independent of `semanage permissive -a jws6_tomcat_t`. The canary is per host group and per domain, not per release. It answers "is this install time or net new?" at the domain level, and that is why `cli/soak_net_new.py` reads the domain out of the manifest.
+A fleet is not one app per host. It is one host per app. Each app holds its own domain, its own `.te`, its own manifest, and its own soak. Per-domain permissive stays per domain: `semanage permissive -a shopapi_t` is independent of `semanage permissive -a jws6_tomcat_t`. The canary is per host group and per domain, not per release. It answers "is this install time or net-new?" at the domain level, and that is why `cli/soak_net_new.py` reads the domain out of the manifest.
 
 ::: why The unit of risk is the domain, not the application artifact
 Two apps that share a domain share their fate. App A and App B both run on `jws6_tomcat_t`, so a regression in the vendor policy for that domain affects both. shopapi is the opposite case. It owns `shopapi_t`, and the whole chapter is about keeping it that way. When you add a service, own the domain. Do not let it inherit a shared label whose policy was tuned only for the first owner.
