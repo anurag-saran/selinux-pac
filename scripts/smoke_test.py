@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -669,12 +670,18 @@ def test_demo_e2e_scripts_dry_run() -> None:
         text=True,
     )
     mac_out = mac_run.stdout + mac_run.stderr
-    assert mac_run.returncode == 0, mac_out
-    assert_mentions(
-        mac_out, "shopapi", "/feature-spool", "demo_e2e_rhel_qa.sh", "selinux/shopapi"
-    )
-    assert "LAB ONLY" in mac_out
-    assert "soak_min_days" in mac_out
+    if sys.platform == "darwin":
+        assert mac_run.returncode == 0, mac_out
+        assert_mentions(
+            mac_out, "shopapi", "/feature-spool", "demo_e2e_rhel_qa.sh", "selinux/shopapi"
+        )
+        assert "LAB ONLY" in mac_out
+        assert "soak_min_days" in mac_out
+    else:
+        # Off a Mac the talk track refuses by design (e2e_require_mac): assert the
+        # refusal, so `make check` is a real offline health check on Linux too.
+        assert mac_run.returncode != 0, mac_out
+        assert "This script is the Mac talk track" in mac_out, mac_out
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,
@@ -1892,6 +1899,274 @@ def test_force_reason_recorded() -> None:
         assert "<!-- AUTO:VENDOR_OVERRIDE -->" not in body
 
 
+def _load_book_builder():
+    """Import tools/book/build.py by path (it is not a package)."""
+    import importlib.util
+
+    path = PROJECT_ROOT / "tools" / "book" / "build.py"
+    spec = importlib.util.spec_from_file_location("book_build", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules["book_build"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_book_builder_contract() -> None:
+    """The generator builds the real book: pages, search index, no problems."""
+    module = _load_book_builder()
+    book_dir = PROJECT_ROOT / "book"
+    book = module.load_book(book_dir)
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        problems, warnings = module.build(book, book_dir, out)
+        assert not problems, problems
+        assert not warnings, warnings
+        assert (out / "index.html").is_file()
+        assert (out / "assets" / "book.css").is_file()
+        assert (out / ".nojekyll").is_file()
+        index = json.loads((out / "search.json").read_text())
+        assert len(index) == len(book.entries)
+        for page in book.entries:
+            html_text = (out / f"{page.slug}.html").read_text()
+            assert "<h1" in html_text, page.file
+            assert f'<a href="{page.slug}.html"' in html_text or page.slug == "index"
+        assert not module.check(book, book_dir)[0]
+
+
+def _fixture_book(book_dir: Path, body: str, title: str = "One") -> None:
+    """Write a two-page book whose one chapter holds `body`."""
+    (book_dir / "assets").mkdir(exist_ok=True)
+    (book_dir / "assets" / "book.css").write_text("")
+    (book_dir / "book.toml").write_text(
+        'title = "Test Book"\n[[front]]\nfile = "index.md"\ntitle = "Cover"\n'
+        '[[part]]\ntitle = "Part I. Test"\n'
+        f'chapters = [ {{ file = "01-one.md", title = "{title}" }} ]\n'
+    )
+    (book_dir / "index.md").write_text("# Test Book\n")
+    (book_dir / "01-one.md").write_text(body)
+
+
+def test_book_builder_fails_loudly() -> None:
+    """Unsupported or broken markdown is a build error, never silence."""
+    module = _load_book_builder()
+    config = """title = "Test Book"
+[[front]]
+file = "index.md"
+title = "Cover"
+[[part]]
+title = "Part I. Test"
+chapters = [ { file = "01-one.md", title = "One" } ]
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        book_dir = Path(tmp)
+        (book_dir / "assets").mkdir()
+        (book_dir / "assets" / "book.css").write_text("")
+        (book_dir / "book.toml").write_text(config)
+        (book_dir / "index.md").write_text("# Test Book\n")
+
+        (book_dir / "01-one.md").write_text("# One\n\n```bash\nunclosed\n")
+        problems, _ = module.build(module.load_book(book_dir), book_dir, book_dir / "out")
+        assert any("unclosed code fence" in problem for problem in problems), problems
+
+        (book_dir / "01-one.md").write_text("# One\n\n::: bogus\nbody\n:::\n")
+        problems, _ = module.build(module.load_book(book_dir), book_dir, book_dir / "out")
+        assert any("unknown callout type" in problem for problem in problems), problems
+
+        (book_dir / "01-one.md").write_text("# One\n\nSee [nothing](no-such-page.md).\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("not in book.toml" in problem for problem in problems), problems
+
+        (book_dir / "01-one.md").write_text("# One\n\nSee [gone](repo:no/such/file.te).\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("does not exist" in problem for problem in problems), problems
+
+        # a code span that names a repository path is a claim; a stale path fails the build
+        (book_dir / "01-one.md").write_text("# One\n\nRun `scripts/no_such_script.sh`.\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("names a repository path" in problem for problem in problems), problems
+
+        # ... while an on-host or gitignored runtime path is not a repository path
+        (book_dir / "01-one.md").write_text(
+            "# One\n\nWritten to `ansible/inventory.dev.yml` on the controller.\n"
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert not any("names a repository path" in problem for problem in problems), problems
+
+        # a command that runs a library module is not a command
+        (book_dir / "01-one.md").write_text(
+            "# One\n\n```bash\n$ python3 cli/avc_preprocess.py --in x\n```\n"
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("__main__ guard" in problem for problem in problems), problems
+
+        # ... while a module that does define a CLI passes
+        (book_dir / "01-one.md").write_text(
+            "# One\n\n```bash\n$ python3 cli/verify_avc_coverage.py --help\n```\n"
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert not any("__main__ guard" in problem for problem in problems), problems
+
+
+def test_book_builder_never_renders_silently_wrong() -> None:
+    """Syntax the subset does not have is an error, never literal text in the page."""
+    module = _load_book_builder()
+    with tempfile.TemporaryDirectory() as tmp:
+        book_dir = Path(tmp)
+
+        # a link title is supported, and the target still validates
+        _fixture_book(book_dir, '# One\n\nSee [the docs](https://x.test/a "The docs").\n')
+        out = book_dir / "out"
+        module.build(module.load_book(book_dir), book_dir, out)
+        page = (out / "01-one.html").read_text()
+        assert 'title="The docs"' in page, page
+        assert "[the docs]" not in page, page
+
+        # an image becomes an <img>, not a broken link with a stray bang
+        (book_dir / "assets" / "diagram.svg").write_text("<svg></svg>")
+        _fixture_book(book_dir, '# One\n\n![Flow](asset:diagram.svg)\n')
+        module.build(module.load_book(book_dir), book_dir, out)
+        page = (out / "01-one.html").read_text()
+        assert '<img src="assets/diagram.svg" alt="Flow"' in page, page
+        assert "!<a" not in page, page
+
+        # an ampersand is escaped once, in a target and in alt text
+        _fixture_book(
+            book_dir,
+            '# One\n\nSee [q](https://x.test/?a=1&b=2) and ![A & B](asset:diagram.svg).\n',
+        )
+        module.build(module.load_book(book_dir), book_dir, out)
+        page = (out / "01-one.html").read_text()
+        assert "&amp;amp;" not in page, page
+        assert 'href="https://x.test/?a=1&amp;b=2"' in page, page
+        assert 'alt="A &amp; B"' in page, page
+
+        # a missing asset is still an error
+        _fixture_book(book_dir, '# One\n\n![Flow](asset:nope.svg)\n')
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("asset:" in p for p in problems), problems
+
+        # footnotes are out of the subset, in either form
+        for body in ("# One\n\nText[^1]\n", "# One\n\nText\n\n[^1]: note\n"):
+            _fixture_book(book_dir, body)
+            problems, _ = module.check(module.load_book(book_dir), book_dir)
+            assert any("footnote" in p for p in problems), (body, problems)
+
+        # a fourth heading level never reaches the contents or the search index
+        _fixture_book(book_dir, "# One\n\n#### Deep\n\ntext\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("level-4 heading" in p for p in problems), problems
+
+        # an unclosed tag in a raw block cannot swallow the rest of the page
+        _fixture_book(book_dir, '# One\n\n<div class="x">\n\npara one\n')
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("raw HTML" in p for p in problems), problems
+
+        # unclosed inline markup is named, not printed
+        _fixture_book(book_dir, "# One\n\nSome **bold here\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("unclosed emphasis" in p for p in problems), problems
+        _fixture_book(book_dir, "# One\n\nRun `scripts/dev_generate_policy.sh now.\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("unclosed code span" in p for p in problems), problems
+
+
+def test_book_builder_claims() -> None:
+    """A path in prose is a claim. A path in a listing is evidence."""
+    module = _load_book_builder()
+    with tempfile.TemporaryDirectory() as tmp:
+        book_dir = Path(tmp)
+
+        # a quoted transcript may name a file the repository does not carry
+        _fixture_book(
+            book_dir, "# One\n\n```text\nwrote `selinux/no_such_file.te` there\n```\n"
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert not any("repository path" in p for p in problems), problems
+
+        # prose that names a missing file fails
+        _fixture_book(book_dir, "# One\n\nRun `scripts/no_such_script.sh`.\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("repository path" in p for p in problems), problems
+
+        # a chapter may write a book path relative to the book
+        _fixture_book(book_dir, "# One\n\nCompare `part1/01-the-default-answer.md` with `lab.md`.\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert not any("repository path" in p for p in problems), problems
+
+
+def test_book_builder_enforces_the_chapter_shape() -> None:
+    """book/AUTHORING.md states a shape, so the check enforces it for a chapter."""
+    module = _load_book_builder()
+    with tempfile.TemporaryDirectory() as tmp:
+        book_dir = Path(tmp)
+
+        _fixture_book(book_dir, "# One\n\n> A dek.\n\nBody.\n")
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("::: why" in p for p in problems), problems
+        assert any("::: try" in p for p in problems), problems
+        assert any("What you can do now" in p for p in problems), problems
+
+        _fixture_book(
+            book_dir,
+            "# One\n\n> A dek.\n\n::: why Reason\nBecause.\n:::\n\n"
+            "::: try Try it\nOn the laptop.\n:::\n\n## What you can do now\n\n- Do it.\n",
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert not any(
+            (":::" in p or "dek" in p or "What you can do now" in p) for p in problems
+        ), problems
+
+        # a callout inside a listing is listing text, not the chapter's shape
+        _fixture_book(
+            book_dir,
+            "# One\n\n> A dek.\n\n```text\n::: why fake\n:::\n::: try fake\n:::\n"
+            "## What you can do now\n```\n\nBody.\n",
+        )
+        problems, _ = module.check(module.load_book(book_dir), book_dir)
+        assert any("::: why" in p for p in problems), problems
+
+
+def test_book_prose_lint_reports_and_stays_clean() -> None:
+    """The lint names its rule, and the shipped book passes it."""
+    module = _load_book_builder()
+    with tempfile.TemporaryDirectory() as tmp:
+        book_dir = Path(tmp)
+        _fixture_book(
+            book_dir,
+            "# One\n\n> A dek.\n\nYou should just make it robust -- then it has finished.\n",
+        )
+        findings = module.lint_prose(module.load_book(book_dir), book_dir)
+        named = " ".join(findings)
+        for rule in ("weak modal", "just", "word that carries no fact", "em-dash", "present perfect"):
+            assert rule in named, findings
+        assert "01-one.md:5" in named, findings
+
+    book = module.load_book(PROJECT_ROOT / "book")
+    assert module.lint_prose(book, PROJECT_ROOT / "book") == []
+
+
+def test_book_nav_lists_each_page_once() -> None:
+    """An appendix page is not front matter, and must not appear in both lists."""
+    module = _load_book_builder()
+    book = module.load_book(PROJECT_ROOT / "book")
+    appendices = [entry for entry in book.entries if entry.appendix]
+    assert appendices, "the book has appendices to test"
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp)
+        module.build(book, PROJECT_ROOT / "book", out)
+        page = (out / f"{appendices[0].slug}.html").read_text()
+        nav = re.search(r'<div class="sidebar-inner">.*?</div>', page, re.S).group(0)
+        front = re.search(r'Front matter</p>\s*<ul class="nav-list">(.*?)</ul>', nav, re.S)
+        assert front, nav[:200]
+        for entry in appendices:
+            assert f'href="{entry.slug}.html"' not in front.group(1), nav[:400]
+        cover = (out / "index.html").read_text()
+        for entry in appendices:
+            assert cover.count(f'href="{entry.slug}.html"') >= 1
+        assert nav.count(f'href="{appendices[0].slug}.html"') == 1
+
+
 def main() -> int:
     tests = [
         ("prompts", test_prompts),
@@ -1942,6 +2217,13 @@ def main() -> int:
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),
         ("force_reason_recorded", test_force_reason_recorded),
+        ("book_builder_contract", test_book_builder_contract),
+        ("book_builder_fails_loudly", test_book_builder_fails_loudly),
+        ("book_builder_never_renders_silently_wrong", test_book_builder_never_renders_silently_wrong),
+        ("book_builder_claims", test_book_builder_claims),
+        ("book_builder_enforces_the_chapter_shape", test_book_builder_enforces_the_chapter_shape),
+        ("book_prose_lint_reports_and_stays_clean", test_book_prose_lint_reports_and_stays_clean),
+        ("book_nav_lists_each_page_once", test_book_nav_lists_each_page_once),
     ]
     for name, fn in tests:
         fn()

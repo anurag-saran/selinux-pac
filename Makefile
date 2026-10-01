@@ -2,12 +2,12 @@
 .DEFAULT_GOAL := help
 
 PYTHON ?= python3
-PIP ?= pip3
+PIP ?= $(PYTHON) -m pip
 
 .PHONY: help deps test check lint fixtures test-smoke test-static test-manifest \
 	test-rpm test-forbidden test-version test-fixtures test-blast-radius \
 	lint-shell lint-yaml lint-ansible integration-compile integration-semantics \
-	training-lab demo-bootstrap
+	training-lab demo-bootstrap book book-check book-lint book-serve
 
 help: ## List targets (default)
 	@echo "SELinux demo — common targets:"
@@ -18,12 +18,16 @@ help: ## List targets (default)
 	@echo "Quick start:  make deps && make check"
 
 deps: ## Install Python deps for offline tests (no network after first run)
-	$(PIP) install -q -r cli/requirements.txt
+	@if $(PIP) --version >/dev/null 2>&1; then \
+		$(PIP) install -q -r cli/requirements.txt; \
+	else \
+		echo "make: $(PIP) unavailable \u2014 skipping dependency install; install cli/requirements.txt yourself"; \
+	fi
 
 test: deps test-fixtures test-static test-smoke ## Offline health check (no SELinux host required)
 	@echo "make test OK"
 
-check: test lint ## Full repo health: offline tests + linters when installed
+check: test lint book-check ## Full repo health: offline tests + linters + book links
 
 fixtures: test-fixtures ## Deterministic + payments + blast-radius fixture suites only
 
@@ -97,6 +101,21 @@ integration-blast-radius: ## Blast-radius with live sesearch (CI / rhel-dev)
 
 training-lab: ## Dry-run the customer talk (no SELinux required)
 	bash scripts/demo_present.sh --dry-run --profile customer --no-type --auto
+
+book: ## Build the HTML manual into site/ (tools/book/build.py)
+	$(PYTHON) tools/book/build.py
+
+book-check: ## Validate the manual: links, anchors, repo paths, chapter shape
+	$(PYTHON) tools/book/build.py --check
+
+book-lint: ## book-check, then the prose rules of book/AUTHORING.md (a hit fails the run)
+	$(PYTHON) tools/book/build.py --lint-prose --strict
+
+BOOK_HOST ?= 127.0.0.1
+BOOK_PORT ?= 8080
+
+book-serve: ## Build and serve (BOOK_HOST=0.0.0.0 BOOK_PORT=9000; BOOK_REPO/BOOK_BRANCH for a fork)
+	$(PYTHON) tools/book/build.py --check --serve $(BOOK_PORT) --host $(BOOK_HOST)
 
 demo-bootstrap: ## Stand up App A/B + shopapi on RHEL (idempotent; not for macOS)
 	bash scripts/demo_bootstrap.sh

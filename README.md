@@ -4,13 +4,18 @@
 
 The **customer talk** is **202** — three applications (vendor Tomcat already enforcing, inherited Tomcat you tune, Spring Boot you generate). Finish **[101](docs/training/101-SELINUX.md)** first. The two-host generate/canary/soak pipeline is **203** (**shopapi**). Offline `make check` uses **deterministic fixtures** (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules — not a live Flask app. This tool repo is the generator, CI helpers, and AAP path. Numbered catalog: [docs/README.md](docs/README.md).
 
+> **The book.** *SELinux for Developers and Administrators* — a full HTML manual built from this repository, from one denial to a reviewed module in production. `make book` builds it into `site/`, `make book-serve` reads it at `http://127.0.0.1:8080` (`BOOK_HOST=0.0.0.0 BOOK_PORT=9000 make book-serve` to open it from another device on your network — it prints the address), `make book-check` validates every link, anchor and repository reference. Sources live in [`book/`](book/), and the guide for adding chapters is [book/AUTHORING.md](book/AUTHORING.md).
+
 | You are | Start here |
 |---------|------------|
+| **Reading the book** | `make book-serve` |
+| **Writing a chapter** | [book/AUTHORING.md](book/AUTHORING.md) + [book/book.toml](book/book.toml) |
 | **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/training/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
 | **Application developer** | [Developers](#developers) and **[206](docs/developers/206-ONBOARDING.md)** |
 | **Offline check (any laptop)** | `make check` (**205**) |
+| **Checking who wrote what** | [AUTHORS.md](AUTHORS.md) |
 
 ---
 
@@ -231,6 +236,12 @@ docs/admin/       203 two-host, 301–304 ship/run
 docs/developers/  204 generator, 205 tests, 206 onboarding
 docs/policy/      207 best practices
 ```
+
+---
+
+## Who wrote what
+
+`@anurag-saran` started the project and writes the running parts: the generator, the policy source, Ansible, packaging, and CI. `@baristahaus` wrote the book and the tooling that builds it. Both sides used an AI coding agent. [AUTHORS.md](AUTHORS.md) names the split, the commit counts, and the places where the GitHub Contributors graph counts differently from `git shortlog`.
 
 ---
 
