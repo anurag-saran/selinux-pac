@@ -181,7 +181,7 @@ The policy generator needs: *each unique denials tuple, deduplicated, with
 the manifest paths that triggered them*.
 
 The repository's export path is the pipeline already in `monitor_avc.sh`
-and `lib/avc_query.sh`. These are sourced shell functions, not commands on
+and `scripts/lib/avc_query.sh`. These are sourced shell functions, not commands on
 `PATH`, so the entry point is the script that sources them:
 
 ```bash
@@ -202,9 +202,9 @@ $ python3 cli/verify_avc_coverage.py \
     --manifest config/myapp.manifest.yml
 ```
 
-`monitor_avc.sh` is the daily soak view of the same library: it runs the same
-`ausearch --input-logs -m AVC,USER_AVC,SELINUX_ERR,USER_SELINUX_ERR --subject
-<domain> --format raw` query and reports the count against `--max-net-new`.
+`monitor_avc.sh` is the daily soak view of the same library. It runs the same query
+`ausearch --input-logs -m AVC,USER_AVC,SELINUX_ERR,USER_SELINUX_ERR --subject <domain>
+--format raw`, and reports the count against `--max-net-new`.
 
 `cli/avc_preprocess.py` does the merge, dedupe and subtract work, but it is a
 module: the commands above are the entry points that call it

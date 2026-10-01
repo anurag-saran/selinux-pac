@@ -89,7 +89,7 @@ The checklist in §13 of the production runbook is the accountability map. Each 
 | Prod canary host deployed and soaked separately | Same gate on `--limit canary`, marker file exists, app healthy | Operator |
 | Path labeling verified after last canary deploy | `verify_file_contexts.sh` `[INFO] File context verification passed for myapp` | Operator |
 | Backend unit active, and health and notify probes succeed | HTTP 200 on each manifest endpoint from the canary node | App team |
-| PR admin review table signed off | `PULL_REQUEST_TEMPLATE/selinux_policy_review.md` checklist all checked | Admin reviewer |
+| PR admin review table signed off | `.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md` checklist all checked | Admin reviewer |
 | Change ticket documents window and rollback owner | `change_ticket` set in `enforce_production.yml`, and `force_enforce` false | Operator |
 | Rollback playbook tested or on-call briefed | `emergency_rollback.yml` run on staging or on-call briefed on the steps | Operator |
 | Domain still permissive pre-enforce | `semanage permissive -l` lists `myapp_t` on target hosts | Operator |

@@ -30,7 +30,7 @@ A policy pull request in this repository carries five surfaces. Read them in thi
 
 | Layer | What it is | What it catches |
 |---|---|---|
-| **The manifest** | `manifest/`: ports, file contexts, booleans, domains | the policy scope: what the module owns |
+| **The manifest** | `config/*.manifest.yml`: ports, file contexts, booleans, domains | the policy scope: what the module owns |
 | **The `.te`** | Type Enforcement: every `allow` rule in the module | the decisions themselves |
 | **The `.fc`** | File Contexts: every label on a path | what objects the policy names |
 | **The access delta** | `docs/examples/fixtures/policy_diff/sample_delta.md`: `sesearch` allow diff against the merge-base | what *changed* between the last release and this one |
@@ -47,14 +47,18 @@ Each question catches one failure mode. Each failure mode shows up in a differen
 |---|---|---|
 | Is every new `allow` traced to an AVC line? | a rule added without evidence | access delta + AVC excerpt |
 | Are the target types specific, or a broad category? | a rule wider than the denial | `.te` + `.fc` |
-| Are ports declared in the manifest, or smuggled into the policy body? | `semanage port` as the control plane | manifest + §2 of the best practices |
-| Is a refpolicy interface used where one exists? | raw `allow` that an interface already covers | `.te` + §1 of the best practices |
-| Is vendor policy duplicated instead of inherited? | a custom module for JWS / EAP / httpd | manifest + §1 of the best practices |
+| Are ports declared in the manifest, or smuggled into the policy body? | `semanage port` as the control plane | manifest + §1 of [207-SELINUX_BEST_PRACTICES.md](docs/policy/207-SELINUX_BEST_PRACTICES.md) |
+| Is a refpolicy interface used where one exists? | raw `allow` that an interface already covers | `.te` + §1 of [207-SELINUX_BEST_PRACTICES.md](docs/policy/207-SELINUX_BEST_PRACTICES.md) |
+| Is vendor policy duplicated instead of inherited? | a custom module for JWS / EAP / httpd | manifest + §1 of [207-SELINUX_BEST_PRACTICES.md](docs/policy/207-SELINUX_BEST_PRACTICES.md) |
 | Is there any rule the app does not actually need? | a rule added by `audit2allow` | access delta + AVC excerpt |
 | What breaks if the app is not started at all? | a rule that depends on live state | `.fc` + manifest + soak plan |
 | How is this rolled back? | a rule the admin cannot undo | admin checklist + `303-DENIAL_RESPONSE.md` |
 
 The checklist in the pull request template is the record of these questions. The gates answer the mechanical ones: compile, forbidden patterns, version consistency, and the access delta. The table above holds what remains, the questions only a human can answer before a module reaches a host.
+
+::: try Try it on the laptop
+Open `.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md` in a checkout. Then take one merged policy pull request from your own repository and answer the questions above against its diff. Path A covers this chapter: no host, no SELinux.
+:::
 
 ## What you can do now
 

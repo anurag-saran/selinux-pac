@@ -98,7 +98,7 @@ evidence. The base policy is full of them for exactly that reason: a browser pro
 `~/.config`, or a service checking a file it will never find. That keeps normal operation from
 filling `audit.log` with failures nobody will act on.
 
-Two commands manage the suppression. `semodule -DB` disables the entire `dontaudit` block on the host. `semodule -B` restores it. The canary role runs `-DB` at canary start, so soak does not miss denials hidden by `dontaudit`. A failed canary and the rollback path both run `-B`. The host-wide change is documented in [302-PRODUCTION_READINESS.md](docs/admin/302-PRODUCTION_READINESS.md) §206 and [207-SELINUX_BEST_PRACTICES.md](docs/policy/207-SELINUX_BEST_PRACTICES.md) §134. Running `-DB` sends you after the same application bug you chase anyway, but it shows the denials. Before you conclude that a soak found zero denial, run it.
+Two commands manage the suppression. `semodule -DB` disables the entire `dontaudit` block on the host. `semodule -B` restores it. The canary role runs `-DB` at canary start, so soak does not miss denials hidden by `dontaudit`. A failed canary and the rollback path both run `-B`. The host-wide change is documented in [302-PRODUCTION_READINESS.md](docs/admin/302-PRODUCTION_READINESS.md) §6 and [207-SELINUX_BEST_PRACTICES.md](docs/policy/207-SELINUX_BEST_PRACTICES.md) §4. Running `-DB` sends you after the same application bug you chase anyway, but it shows the denials. Before you conclude that a soak found zero denial, run it.
 
 `auditallow` is the mirror image, and it does not grant a tuple either. It makes an access that an
 `allow` rule already permits emit an AVC record. `dontaudit` hides a denial. `auditallow` exposes

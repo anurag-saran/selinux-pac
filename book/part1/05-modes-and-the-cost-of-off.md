@@ -81,7 +81,7 @@ Both phases keep `getenforce` = Enforcing. Only `shopapi_t` is log-only, so the 
 
 ## The two-layer model — the book's hard rule
 
-The book's hard rule is the two-layer model: the host stays Enforcing, only the app domain is permissive. This is not a preference. It is a rule enforced by the playbooks in `ansible/roles/selinux_pac/tasks/enforce.yml` and `tasks/rollback.yml`, and by the `check_soak_ready.sh` gate in `docs/admin/302-PRODUCTION_READINESS.md` §12.
+The book's hard rule is the two-layer model: the host stays Enforcing, only the app domain is permissive. This is not a preference. It is a rule enforced by the playbooks in `ansible/roles/selinux_pac/tasks/enforce.yml` and `ansible/roles/selinux_pac/tasks/rollback.yml`, and by the `check_soak_ready.sh` gate in `docs/admin/302-PRODUCTION_READINESS.md` §12.
 
 | Layer | Check | Value during canary / soak |
 |---|---|---|
