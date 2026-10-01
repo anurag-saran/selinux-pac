@@ -497,7 +497,7 @@ class Renderer:
 
     def toc_grid(self) -> str:
         out = ['<div class="toc-grid">']
-        front = [entry for entry in self.book.entries if not entry.number]
+        front = [entry for entry in self.book.entries if not (entry.number or entry.appendix)]
         if front:
             out.append('<div class="toc-part"><h3>Front matter</h3><ol>')
             for entry in front:
@@ -845,7 +845,7 @@ class Renderer:
 def nav_html(book: Book, current: Entry) -> str:
     parts = ['<p class="nav-label">Front matter</p>', '<ul class="nav-list">']
     for entry in book.entries:
-        if not entry.number:
+        if not (entry.number or entry.appendix):
             parts.append(nav_item(entry, current))
     parts.append("</ul>")
 
