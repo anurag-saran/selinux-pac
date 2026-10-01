@@ -1548,6 +1548,11 @@ def main(argv: list) -> int:
     parser.add_argument("--book", default=str(REPO_ROOT / "book"))
     parser.add_argument("--out", default=str(REPO_ROOT / "site"))
     parser.add_argument("--check", action="store_true", help="validate without writing")
+    parser.add_argument(
+        "--lint-prose",
+        action="store_true",
+        help="check the book, then report every hit on the prose rules in book/AUTHORING.md",
+    )
     parser.add_argument("--strict", action="store_true", help="treat warnings as errors")
     parser.add_argument("--serve", type=int, metavar="PORT", help="serve the built site")
     parser.add_argument(
@@ -1561,8 +1566,13 @@ def main(argv: list) -> int:
     out_root = Path(args.out).resolve()
     book = load_book(book_dir)
 
-    if args.check:
+    if args.check or args.lint_prose:
         problems, warnings = check(book, book_dir)
+        if args.lint_prose:
+            warnings.extend(lint_prose(book, book_dir))
+        if args.serve and not problems:
+            # --check writes nothing, so serve would hand out a stale or missing site/.
+            problems, _ = build(book, book_dir, out_root)
     else:
         problems, warnings = build(book, book_dir, out_root)
 
@@ -1578,7 +1588,7 @@ def main(argv: list) -> int:
         )
         return 1
 
-    if args.check:
+    if args.check or args.lint_prose:
         print(f"book: OK ({len(book.entries)} pages, {len(warnings)} warnings)")
     else:
         print(f"book: built {len(book.entries)} pages into {out_root}")
