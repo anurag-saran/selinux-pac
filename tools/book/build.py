@@ -13,8 +13,8 @@ Supported markdown (a deliberate subset; anything else is a build error rather
 than silently dropped content):
 
     # H1 (one per page, becomes the page title)
-    ## H2 / ### H3   (anchors; H2 appears in "On this page")
-    paragraphs, **bold**, *italic*, `code`, ~~strike~~, [links](target)
+    ## H2 / ### H3   (anchors; H2 appears in "On this page"; a deeper level is an error)
+    paragraphs, **bold**, *italic*, `code`, ~~strike~~, [links](target "title"), ![alt](target)
     - / 1. lists, nested by indentation, - [ ] task items
     > blockquote (the first one after H1 is styled as the chapter dek)
     | tables | with a |---| rule row, alignment via :---
@@ -22,8 +22,11 @@ than silently dropped content):
         ```bash title="Compile the module"  names the listing
     ::: why Title ... :::   callouts: why how try note warn good story
     ---   horizontal rule
-    a line starting with '<' passes through as a raw HTML block
+    a line starting with '<' passes through as a raw HTML block, to the next blank line
     four-space indented code blocks (rendered as unlabelled listings)
+
+Rejected, with an error that names the line: a fourth heading level, a footnote, a setext
+heading, unclosed `**`, ~~ or ``, and a raw HTML block whose tags do not balance.
 
 Link targets:
     other-page.md#anchor    another page (rewritten to .html, validated)
@@ -49,6 +52,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 CALLOUTS = {"why", "how", "try", "note", "warn", "good", "story"}
 CODE_TOKEN = "\x00%d\x00"
+# A rendered fragment that later inline rules must not touch (an <img> tag).
+RAW_TOKEN = "\x01%d\x00"
+# Headings below this level never reach the margin contents or the search index.
+MAX_HEADING = 3
+# Tags a raw HTML block must balance. Inline tags are absent on purpose.
+_BLOCK_TAGS = (
+    "p",
+    "div",
+    "aside",
+    "section",
+    "details",
+    "table",
+    "figure",
+    "nav",
+    "ul",
+    "ol",
+    "blockquote",
+    "pre",
+)
 
 
 class BookError(Exception):
@@ -154,7 +176,8 @@ def load_book(book_dir: Path) -> Book:
 
 _SLUG_STRIP = re.compile(r"[`*_\[\]]")
 _SLUG_SPLIT = re.compile(r"[^a-z0-9]+")
-_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
+_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)(?:\s+\"([^\"]*)\")?\)")
+_IMG = re.compile(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+\"([^\"]*)\")?\)")
 _AUTOLINK = re.compile(r"&lt;(https?://[^&\s]+)&gt;")
 _STRONG = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", re.S)
 _EM_STAR = re.compile(r"(?<![A-Za-z0-9*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![A-Za-z0-9*])")
@@ -246,6 +269,7 @@ class Renderer:
                 return None
         candidates = [
             os.path.normpath(os.path.join("book", self.entry_dir, path)),
+            os.path.normpath(os.path.join("book", path)),
             os.path.normpath(path),
             os.path.normpath(path.lstrip("/")),
         ]
@@ -260,6 +284,7 @@ class Renderer:
 
     def inline(self, text: str) -> str:
         spans = []
+        raws = []
 
         def stash(match: re.Match) -> str:
             spans.append(match.group(2))
@@ -269,12 +294,25 @@ class Renderer:
         text = typography(text)
         text = html.escape(text, quote=False)
 
+        def image(match: re.Match) -> str:
+            alt, target, title = match.group(1), match.group(2), match.group(3)
+            src = html.escape(self.rewrite_link(target), quote=True)
+            extra = f' title="{html.escape(title, quote=True)}"' if title else ""
+            raws.append(
+                f'<img src="{src}" alt="{html.escape(alt, quote=True)}"'
+                f' loading="lazy"{extra}>'
+            )
+            return RAW_TOKEN % (len(raws) - 1)
+
+        text = _IMG.sub(image, text)
+
         def link(match: re.Match) -> str:
-            label, target = match.group(1), match.group(2)
+            label, target, title = match.groups()
             href = html.escape(self.rewrite_link(target), quote=True)
             external = href.startswith(("http://", "https://"))
             rel = ' rel="noopener"' if external else ""
-            return f'<a href="{href}"{rel}>{label}</a>'
+            extra = f' title="{html.escape(title, quote=True)}"' if title else ""
+            return f'<a href="{href}"{rel}{extra}>{label}</a>'
 
         text = _LINK.sub(link, text)
 
@@ -293,6 +331,8 @@ class Renderer:
             text = text.replace(
                 token, f"<code>{html.escape(code, quote=False)}</code>"
             )
+        for index, markup in enumerate(raws):
+            text = text.replace(RAW_TOKEN % index, markup)
         return text
 
     # -- anchors and search text ---------------------------------------
@@ -371,7 +411,7 @@ class Renderer:
                 i = self.emit_list(lines, i, page, base, out)
                 continue
             if line.startswith("<"):
-                i = self.emit_raw(lines, i, out)
+                i = self.emit_raw(lines, i, page, base, out)
                 continue
             if re.match(r"^ {4,}\S", line):
                 i = self.emit_indented(lines, i, out)
@@ -381,6 +421,13 @@ class Renderer:
 
     def emit_heading(self, match: re.Match, page: str, line_no: int, out: list) -> None:
         level = len(match.group(1))
+        if level > MAX_HEADING:
+            raise fail(
+                page,
+                line_no,
+                f"level-{level} heading: the subset stops at {'#' * MAX_HEADING}. A deeper "
+                "heading reaches neither the margin contents nor the search index.",
+            )
         raw = match.group(2).strip()
         explicit = re.search(r"\s*\{#([A-Za-z0-9_-]+)\}\s*$", raw)
         if explicit:
@@ -477,6 +524,25 @@ class Renderer:
         out.append("</div>")
         return "\n".join(out)
 
+    def collect(self, lines: list, i: int, closer: re.Pattern) -> tuple:
+        """Collect lines up to `closer`, so a ::: inside a listing does not end a callout."""
+        body = []
+        marker = ""
+        while i < len(lines):
+            line = lines[i]
+            if marker:
+                if re.match(r"^\s*" + re.escape(marker) + r"\s*$", line):
+                    marker = ""
+            else:
+                fence = _FENCE.match(line)
+                if fence:
+                    marker = fence.group(1)
+                elif closer.match(line):
+                    return body, i
+            body.append(line)
+            i += 1
+        return body, i
+
     def emit_callout(self, lines: list, i: int, page: str, base: int, out: list) -> int:
         opener = re.match(r"^(:{3,})\s*(.*)$", lines[i])
         assert opener
@@ -487,13 +553,11 @@ class Renderer:
             raise fail(page, base + i, "a callout needs a type, e.g. ::: why Title")
         kind = parts[0].lower()
         if kind == "toc":
-            i += 1
-            while i < len(lines) and not closer.match(lines[i]):
-                i += 1
-            if i >= len(lines):
+            _, end = self.collect(lines, i + 1, closer)
+            if end >= len(lines):
                 raise fail(page, base + i, "unclosed ::: toc")
             out.append(self.toc_grid())
-            return i + 1
+            return end + 1
         if kind not in CALLOUTS:
             raise fail(
                 page,
@@ -503,14 +567,10 @@ class Renderer:
         title = parts[1].strip() if len(parts) > 1 else ""
         opened_on = i
 
-        body = []
-        i += 1
-        while i < len(lines) and not closer.match(lines[i]):
-            body.append(lines[i])
-            i += 1
-        if i >= len(lines):
+        body, end = self.collect(lines, i + 1, closer)
+        if end >= len(lines):
             raise fail(page, base + opened_on, "unclosed ::: callout")
-        i += 1
+        i = end + 1
 
         inner = self.blocks(body, page, base + opened_on + 1)
         label = title or kind.capitalize()
@@ -717,12 +777,27 @@ class Renderer:
         )
         return i
 
-    def emit_raw(self, lines: list, i: int, out: list) -> int:
+    def emit_raw(self, lines: list, i: int, page: str, base: int, out: list) -> int:
+        opened_on = i
         block = []
         while i < len(lines) and lines[i].strip():
             block.append(lines[i])
             i += 1
-        out.append("\n".join(block))
+        joined = "\n".join(block)
+        for tag in _BLOCK_TAGS:
+            opened = len(re.findall(r"<" + tag + r"(?=[\s/>])", joined, re.I))
+            if opened == len(re.findall(r"<" + tag + r"[^>]*/>", joined, re.I)):
+                continue
+            closed = len(re.findall(r"</" + tag + r"\s*>", joined, re.I))
+            if opened != closed:
+                raise fail(
+                    page,
+                    base + opened_on,
+                    f"raw HTML: <{tag}> opens {opened} time(s) and closes {closed} "
+                    "time(s) in this block. A raw block runs to the next blank line, "
+                    "so an unclosed tag swallows the rest of the page.",
+                )
+        out.append(joined)
         return i
 
     def emit_paragraph(self, lines: list, i: int, page: str, base: int, out: list) -> int:
@@ -736,12 +811,26 @@ class Renderer:
         if not body:
             raise fail(page, base + opened_on, f"unparsed content: {lines[opened_on]!r}")
         pieces = re.split(r"[ \t]{2,}\n", "\n".join(body) + "\n")
+        if "\n".join(body).count("`") % 2:
+            raise fail(
+                page,
+                base + opened_on,
+                "unclosed code span: a backtick here has no partner",
+            )
         rendered = []
         for piece in pieces:
             if not piece.strip():
                 continue
             joined = " ".join(part.strip() for part in piece.split("\n"))
             rendered.append(self.inline(joined))
+        visible = re.sub(r"<code>.*?</code>", "", " ".join(rendered), flags=re.S)
+        unclosed = re.search(r"\*\*|~~", visible)
+        if unclosed:
+            raise fail(
+                page,
+                base + opened_on,
+                f"unclosed emphasis: {unclosed.group(0)!r} has no partner on this page",
+            )
         paragraph = "<br>".join(rendered)
         out.append(f"<p>{paragraph}</p>")
         self.note(paragraph)
@@ -936,9 +1025,10 @@ def render_all(book: Book, book_dir: Path, out_root: Path | None):
         elif entry.h1.strip() != entry.title.strip() and not (
             entry.slug == "index" and entry.h1.strip() == book.cfg["title"].strip()
         ):
-            warnings.append(
+            problems.append(
                 f"{entry.file}: h1 {entry.h1!r} differs from the book.toml title "
-                f"{entry.title!r}"
+                f"{entry.title!r}. The sidebar, the contents and the search index all "
+                "read the book.toml title, so the page and its own name must agree."
             )
 
         if out_root is None:
@@ -1022,6 +1112,16 @@ _REPO_DIRS = (
     ".github",
 )
 
+# A code span that starts with one of these names the book, too.
+_CLAIM_ROOTS = frozenset(_REPO_DIRS) | {
+    "part1",
+    "part2",
+    "part3",
+    "part4",
+    "part5",
+    "appendix",
+}
+
 # Paths the prose is allowed to name even though no such file is committed:
 # build artefacts and runtime locations that live on a host or are gitignored.
 _PATH_EXCEPTIONS = {
@@ -1040,25 +1140,243 @@ _PATH_EXCEPTIONS = {
 }
 
 
-def looks_like_repo_path(token: str) -> bool:
+_FENCE_LINE = re.compile(r"^\s*(?:```|~~~+)")
+# A code span may run over the end of a line. Match a same-line span first, then a
+# short run over a line break, and bound each one so a stray delimiter cannot hide a
+# whole chapter from the lint.
+_SPAN_LINE = re.compile(r"`{1,3}[^`\n]{0,600}?`{1,3}")
+_SPAN_ACROSS = re.compile(r"`{1,3}[^`]{0,600}?`{1,3}", re.S)
+_CURLY_QUOTE = re.compile(r"\u201c[^\u201d]{0,600}\u201d", re.S)
+# An italic run is a quotation or a term, not the prose of the author.
+_ITALIC = re.compile(r"(?<![A-Za-z0-9*])\*[^*\n]{1,400}\*(?![A-Za-z0-9*])")
+
+
+def blank_quotations(buffer: str) -> str:
+    """Blank every "..." run, so a quotation reads as evidence, not as prose.
+
+    A run that does not close within 400 characters is treated as a stray delimiter
+    and left alone, so one unbalanced quote cannot hide the rest of a chapter.
+    """
+    out = []
+    index = 0
+    while index < len(buffer):
+        char = buffer[index]
+        if char != '"':
+            out.append(char)
+            index += 1
+            continue
+        end = buffer.find('"', index + 1)
+        if end < 0 or end - index > 400:
+            out.append(char)
+            index += 1
+            continue
+        out.append(" QUOTED " + "\n" * buffer.count("\n", index, end))
+        index = end + 1
+    return "".join(out)
+
+
+def prose_lines(text: str):
+    """Yield (line_no, prose) for the text a reader parses as English.
+
+    The exclusions are the ones `book/AUTHORING.md` states as exceptions: heading
+    text, because an anchor links to it; a code block, a code span, a quotation and a
+    quoted transcript, because those are evidence; the first column of a table and a
+    callout title, because those are keys and labels.
+    """
+    lines = text.split("\n")
+    kept = []
+    marker = ""
+    for raw in lines:
+        if marker:
+            if re.match(r"^\s*" + re.escape(marker) + r"\s*$", raw):
+                marker = ""
+            kept.append("")
+            continue
+        fence = _FENCE_LINE.match(raw)
+        if fence:
+            marker = fence.group(0).strip()
+            kept.append("")
+            continue
+        if re.match(r"^ {4,}\S", raw) or raw.lstrip().startswith("#"):
+            kept.append("")
+            continue
+        kept.append(raw)
+
+    def blank(word: str, match: re.Match) -> str:
+        return " " + word + " " + "\n" * match.group(0).count("\n")
+
+    buffer = "\n".join(kept)
+    buffer = _SPAN_LINE.sub(lambda m: blank("CODE", m), buffer)
+    buffer = _SPAN_ACROSS.sub(lambda m: blank("CODE", m), buffer)
+    buffer = _CURLY_QUOTE.sub(lambda m: blank("QUOTED", m), buffer)
+    buffer = blank_quotations(buffer)
+    buffer = _ITALIC.sub(lambda m: blank("QUOTED", m), buffer)
+
+    for line_no, body in enumerate(buffer.split("\n"), 1):
+        body = body.strip()
+        if body.startswith("|"):
+            if re.match(r"^\|[\s:|-]+$", body):
+                continue
+            body = " ".join(body.strip("|").split("|")[1:])
+        callout = re.match(r"^:{3,}\s*\w*\s*(.*)$", body)
+        if callout:
+            body = callout.group(1)
+        if body.startswith((">", "-", "*")) or re.match(r"^\d+[.)]", body):
+            body = re.sub(r"^(?:>|[-*]|\d+[.)])\s*(\[[ xX]\]\s*)?", "", body)
+        body = re.sub(r"&\w+;|&#\d+;", " ", body)
+        body = re.sub(r"<[^>]+>", " ", body)
+        if body.strip():
+            yield line_no, body
+
+
+PROSE_RULES = (
+    (
+        "em-dash",
+        re.compile("\u2014|(?<=\\S)--(?=\\S)|\\s--\\s"),
+        "write two sentences, or name the relation: because, but, so, for example",
+    ),
+    ("semicolon", re.compile(r";"), "write two sentences"),
+    (
+        "contraction",
+        re.compile(r"\b(?:you|we|it|that|there|what|who|he|she|they|let|this|where)'s\b|\b\w+(?:n't|'re|'ve|'ll|'d)\b"),
+        "write the two words out",
+    ),
+    (
+        "weak modal",
+        re.compile(r"\b(should|would|may|might|could)\b", re.I),
+        "use can, will or must; a required should becomes must, an optional one goes away",
+    ),
+    (
+        "present perfect",
+        re.compile(r"\b(has|have|had)\s+(?:been\s+)?\w*(?:ed|en)\b", re.I),
+        "use a simple tense",
+    ),
+    (
+        "-ing clause after a comma",
+        re.compile(
+            r",\s*(making|creating|allowing|ensuring|giving|leaving|showing|producing"
+            r"|needing|running|probing|relabeling|keeping|putting|writing|reading"
+            r"|blocking|adding|removing|changing|turning|hiding|costing)\b",
+            re.I,
+        ),
+        "start a new sentence",
+    ),
+    (
+        "word that carries no fact",
+        re.compile(
+            r"\b(simply|seamless(?:ly)?|robust|power(?:ful|ly)|comprehensive|crucial"
+            r"|pivotal|paramount|leverage[sd]?|utilize[sd]?|facilitate[sd]?|harness"
+            r"|enhance[sd]?|underscore[sd]?|emphasize[sd]?|showcase[sd]?|foster"
+            r"|bolster|streamlin(?:e|ing)|testament|tapestry|synergy|intricate|realm[s]?"
+            r"|boasts|furthermore|moreover|holistic|meticulous(?:ly)?|myriad|plethora"
+            r"|delv(?:e|ing)|dive[sd]? into)\b",
+            re.I,
+        ),
+        "delete it, or state the fact it stands in for",
+    ),
+    (
+        "filler phrase",
+        re.compile(
+            r"\b(in order to|it is worth noting|note that|in the event that|due to the"
+            r" fact that|prior to|out of the box|under the hood|grace(?:ful|fully)|as"
+            r" needed|as necessary|enables you to|allows you to|e\.g\.|i\.e\.|etc\.|and/or)\b",
+            re.I,
+        ),
+        "write the plain phrase",
+    ),
+    ("just", re.compile(r"(?<!not )\bjust\b", re.I), "delete it, or write only"),
+)
+
+
+def lint_prose(book: Book, book_dir: Path) -> list:
+    """Report the prose rules from book/AUTHORING.md that the builder can check."""
+    findings = []
+    for entry in book.entries:
+        source = book_dir / entry.file
+        if not source.is_file():
+            continue
+        for line_no, prose in prose_lines(source.read_text(encoding="utf-8")):
+            for name, pattern, fix in PROSE_RULES:
+                for match in pattern.finditer(prose):
+                    context = prose[max(0, match.start() - 30) : match.end() + 30].strip()
+                    findings.append(
+                        f"{entry.file}:{line_no}: prose ({name}): {match.group(0)!r} in"
+                        f" ...{context}... -> {fix}"
+                    )
+    return findings
+
+
+def shape_problems(book: Book, book_dir: Path) -> list:
+    """Enforce the chapter contract that book/AUTHORING.md states.
+
+    Only a numbered chapter carries the contract. The front matter and the appendices
+    have their own shape.
+    """
+    problems = []
+    for entry in book.entries:
+        if not entry.number:
+            continue
+        source = book_dir / entry.file
+        if not source.is_file():
+            continue
+        lines = source.read_text(encoding="utf-8").split("\n")
+        text = "\n".join(lines)
+        heading = next((n for n, line in enumerate(lines) if line.startswith("# ")), None)
+        dek = next((n for n, line in enumerate(lines) if line.startswith("> ")), None)
+        if dek is None or (heading is not None and dek < heading):
+            problems.append(
+                f"{entry.file}: a chapter needs a dek, the first > blockquote after the H1"
+            )
+        for kind in ("why", "try"):
+            if not re.search(r"^:{3,}\s*" + kind + r"\b", text, re.M):
+                problems.append(f"{entry.file}: a chapter needs a ::: {kind} callout")
+        if not re.search(r"^## What you can do now\s*$", text, re.M):
+            problems.append(
+                f"{entry.file}: a chapter closes with '## What you can do now'"
+            )
+    return problems
+
+
+def span_claim(token: str) -> str | None:
+    """Return the repository path a code span claims, or None if it claims none.
+
+    A span is a claim only when its first component names a repository directory or
+    a book part. A claim resolves from the repository root or from the chapter, the
+    way a link does. Host paths (`/var/log/audit/audit.log`), distro paths
+    (`system/init.if`), placeholders and globs claim nothing, so a chapter writes a
+    repository path from the repository root or from the chapter, never in shorthand.
+    """
     candidate = token.strip().rstrip(".,;:")
     if not candidate or "/" not in candidate:
-        return False
+        return None
     if candidate.startswith(("/", "~", "-", "http", "$")):
-        return False
+        return None
     # placeholders, globs and shell fragments are not paths
     if any(ch in candidate for ch in "<>*%{}|()$'\"`"):
-        return False
+        return None
     if candidate.endswith("/"):
-        return False
-    head = candidate.split("/", 1)[0]
-    if head not in _REPO_DIRS:
-        return False
-    return bool(re.search(r"\.[A-Za-z0-9]+$", candidate))
+        return None
+    if not re.search(r"\.[A-Za-z0-9]+$", candidate):
+        return None
+    if candidate.split("/", 1)[0] not in _CLAIM_ROOTS:
+        return None
+    return candidate
+
+
+def resolve_claim(linker: "Renderer", candidate: str) -> str | None:
+    """Resolve a claimed path from the repository root, the book root or the chapter."""
+    if (REPO_ROOT / candidate).exists():
+        return candidate
+    for path in linker.repo_relative(candidate) or "", candidate:
+        resolved = path.split("#")[0]
+        if resolved and (REPO_ROOT / resolved).exists():
+            return resolved
+    return None
 
 
 def check(book: Book, book_dir: Path):
     problems, warnings, _ = render_all(book, book_dir, None)
+    problems.extend(shape_problems(book, book_dir))
     pages = {entry.slug: entry for entry in book.entries}
 
     for entry in book.entries:
@@ -1069,17 +1387,6 @@ def check(book: Book, book_dir: Path):
         in_fence = False
         marker = ""
         for line_no, line in enumerate(source.read_text(encoding="utf-8").split("\n"), 1):
-            for token in _SPAN.findall(line):
-                if not looks_like_repo_path(token):
-                    continue
-                candidate = token.strip().rstrip(".,;:")
-                if candidate in _PATH_EXCEPTIONS:
-                    continue
-                if not (REPO_ROOT / candidate).exists():
-                    problems.append(
-                        f"{entry.file}:{line_no}: names a repository path that does not "
-                        f"exist: {candidate}"
-                    )
             if in_fence:
                 for called in _PY_CALL.findall(line):
                     if not (REPO_ROOT / called).is_file():
@@ -1088,8 +1395,8 @@ def check(book: Book, book_dir: Path):
                         )
                         continue
                     if called not in _CLI_MODULES:
-                        source = (REPO_ROOT / called).read_text(encoding="utf-8")
-                        _CLI_MODULES[called] = '__name__ == "__main__"' in source
+                        module_text = (REPO_ROOT / called).read_text(encoding="utf-8")
+                        _CLI_MODULES[called] = '__name__ == "__main__"' in module_text
                     if not _CLI_MODULES[called]:
                         problems.append(
                             f"{entry.file}:{line_no}: {called} has no __main__ guard, so "
@@ -1103,12 +1410,31 @@ def check(book: Book, book_dir: Path):
                 in_fence = True
                 marker = fence.group(1)
                 if not fence.group(2):
-                    warnings.append(f"{entry.file}:{line_no}: code fence without a language")
+                    problems.append(
+                        f"{entry.file}:{line_no}: code fence without a language; write "
+                        "```text for prose output or a directory tree"
+                    )
                 continue
             if re.match(r"^\s*=+\s*$", line):
                 problems.append(
                     f"{entry.file}:{line_no}: setext headings (=== underline) are not supported"
                 )
+            if re.match(r"^\[\^[^\]]+\]:", line) or re.search(
+                r"\[\^[^\]]+\]", _SPAN.sub("", line)
+            ):
+                problems.append(
+                    f"{entry.file}:{line_no}: footnotes are not part of the subset; write "
+                    "the note inline or put it in a callout"
+                )
+            for token in _SPAN.findall(line):
+                candidate = span_claim(token)
+                if candidate is None or candidate in _PATH_EXCEPTIONS:
+                    continue
+                if resolve_claim(linker, candidate) is None:
+                    problems.append(
+                        f"{entry.file}:{line_no}: names a repository path that does not "
+                        f"exist: {candidate}"
+                    )
             for match in _LINK.finditer(line):
                 target = match.group(2)
                 if target.startswith(("http://", "https://", "mailto:")):
