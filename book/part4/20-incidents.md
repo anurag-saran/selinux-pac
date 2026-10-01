@@ -110,6 +110,10 @@ After the gate is skipped, the role does four things. It re-enables the dontaudi
 
 The guard rails do not prevent an outage. They record that the operator accepted the risk. That is why the change ticket is the only thing on this line: it is the audit trail, not a safety net.
 
+::: why Why the ticket survives the skip
+`force_enforce=true` removes the soak gate, not the record of it. A skipped gate with a ticket is a decision someone can read months later. A skipped gate without one is a mystery with an outage attached.
+:::
+
 ## The app team's side: the incident card
 
 The app team is the one who has to live with the outcome. The card you send them holds the minimum the app team needs to know, and nothing they must not hear.

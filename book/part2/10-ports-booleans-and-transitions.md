@@ -240,7 +240,11 @@ python3 cli/deterministic_gen.py --explain \
   --existing-fc selinux/myapp.fc
 ```
 
-Run it. The output for `02-port-bind` is the same `private_port` verdict you just read. Run it again for `04-boolean-network-connect` and you get the same boolean verdict and the same `httpd_can_network_connect` summary line: the generator does not choose the answer. It writes the same answer you write.
+Run it. The output for `02-port-bind` is the same `private_port` verdict you read above. Run it again for `04-boolean-network-connect` and you get the same boolean verdict and the same `httpd_can_network_connect` summary line: the generator does not choose the answer. It writes the same answer you write.
+
+::: try Try it on the laptop
+The block above needs no host. It reads one fixture log and writes only into `policy_out/`. Path A covers it, with Python 3 and PyYAML (`make deps`). Point `--avc-log` at another case directory and the verdict changes with it.
+:::
 
 ## What you can do now
 

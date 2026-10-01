@@ -10,6 +10,10 @@ But the developer did not compile it. That happens only on rhel-qa, where `selin
 
 The admin on rhel-qa checks everything else: syntax correctness, missing allows, and a dontaudit surprise.
 
+::: why Why a host-free workflow is worth having
+The two checks that need no host catch the two failures a generator can hide: a forbidden shape that came back, and a version that moved in one file only. Both cost one assert to write and a review cycle to find.
+:::
+
 ## What CI may do and what it must never do
 
 The workflow [`.github/workflows/selinux-policy-ci.yml`](repo:.github/workflows/selinux-policy-ci.yml) runs on `runs-on: ubuntu-latest`. The runner has bash and git. It has no SELinux kernel, no `audit.log`, no `semodule`, no `/var/lib/selinux`, and no production credentials. The boundary is:

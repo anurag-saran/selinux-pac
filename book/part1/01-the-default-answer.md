@@ -121,3 +121,12 @@ host to learn on.
 
 Chapter 2 explains what "domain" and "labeled" mean at the kernel level, so that the sentence
 above reads as precisely as it looks.
+
+## What you can do now
+
+- **Name the three questions that decide the fix.** Evidence, blast radius, undo. The first is an
+  AVC line, the second is a type name, and the third is a playbook.
+- **Say what `setenforce 0` costs.** It moves no labels. The path nobody labeled stays unlabeled,
+  so the same bug ships again on a host with no confinement layer.
+- **Tell a quiet host from an unconfined one.** `ausearch -m avc -ts recent` prints nothing in both
+  cases. Chapter 4 shows how to tell them apart.

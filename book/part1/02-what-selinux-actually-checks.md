@@ -167,6 +167,15 @@ usually not to add it. Chapter 4 explains what to do with the four values. Chapt
 the better fix for this one is a label on `/var/spool/payments`. Chapter 13 shows how the
 generator makes that decision for you.
 
+## What you can do now
+
+- **Name the four values in a denial.** Source type, target type, class, permission. One AVC line
+  carries all four, and one allow rule answers exactly one of them.
+- **Say what permissive changes.** The kernel still evaluates the tuple and still writes the AVC.
+  It stops blocking the operation, and `permissive=1` is how that shows in the log.
+- **Say who owns the unit of enforcement.** It is the domain, not the host. Chapter 5 turns that
+  into the two-layer rule the playbooks enforce.
+
 ::: note What comes next
 Chapter 3 opens the label itself. It covers the four colon-separated fields and why only the third
 one matters for enforcement. It also shows how a file gets its label in the first place.

@@ -10,6 +10,10 @@ The fix is categories. Each container gets a unique MCS category pair: `s0:c123,
 
 This is how RHEL ships the container domain by default. Every process that Podman or CRI-O starts carries the type field `container_t` and a level that is unique to that run of the container. systemd-nspawn is the odd one out. It applies an SELinux context only when you hand it one (`-Z`, or `SELinuxContext=` in a unit). Its own documentation supplies a hand-written `svirt_lxc_net_t:s0:c0,c1` instead of assigning `container_t` per run. The reference that names it is the RHEL Using SELinux chapter on container policy ([Using SELinux, Chapter 9](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/8/html/using_selinux/creating-selinux-policies-for-containers_using-selinux)). That chapter says the `container_t` type is the default domain for every container on the host. It also says `udica` can generate a custom policy for a container. The container then runs under its own type, instead of sharing `container_t` with every other container on the box.
 
+::: why Why the type is not enough
+A type says what a process is. A category says which container it is. Two containers that share a type are one principal to the kernel, so no allow rule can tell them apart.
+:::
+
 ## Reading those labels
 
 The whole picture is legible from the host's CLI. Two commands give you every field.
