@@ -9,7 +9,7 @@ git numbers.
 | Name | Work in this repository | Commits on `main` |
 |---|---|---|
 | **anurag-saran** | Started the project. Writes the running parts: `cli/`, `selinux/`, `ansible/`, `packaging/`, `scripts/`, `tests/`, `config/`, `demo/`, and the numbered pages in `docs/`. Holds `/selinux/` and `/ansible/` in `.github/CODEOWNERS`. | 74 (2026-09-12 to 2026-09-18) |
-| **baristahaus** | Wrote the book and its tooling: `book/`, `tools/book/build.py`, the `book`, `book-check` and `book-serve` targets in `Makefile`, and `.github/workflows/book.yml`. Rewrote the manual and the docs pages in plain English, then corrected the book against the sources it quotes. | 27 (2026-09-18 to 2026-09-19) |
+| **baristahaus** | Wrote the book and its tooling: `book/`, `tools/book/build.py`, the `book`, `book-check` and `book-serve` targets in `Makefile`. Rewrote the manual and the docs pages in plain English, then corrected the book against the sources it quotes. | 27 (2026-09-18 to 2026-09-19) |
 
 Run [Count it yourself](#count-it-yourself) to repeat every number above.
 

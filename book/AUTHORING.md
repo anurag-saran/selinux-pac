@@ -159,12 +159,12 @@ when the reader has a question left, not to reach a count.
 
 ## Publishing
 
-`.github/workflows/book.yml` validates every pull request that touches `book/` or
-`tools/book/`, and deploys `main` to GitHub Pages. Enable it once under
-*Settings → Pages → Build and deployment → Source: GitHub Actions*. Until you do, the deploy job
-has nowhere to publish and the site answers 404.
+The book is built and served from a checkout. No CI workflow publishes it, so `make book` and
+`make book-serve` are the whole path from source to a page in a browser. `make check` runs
+`book-check` with the rest of the repository health checks, so a broken link still fails the
+build before it reaches a reader.
 
-`book.toml` carries `repo`, `branch` and `site_url`: the URLs a published book prints. They point
+`book.toml` carries `repo`, `branch` and `site_url`: the URLs a built book prints. They point
 at the upstream repository, so a preview built from a fork prints links that 404 until the change
 merges. Overwrite them for a preview without editing the file:
 

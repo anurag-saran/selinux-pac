@@ -4,11 +4,11 @@
 
 The **customer talk** is **202** — three applications (vendor Tomcat already enforcing, inherited Tomcat you tune, Spring Boot you generate). Finish **[101](docs/training/101-SELINUX.md)** first. The two-host generate/canary/soak pipeline is **203** (**shopapi**). Offline `make check` uses **deterministic fixtures** (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules — not a live Flask app. This tool repo is the generator, CI helpers, and AAP path. Numbered catalog: [docs/README.md](docs/README.md).
 
-> **The book.** *SELinux for Developers and Administrators* — a full HTML manual built from this repository, from one denial to a reviewed module in production. `make book` builds it into `site/`, `make book-serve` reads it at `http://127.0.0.1:8080` (`BOOK_HOST=0.0.0.0 BOOK_PORT=9000 make book-serve` to open it from another device on your network — it prints the address), `make book-check` validates every link, anchor and repository reference. Sources live in [`book/`](book/), the guide for adding chapters is [book/AUTHORING.md](book/AUTHORING.md), and `.github/workflows/book.yml` publishes it to GitHub Pages.
+> **The book.** *SELinux for Developers and Administrators* — a full HTML manual built from this repository, from one denial to a reviewed module in production. `make book` builds it into `site/`, `make book-serve` reads it at `http://127.0.0.1:8080` (`BOOK_HOST=0.0.0.0 BOOK_PORT=9000 make book-serve` to open it from another device on your network — it prints the address), `make book-check` validates every link, anchor and repository reference. Sources live in [`book/`](book/), and the guide for adding chapters is [book/AUTHORING.md](book/AUTHORING.md).
 
 | You are | Start here |
 |---------|------------|
-| **Reading the book** | `make book-serve`, or the published site (GitHub Pages, `book.yml` workflow) |
+| **Reading the book** | `make book-serve` |
 | **Writing a chapter** | [book/AUTHORING.md](book/AUTHORING.md) + [book/book.toml](book/book.toml) |
 | **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/training/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
