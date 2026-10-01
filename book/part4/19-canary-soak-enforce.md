@@ -39,7 +39,7 @@ The role's `canary.yml` does these things in order, and every one of them is a t
 4. **Label and verify paths**. Make sure that the application directories exist, run `restorecon` on them, then check the contexts before any service restarts.
 5. **Record the clock**. Write the canary timestamp to the soak marker (`soak_marker_file`, by default `<var_dir>/selinux_canary_deployed_at`). This runs before the restart on purpose. The marker is the left edge of the AVC window that step 7 reads, so the denials of the restart itself are inside it.
 6. **Restart and probe**. Reset the systemd failure counters, restart the application services, run `restorecon` on the runtime directory, then run the unified endpoint smoke:
-   `wait_for_endpoints.sh` against the manifest's endpoints, probing `http_probe_host` from the
+   `wait_for_endpoints.sh` against the manifest's endpoints. It probes `http_probe_host` inside the
    retry window baked into the task (`--retries 15 --delay 2`). Lengthening that window today
    means editing `ansible/roles/selinux_pac/tasks/canary.yml`, not the inventory.
 7. **Read the fresh window**. `monitor_avc.sh --marker-file <that marker>` prints the raw count and the net-new count for everything since the clock started. The thresholds are `canary_max_avc` and `canary_max_net_new`. If a count passes either threshold, the block drops into its `rescue`: `semodule -B`, then a failed run.

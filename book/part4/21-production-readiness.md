@@ -13,7 +13,7 @@ The readiness check is a tuple of four values, and the gate at `scripts/check_so
 | Piece | What it answers | Measured by |
 |-------|-----------------|-------------|
 | **Evidence** | No net-new access need surfaced since canary install | `soak_monitor.yml` net-new count, or raw AVC lines when `sesearch` is unavailable |
-| **Verification** | On-disk labels, running systemd units, scheduled jobs that also fire | `verify_file_contexts.sh` dry-run, `systemctl is-active`, `monitor_avc.sh` for `logrotate_t` |
+| **Verification** | On-disk labels, systemd units that are active, scheduled jobs that also fire | `verify_file_contexts.sh` dry-run, `systemctl is-active`, `monitor_avc.sh` for `logrotate_t` |
 | **Ownership** | Who watches a denial that slips past soak and shows up in production | The on-call admin with `emergency_rollback.yml` signed off, the app team with the deploy report JSON |
 | **Reversibility** | How fast the domain can return to permissive after enforce | `emergency_rollback.yml` sets permissive first. `dnf downgrade` follows if `rollback_dnf_version` is set |
 
@@ -109,9 +109,9 @@ A readiness review does not catch new bugs. It catches assumptions.
 | **Soak passed because traffic never reached the feature** | Net-new count = 0, and the deploy report passes, but nobody queried the feature that introduced the new allow in production. | Clean gate, and the new allow sits dormant. |
 | **The vendor policy already exists** | The generator refuses JWS, and a custom module is generated anyway. | `jws6_tomcat` is already loaded, so the custom `myapp_t` half-duplicates and overrides the vendor policy. |
 
-The gate does not require zero AVCs. It requires zero net-new. The deploy report does not require every port to have traffic. It requires every declared port to have responded. The blast-radius classifier does not certify a change. It names the tier, and the operator absorbs the risk.
+The gate does not require zero AVCs. It requires zero net-new. The deploy report does not require every port to have traffic. It requires an answer on every declared port. The blast-radius classifier does not certify a change. It names the tier, and the operator absorbs the risk.
 ::: why The soak gate is the operator's acceptance of risk
-Each phase buys evidence, and each phase has a limit. The policy covers every code path that the real traffic will hit. The label exists on every host where the code will run. The port is reachable. The traffic exercised the new feature. Each of those is a claim that a phase makes about readiness, and each claim has a limit. The operator fills out the checklist before the flip. Each row is either evidence the gate has already produced, or evidence the operator has produced. The deploy report is the checklist, and the accountable person is the row owner.
+Each phase buys evidence, and each phase has a limit. The policy covers every code path that the real traffic will hit. The label exists on every host where the code will run. The port is reachable. The traffic exercised the new feature. Each of those is a claim that a phase makes about readiness, and each claim has a limit. The operator fills out the checklist before the flip. Each row is either evidence a gate already produced, or evidence the operator produced. The deploy report is the checklist, and the accountable person is the row owner.
 ::::
 
 ::: note The honest case where nothing changed

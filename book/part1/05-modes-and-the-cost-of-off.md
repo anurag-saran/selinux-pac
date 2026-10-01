@@ -1,6 +1,6 @@
 # Modes, and the Cost of Off
 
-> A host is either enforcing, permissive for one domain, or disabled. The moment it is disabled, everything you spent the last chapters learning about becomes unreadable. Denials disappear, relabeling returns, and the next incident is decided in minutes instead of days. This chapter shows how to read each mode. It explains why the repository keeps the host enforcing while only the app domain is permissive. It also names what is on the line when you flip each switch.
+> A host is either enforcing, permissive for one domain, or disabled. The moment it is disabled, everything you spent the last chapters learning about becomes unreadable. Denials disappear. Relabeling comes back. The next incident is decided in minutes instead of days. This chapter shows how to read each mode. It explains why the repository keeps the host enforcing while only the app domain is permissive. It also names what is on the line when you flip each switch.
 
 ## Four states, each reachable with one command
 
@@ -97,7 +97,7 @@ Enforcing-to-permissive is cheap: a single command, no relabel. The way back is 
 | Transition | Cost | Why it matters |
 |---|---|---|
 | **Enforcing → permissive (one domain)** | one `semanage permissive -a` | cheap. No filesystem change |
-| **Permissive (one domain) → enforcing** | one `semanage permissive -d`, then `restorecon -Rv` over the application's paths | cheap for the mode. The relabel is for files created while permissive that picked up the wrong type. So `enforce.yml` relabels `install_root`, `var_dir` and `log_dir`, and the runtime dir once the service has restarted |
+| **Permissive (one domain) → enforcing** | one `semanage permissive -d`, then `restorecon -Rv` over the application's paths | cheap for the mode. The relabel is for files created while permissive that picked up the wrong type. So `enforce.yml` relabels `install_root`, `var_dir` and `log_dir`, and the runtime dir once the service restarts |
 | **Enforcing → permissive (whole system, `setenforce 0`) → enforcing** | nothing, both ways | free. `setenforce` moves no labels |
 | **Enforcing → disabled → enforcing** | full filesystem relabel | expensive. A disabled kernel writes no labels at all, so every inode is suspect when it returns (`/.autorelabel`, then a reboot) |
 

@@ -14,7 +14,7 @@ Every service on a host sits in exactly one of three situations. The situation d
 | **Inherited** (Tomcat you inherited at /opt/appdata, port 8090, outbound gateway) | you are allowed to tune, but you still run on a shared vendor domain | host commands plus a label on your own paths. Do not rewrite the vendor module. | `ausearch` against your own content and port, on the same vendor domain as the original install |
 | **New** (Spring Boot / shopapi / your app) | you write the module from observed AVCs | the full module. The generator refuses to generate until the pre-flight classifies `none`. | `ausearch` from a freshly confined domain. The generator applies `config/boolean_hints.yml` and `sesearch` before it writes a direct allow |
 
-App A is vendor-enforcing Tomcat. App B is Tomcat you inherited, running as the same `jws6_tomcat_t`, but its content lands at `/opt/appdata` and it speaks on port 8090. shopapi is the new thing: no vendor module, so generation proceeds. The same Tomcat domain covers both App A and App B. If you need isolation, use containers or separate instances.
+App A is vendor-enforcing Tomcat. App B is Tomcat you inherited. It runs as the same `jws6_tomcat_t`, but its content lands at `/opt/appdata` and it speaks on port 8090. shopapi is the new thing: no vendor module, so generation proceeds. The same Tomcat domain covers both App A and App B. If you need isolation, use containers or separate instances.
 
 ## The pre-flight and why a second copy is worse
 

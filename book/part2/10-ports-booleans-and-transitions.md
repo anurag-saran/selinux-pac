@@ -129,7 +129,7 @@ $ semanage boolean -l | grep httpd_can_network_connect
 httpd_can_network_connect        (off  ,  off)  Allow httpd to connect to the network
 ```
 
-The decision rule is simple. A boolean is right when the access is a policy choice the administrator owns. A boolean is wrong when it just hides a missing rule.
+The decision rule is simple. A boolean is right when the access is a policy choice the administrator owns. A boolean is wrong when it only hides a missing rule.
 
 `httpd_can_network_connect` lets HTTP traffic leave the box. The operator agrees that this happens on every production host that runs the application. The boolean is a choice the operator makes, not a gap in the policy. The operator is responsible for the outbound HTTP. Toggle it.
 

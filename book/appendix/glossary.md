@@ -60,5 +60,5 @@ a way to observe that decision.
   the first chapter where it appears.
 - Run `getenforce`, `ls -Z`, `ps -eZ`, and `id -Z`. Each one answers a different field of
   the context.
-- Read every term you just learned against the rule that names it: a `allow` rule always
+- Read every term in this glossary against the rule that names it: a `allow` rule always
   names a source type, a target type, a class, and a set of permissions.

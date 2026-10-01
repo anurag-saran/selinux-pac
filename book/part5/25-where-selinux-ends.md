@@ -21,7 +21,7 @@ On a modern RHEL host, every operation crosses several independent decision laye
 Each row is its own question, and the denial of that row is the only denial the row sees. The row does not see anything else it is asked about.
 
 :::: why The failure mode of this book's approach
-Defense in depth means no single layer is asked to be sufficient. The failure mode of this book's approach is to treat SELinux as the only control that matters. Then the policy allows, the application executes, the file is read, and nobody has asked whether it was correct. The other layers cover each of those gaps.
+Defense in depth means no single layer is asked to be sufficient. The failure mode of this book's approach is to treat SELinux as the only control that matters. Then the policy allows, the application executes, the file is read, and nobody asked whether it was correct. The other layers cover each of those gaps.
 ::::
 
 ## What SELinux does not look at
@@ -33,7 +33,7 @@ The decision tuple is the whole model. There are five questions that the tuple l
 | what is the content of the file or request? | the application semantics | the policy asks about permission, not correctness |
 | is the write correct, or is a different write the right one? | the application state | the policy grants `write`, and the application decides what it writes |
 | is a socket peer trustworthy? | the transport-level trust of the application | the policy decides whether the domain initiates the connection, not whether the peer is trusted |
-| is an authenticated user authorized? | the authentication of the application | the user has logged in, and the domain has the allows. What the user does is the responsibility of the application. |
+| is an authenticated user authorized? | the authentication of the application | the user logged in, and the domain has the allows. What the user does is the responsibility of the application. |
 | what are the arguments to the syscall beyond the mediated class and permission? | the VFS / socket layer | the LSM hook asks the tuple, and the arguments of the syscall are not visible to the policy |
 
 A `write` is a `write` whatever it contains. A `name_bind` is a `name_bind` whatever the port. A `connect` is a `connect` whatever the peer. The job of the policy is to own those four values. A different layer owns everything else. That is what "mandatory" means: the policy does not consult the semantics, only the tuple.

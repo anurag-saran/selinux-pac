@@ -64,7 +64,7 @@ rather than requiring one.
 Both verdicts address a mislabeled file. The distinction is structural:
 
 - **`fc_fix`** means the `.fc` is *missing* a line for this path. The generator writes a `gen_context` line into the `.fc`.
-- **`fc_drift`** means the `.fc` *already* covers the path with a different regex. The file on disk has drifted away from the regex. No `.te` or `.fc` change is needed. Only `restorecon`.
+- **`fc_drift`** means the `.fc` *already* covers the path with a different regex. The label on disk drifted away from the regex. No `.te` or `.fc` change is needed. Only `restorecon`.
 
 **`fc_fix`:** from `docs/examples/fixtures/deterministic/06-fc-missing-line/avc.log`:
 
@@ -108,7 +108,7 @@ tclass=file permissive=1
 ]
 ```
 
-The `.fc` already has a `gen_context` line covering `/var/lib/myapp(/.*)?`. The generator's `existing_fc_covers` check succeeds, so the verdict is `fc_drift`: *the file on disk has drifted, restore it, do not grant access to var_lib_t*. No `.fc` line is written.
+The `.fc` already has a `gen_context` line covering `/var/lib/myapp(/.*)?`. The generator's `existing_fc_covers` check succeeds, so the verdict is `fc_drift`: *the file on disk drifted, restore it, do not grant access to var_lib_t*. No `.fc` line is written.
 
 ## private_port
 

@@ -60,7 +60,7 @@ The most common mistake is piping `audit2allow` directly into `semodule -i`. Tha
 
 ## Why adding one rule reveals the next denial
 
-A rule names a tuple: source type, target type, class, permissions. Each hook on the kernel makes an independent decision. When you add an allow for `write` on a file, the next hook that runs decides again: `open`, or `getattr`, or `append`. If the first rule names only `file:write`, the code path still needs `dir:add_name` to create the file first. That second request trips the second denial. The same holds when the code path needs `file:open` to read back what it just wrote.
+A rule names a tuple: source type, target type, class, permissions. Each hook on the kernel makes an independent decision. When you add an allow for `write` on a file, the next hook that runs decides again: `open`, or `getattr`, or `append`. If the first rule names only `file:write`, the code path still needs `dir:add_name` to create the file first. That second request trips the second denial. The same holds when the code path needs `file:open` to read back what it wrote.
 
 ```text
 # Rule 1 — the quick fix:
