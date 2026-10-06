@@ -38,12 +38,146 @@ SSH to the SELinux host. Repo root = directory with `Makefile` and `scripts/`.
 
 ```bash
 cd ~/selinux-pac   # or your clone path
+```
+
+Pick **one** way to stand shopapi up. Both end in the same place: the app listens on port **8091**, the process label is `shopapi_t`, the host stays **Enforcing**, and only that domain is log-only (labs 1–4). Words for each command are in **[102](102-SELINUX_BASICS.md)**.
+
+### One command
+
+`scripts/demo_bootstrap.sh --shopapi-only` runs every step below. `--shopapi-only` skips Tomcat.
+
+```bash
 sudo bash scripts/demo_bootstrap.sh --shopapi-only
 ```
 
-That installs the JVM, a `shopapi_exec_t` launcher at `/opt/shopapi/bin/java`, `SELinuxContext=shopapi_t`, the **types-only** seed, and `semanage permissive -a shopapi_t`. The **host** stays Enforcing. Only the **app domain** logs denials instead of blocking (labs 1–4).
+### The same work, one command at a time
 
-Already generated on this box? Put the seed back, then bootstrap again:
+Use this when you want to see each step. Skip it if you already ran the one command above.
+
+**1. Install the tools.** Maven builds the app. Java runs it. `selinux-policy-devel` compiles a `.te` into a `.pp`.
+
+```bash
+sudo dnf install -y maven java-17-openjdk-devel python3 python3-pyyaml selinux-policy-devel
+```
+
+**2. Create the Unix account the service will run as.** This is a Linux user. It is not the SELinux user `system_u`.
+
+```bash
+sudo groupadd --system shopapi
+sudo useradd --system --gid shopapi --home-dir /opt/shopapi --shell /sbin/nologin shopapi
+```
+
+If the account already exists, `groupadd` / `useradd` print "already exists". Continue.
+
+**3. Create the directories.**
+
+```bash
+sudo mkdir -p /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi /var/spool/shopapi
+```
+
+| Path | What it holds |
+|------|----------------|
+| `/opt/shopapi` | The program |
+| `/var/lib/shopapi` | State kept across reboots |
+| `/var/log/shopapi` | Logs |
+| `/run/shopapi` | Pid file. Gone after reboot. |
+| `/var/spool/shopapi` | Lab 5's path. Left out of the first policy on purpose. |
+
+**4. Build the app and copy the jar.**
+
+```bash
+cd ~/selinux-pac/demo/shopapi
+sudo mvn -q -DskipTests package
+sudo cp -f target/shopapi.jar /opt/shopapi/shopapi.jar
+sudo chown -R shopapi:shopapi /opt/shopapi /var/lib/shopapi /var/log/shopapi /var/spool/shopapi
+cd ~/selinux-pac
+```
+
+**5. Give shopapi its own `java`, and tell systemd the process label.** `/usr/bin/java` is a shared binary, type `bin_t`. A confined `shopapi_t` process is not allowed to execute it. Copying Java under `/opt/shopapi` lets that copy be labeled `shopapi_exec_t`.
+
+```bash
+java_bin=$(readlink -f /usr/bin/java)
+java_home=$(cd "$(dirname "$java_bin")/.." && pwd)
+sudo mkdir -p /opt/shopapi/bin /opt/shopapi/lib /opt/shopapi/conf
+sudo cp -f "$java_bin" /opt/shopapi/bin/java
+sudo chmod 0755 /opt/shopapi/bin/java
+sudo cp -a "$java_home/lib/." /opt/shopapi/lib/
+sudo cp -a "$java_home/conf/." /opt/shopapi/conf/
+sudo chown -R shopapi:shopapi /opt/shopapi
+```
+
+`/etc/shopapi.env` is the port and the directories. `/etc/systemd/system/shopapi.service` starts the private Java and sets the process label from **102** §3.
+
+```bash
+sudo tee /etc/shopapi.env >/dev/null <<'EOF'
+SHOPAPI_PORT=8091
+SHOPAPI_STATE_DIR=/var/lib/shopapi
+SHOPAPI_LOG_DIR=/var/log/shopapi
+SHOPAPI_SPOOL_DIR=/var/spool/shopapi
+EOF
+
+sudo tee /etc/systemd/system/shopapi.service >/dev/null <<'EOF'
+[Unit]
+Description=shopapi Spring Boot (SELinux PaC demo)
+After=network.target auditd.service
+Wants=auditd.service
+
+[Service]
+Type=simple
+User=shopapi
+Group=shopapi
+EnvironmentFile=-/etc/shopapi.env
+WorkingDirectory=/opt/shopapi
+Environment=JAVA_HOME=/opt/shopapi
+SELinuxContext=system_u:system_r:shopapi_t:s0
+ExecStart=/opt/shopapi/bin/java -jar /opt/shopapi/shopapi.jar
+Restart=on-failure
+RestartSec=5
+StateDirectory=shopapi
+LogsDirectory=shopapi
+RuntimeDirectory=shopapi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+**6. Compile the types-only seed and load it.** The `.te` declares the type names. It has almost no `allow` lines yet.
+
+```bash
+sudo env POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
+  bash scripts/compile_and_validate.sh selinux/shopapi
+sudo semodule -i selinux/shopapi/shopapi.pp
+```
+
+**7. Paint those labels onto the files already on disk.**
+
+```bash
+sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+```
+
+**8. Label port 8091, and put only `shopapi_t` on the log-only list.** `getenforce` stays `Enforcing`.
+
+```bash
+sudo semanage port -a -t shopapi_port_t -p tcp 8091
+sudo semanage permissive -a shopapi_t
+```
+
+If the port is already labeled, `semanage port -a` says it is defined. Continue with:
+
+```bash
+sudo semanage port -m -t shopapi_port_t -p tcp 8091
+```
+
+**9. Start the service.** A line of JSON from `curl` means it is up.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now shopapi.service
+curl -sf http://127.0.0.1:8091/health; echo
+```
+
+Already generated on this box? Put the types-only seed back, then either run the one command again or repeat steps 6–9:
 
 ```bash
 git checkout -- selinux/shopapi/
@@ -60,11 +194,23 @@ Need two VMs from a Mac first? [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST
 
 **Read:** **[102](102-SELINUX_BASICS.md)** §1–4 (labels, the four-part context, `ls -Z` vs `ps -eZ`).
 
-**Type this** (optional, on rhel-qa):
+Type the three commands one at a time, or paste the block. Each one answers a different question.
+
+`getenforce` prints one word: the mode for the **whole machine**. You want `Enforcing`.
 
 ```bash
 getenforce
+```
+
+`ls -Z` lists files and adds the SELinux label (`-Z`). `| head` keeps only the first lines of a long listing.
+
+```bash
 ls -Z /opt/shopapi | head
+```
+
+`ps -e` lists every process. `-Z` adds the label. `| grep shopapi` keeps the line that mentions shopapi.
+
+```bash
 ps -eZ | grep shopapi
 ```
 
@@ -84,11 +230,23 @@ ps -eZ | grep shopapi
 
 **Why:** the talk will say “types-only seed, then allows come from AVCs.” You should have seen that file with your own eyes.
 
-**Type this:**
+Type these one at a time, or paste the block.
+
+`systemctl status` asks systemd whether the service is running. `--no-pager` prints the answer and returns, instead of opening a viewer you have to quit.
 
 ```bash
 systemctl status shopapi --no-pager
+```
+
+`ps -C java` selects processes named `java`. `-o label=,args=` prints only the SELinux label and the command line. The `=` drops the column title. `| head` keeps the first lines.
+
+```bash
 ps -o label=,args= -C java | head
+```
+
+`sed -n '1,32p'` prints lines 1 through 32 of the rule book and then stops. You are checking that the seed names the types and has almost no `allow` lines.
+
+```bash
 sed -n '1,32p' selinux/shopapi/shopapi.te
 ```
 
@@ -106,15 +264,43 @@ sed -n '1,32p' selinux/shopapi/shopapi.te
 
 **Why:** the demo flashes `ausearch` and moves on. You need to read **one** line slowly.
 
-**Type this — `/log` only. Do not curl `/health`, `/state`, or `/feature-spool` yet.**
+Curl **`/log` only.** Leave `/health`, `/state`, and `/feature-spool` for later labs.
+
+`curl` is the client. `-s` hides the progress meter. `-f` makes an HTTP error a failed command. `8091` is shopapi. `echo` prints a blank line so the next output is easy to see.
 
 ```bash
 curl -sf http://127.0.0.1:8091/log
 echo
+```
+
+Then read the denial. One pipeline, or the same stages one at a time.
+
+```bash
 sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 20
 ```
 
-You may see **more than one** line (JVM startup plus the log write). Pick **one** that you can explain. Optional: `sudo ausearch -m avc -ts recent | audit2why | tail -n 40` — that is the human-readable form. We still do not `audit2allow | semodule -i`.
+| Piece | What it does |
+|-------|----------------|
+| `sudo` | The audit log is not readable by a normal login. |
+| `ausearch` | Search that log. |
+| `-m avc` | Only denial messages. |
+| `-ts recent` | The last ten minutes. |
+| `\| grep shopapi_t` | Keep lines whose process type is shopapi. |
+| `\| tail -n 20` | Keep the last 20 of those lines. |
+
+The same search without the filters, if you want to see the raw log first:
+
+```bash
+sudo ausearch -m avc -ts recent
+```
+
+You may see **more than one** line (JVM startup plus the log write). Pick **one** that you can explain.
+
+`audit2why` turns that same search into a shorter English hint. `| tail -n 40` keeps the last 40 lines. Read it. Do not pipe `audit2allow` into `semodule`.
+
+```bash
+sudo ausearch -m avc -ts recent | audit2why | tail -n 40
+```
 
 **How to read one line** (ignore timestamps):
 
@@ -143,28 +329,74 @@ avc:  denied  { write } for ... path="..." \
 
 **Why:** this is the first time you **author** policy. The talk declines the generator twice (App A covered, App B tuned) before this step. Shopapi has no vendor module, so pre-flight lets it through.
 
-**Type this** from repo root (ausearch needs root; `policy_out/` may end up root-owned):
+From the repo root. Pick **one** way to generate. Both write the same files when you pass the same flags.
+
+### One command
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
 ```
 
-If generate **exits 1** and mentions `execmem` / `needs_review`, the JVM asked for a domain-weakening permission. The talk treats that as a CODEOWNERS decision. For this 101 only, continue with:
+| Piece | What it does |
+|-------|----------------|
+| `sudo` | Reading the audit log needs root. `policy_out/` may end up owned by root. |
+| `--app-name shopapi` | Module and domain. The default name is `myapp`, the laptop sample. |
+| `--app-root "$(pwd)"` | This directory. `"$(pwd)"` is the current directory as one argument. |
+| `--apply` | After generation, copy `policy_out/shopapi.te` and `.fc` into `selinux/shopapi/`. |
+
+That command checks that no vendor module already confines shopapi, copies this app's denials into `policy_out/avc.log`, runs the generator, and with `--apply` copies the result into `selinux/shopapi/`.
+
+If it **exits 1** and mentions `execmem` / `needs_review`, the JVM asked for a permission that weakens the domain. For this 101 only, run the same command with one more flag. `--allow-needs-review` writes that permission because it was in the log. Do not type `execmem` into the `.te` yourself if it was not in the log.
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)" --allow-needs-review
 ```
 
-Do not add `execmem` by hand if it was **not** in the log.
+### The same work, one command at a time
 
-**Look at**
+Skip this if you already ran the one command.
+
+**1. Save this app's denials.** `--input-logs` reads the audit log files. `--subject shopapi_t` keeps that process type. `--format raw` is the form the generator reads. `-ts boot` means since boot.
+
+```bash
+sudo mkdir -p policy_out
+sudo ausearch --input-logs -m AVC,USER_AVC -ts boot --subject shopapi_t --format raw | sudo tee policy_out/avc.log >/dev/null
+```
+
+The one command then drops lines that are outside this app's directories. The file you just wrote is the full `shopapi_t` log. For the same module the later labs expect, prefer the one command. This step is here so you can open `policy_out/avc.log` and see the input.
+
+**2. Turn that log into a rule book.** The generator compares the log with the `.te` and `.fc` you already have. It writes `policy_out/`, not `selinux/`, until you copy.
+
+```bash
+cp selinux/shopapi/policy_version.txt policy_out/policy_version.txt
+python3 cli/deterministic_gen.py \
+  --avc-log policy_out/avc.log \
+  --manifest config/shopapi.manifest.yml \
+  --existing-te selinux/shopapi/shopapi.te \
+  --existing-fc selinux/shopapi/shopapi.fc \
+  --out-dir policy_out \
+  --version-file policy_out/policy_version.txt \
+  --bump-version
+```
+
+Add `--allow-needs-review` on that command only when it exits 1 and names `execmem`.
+
+**3. Copy the new rule book and address book into the directory you commit.**
+
+```bash
+sudo cp policy_out/shopapi.te selinux/shopapi/shopapi.te
+sudo cp policy_out/shopapi.fc selinux/shopapi/shopapi.fc
+sudo cp policy_out/policy_version.txt selinux/shopapi/policy_version.txt
+```
+
+**Look at the result** either way. `python3 -m json.tool` pretty-prints the verdicts. `| head -n 80` keeps the first 80 lines. `tail -n 40` prints the last 40 lines of the generated rule book.
 
 ```bash
 python3 -m json.tool policy_out/findings.json | head -n 80
 tail -n 40 policy_out/shopapi.te
 ```
 
-`--apply` copies `policy_out/shopapi.te` and `.fc` into `selinux/shopapi/`. Then compile and load **on this QA box**:
+**Compile and load**, one command at a time. `POLICY_MODULE` and `SELINUX_DOMAIN` tell the script which files to build. `compile_and_validate.sh` rejects dangerous allows, then writes `shopapi.pp`. `semodule -i` loads that package. `restorecon` paints the new labels onto existing files. `semodule -l | grep shopapi` confirms the module name is loaded.
 
 ```bash
 POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
@@ -184,7 +416,9 @@ sudo semodule -l | grep shopapi
 
 **Why:** soak and the generator both care about **net-new** access, not “were there log lines.” Duplicate `allow`s mean you are not tracking what policy already has.
 
-**Type this:**
+Same three actions as lab 2, then generate again. Type them one at a time, or paste the block. Add `--allow-needs-review` to the generate command only if lab 3 needed it.
+
+`curl -sf` calls `/log` again. `echo` prints a blank line. The `ausearch` pipeline is the lab 2 search, with `tail -n 5` keeping five lines instead of twenty. The generate command is the lab 3 one-command path. It should classify the `/log` write as already allowed.
 
 ```bash
 curl -sf http://127.0.0.1:8091/log
@@ -192,8 +426,6 @@ echo
 sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 5
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
 ```
-
-(Add `--allow-needs-review` only if lab 3 needed it.)
 
 **Good sign**
 
@@ -211,13 +443,35 @@ This is the same idea as “soak net-new is 0,” without Ansible.
 
 **Why:** the talk’s outage is `/feature-spool` **after** the first module is enforcing. The file is `/var/spool/shopapi/feature.log` — not in the first-ship module.
 
-**Type this:**
+Type these one at a time, or paste the block.
+
+`semanage permissive -d shopapi_t` takes shopapi off the log-only list. The rest of the machine was already Enforcing.
 
 ```bash
 sudo semanage permissive -d shopapi_t
+```
+
+`semanage permissive -l` lists who is still log-only. `| grep shopapi` looks for this domain. `|| echo ...` runs only when grep finds nothing, and prints the confirmation.
+
+```bash
 sudo semanage permissive -l | grep shopapi || echo "(shopapi_t not on the permissive list — good)"
+```
+
+`curl -sf` fails on an HTTP error, which is what you want to see. `echo "exit=$?"` prints that command's exit code. `$?` is the exit code of the command just before it. A non-zero number means the request failed.
+
+```bash
 curl -sf http://127.0.0.1:8091/feature-spool; echo "exit=$?"
+```
+
+`curl -sS` is silent but still prints an error. There is no `-f`, so you can see the response body. `|| true` keeps the shell going when curl fails.
+
+```bash
 curl -sS http://127.0.0.1:8091/feature-spool || true
+```
+
+The search is lab 2's search. `tail -n 15` keeps the last 15 lines. You want `permissive=0` on the spool denial.
+
+```bash
 sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 ```
 
@@ -235,10 +489,15 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 
 **Why:** a second generate should add **`/var/spool/shopapi`** (label + allow), not replay lab 3.
 
-The lab 5 denials are already in the audit log. Generate from the host (same as lab 3):
+The lab 5 denials are already in the audit log. Use the lab 3 **one command** again, or the lab 3 step-by-step. Add `--allow-needs-review` only if generate exits 1 and names `needs_review`.
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
+```
+
+Then compile, load, relabel, and retry. One at a time, or as this block. `restorecon` now includes `/var/spool/shopapi`, the path lab 5 wrote. `curl -sf` should print the page and exit 0. `echo` prints a blank line after it.
+
+```bash
 POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
   bash scripts/compile_and_validate.sh selinux/shopapi
 sudo semodule -i selinux/shopapi/shopapi.pp
@@ -246,8 +505,6 @@ sudo restorecon -Rv /var/spool/shopapi /opt/shopapi /var/lib/shopapi /var/log/sh
 curl -sf http://127.0.0.1:8091/feature-spool
 echo
 ```
-
-(Again: `--allow-needs-review` only if generate blocks on `needs_review`.)
 
 **Good sign**
 
@@ -285,11 +542,11 @@ Next: **[202](202-DEMO_GUIDE.md)** (`demo_present.sh`). Two-host ship path: **[2
 
 Act 2 will type **host** commands against **vendor** Tomcat (`tomcat_t` or `jws6_tomcat_t`). They never write `selinux/shopapi/`. If you generate a module for Tomcat, you duplicated Red Hat’s policy.
 
-| Symptom | Command family | Example |
-|---------|----------------|---------|
-| Files under `/opt/appdata` have the wrong type | file context + relabel | `sudo semanage fcontext -a -t tomcat_var_lib_t '/opt/appdata(/.*)?'` then `sudo restorecon -Rv /opt/appdata` |
-| Bind on a high port (talk: **8090**) | port mapping | `sudo semanage port -a -t http_port_t -p tcp 8090` |
-| Outbound connect denied, `audit2why` names a boolean | boolean | `sudo setsebool -P tomcat_can_network_connect on` (JWS may name `jws6_can_network_connect`) |
+| Symptom | What you type | Each piece |
+|---------|----------------|-----------|
+| Files under `/opt/appdata` have the wrong type | `sudo semanage fcontext -a -t tomcat_var_lib_t '/opt/appdata(/.*)?'` then `sudo restorecon -Rv /opt/appdata` | `fcontext -a` adds an address-book line. `-t` is the type. `(/.*)?` means the directory and everything under it. `restorecon` paints the files. Type the two commands separately. |
+| Bind on a high port (talk: **8090**) | `sudo semanage port -a -t http_port_t -p tcp 8090` | `-a` adds the port. `-t http_port_t` is the type vendor policy already allows a web server to bind. `-p tcp` is the protocol. |
+| Outbound connect denied, `audit2why` names a boolean | `sudo setsebool -P tomcat_can_network_connect on` | `setsebool` flips a switch the vendor module already contains. `-P` keeps it across reboot. `on` is the value. JWS may name the switch `jws6_can_network_connect`. |
 
 `--tune-report` on a vendor-covered app prints those same three kinds of lines into `policy_out/tune_report.md`. Still **no** `.te`.
 
@@ -301,7 +558,15 @@ You do **not** need App A/B installed to finish labs 0–6. This appendix is so 
 
 This is how `make check` thinks. It does **not** replace labs 2–6.
 
-From **repo root** on any OS:
+From **repo root** on any OS. Each run is one command. The flags are the same every time. Only the log file changes.
+
+| Flag | What it is |
+|------|------------|
+| `python3 cli/deterministic_gen.py` | The generator, without reading a live audit log. |
+| `--explain` | Print the verdict. Do not write a module. |
+| `--avc-log` | A saved denial file in the repo. |
+| `--manifest` | The sample app's paths and name (`myapp`, not shopapi). |
+| `--existing-te` / `--existing-fc` | The sample rule book and address book the verdict is compared with. |
 
 **One denial, classify it** (`fc_drift` — path already in `.fc`, fix is `restorecon`):
 
@@ -341,7 +606,9 @@ Expect **`fc_fix`**. Full golden suite: `make test-fixtures`. Concepts: [204-DET
 
 ## Command cheat sheet
 
-**Status**
+Each command is explained in the lab that first uses it. This list is the short form.
+
+**Status.** `getenforce` is the one-word mode (lab 0). `sestatus` adds the name of the loaded policy. `systemctl status auditd` checks that the service writing `/var/log/audit/audit.log` is running. `--no-pager` prints and returns.
 
 ```bash
 getenforce
@@ -349,7 +616,7 @@ sestatus
 sudo systemctl status auditd --no-pager
 ```
 
-**Labels**
+**Labels.** `ls -Z` is the label on disk (lab 0). `ps -eZ | grep shopapi` is the process label. `matchpathcon` asks policy what the label *should* be. Compare it with `ls -Z` on the same path.
 
 ```bash
 ls -Z /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
@@ -357,11 +624,11 @@ ps -eZ | grep shopapi
 matchpathcon /var/log/shopapi
 ```
 
-**Relabel from `.fc`**
+**Relabel from `.fc`.** `-R` walks directories. `-v` prints each path that changed. `-n` prints what would change and writes nothing.
 
 ```bash
 sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
-sudo restorecon -Rv -n /var/log/shopapi    # dry run
+sudo restorecon -Rv -n /var/log/shopapi
 ```
 
 **Permissive domain (one app — host stays Enforcing)**
