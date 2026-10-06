@@ -86,30 +86,59 @@ A full SELinux context looks like this:
 
 ```text
 user : role : type : level
-system_u : system_r : myapp_t : s0
-│          │          │        └── level (see below)
-│          │          └── TYPE — the part you care about most
-│          └── role (processes use system_r; files use object_r)
-└── SELinux user (almost always system_u)
+system_u : system_r : shopapi_t : s0
+│          │          │           └── level (s0 on this project's labels)
+│          │          └── TYPE — the part policy rules use
+│          └── role (system_r on a process, object_r on a file)
+└── SELinux user (system_u on this project's objects)
 ```
 
-### What you can ignore in this project
+Policy rules match the **third field**, the type. The other three fields tell you what kind of object you are looking at. This project only writes `system_u`, `system_r` or `object_r`, and `s0` on its own labels. Your SSH login on the same box uses a different user, role, and level. Both are expected.
 
-| Part | Typical value | Do beginners need it? |
-|------|---------------|------------------------|
-| user | `system_u` | No — same on almost everything |
-| role | `system_r` (process) / `object_r` (file) | No — notice files vs processes differ |
-| **type** | `myapp_t`, `myapp_var_lib_t`, … | **Yes — this is what policy rules use** |
-| level | `s0` | Mostly no — see below |
+**Beginner rule:** read the third field. The values below are the ones you will meet in the **101** lab and the **202** talk.
 
-### What is `s0`? (MLS/MCS in plain English)
+### user
 
-The last field (`s0`) is the **sensitivity/category level**.
+| Value | Where you see it | What it means |
+|-------|------------------|---------------|
+| `system_u` | The shopapi service, its files, and every line in `selinux/shopapi/shopapi.fc` | The SELinux user on system objects. Also the usual user on files the system creates. |
+| `unconfined_u` | Your SSH shell (`id -Z`) | Your login, not the app. You will not find this name in `shopapi.te`. |
 
-- **`s0`** means "default" — no special clearance or compartment. **This demo uses only `s0`.**
-- **MLS/MCS** (Multi-Level / Multi-Category Security) is an advanced RHEL feature for classified or multi-tenant environments. **We do not use it in this project.**
+### role
 
-**Beginner rule:** when reading labels, look at the **third field** (`myapp_t`, `myapp_exec_t`, …). Treat `:s0` as normal and ignore it unless your org uses MLS.
+| Value | Where you see it | What it means |
+|-------|------------------|---------------|
+| `system_r` | The running shopapi process: `system_u:system_r:shopapi_t:s0` | Role on a process the system started. |
+| `object_r` | Every shopapi `.fc` line, and on ports | Role on a file, directory, or other object. If the role is `object_r`, you are not looking at the running app. |
+| `unconfined_r` | Your SSH shell, next to `unconfined_u` | Role of an unconfined login. Skip it when you are reading the app. |
+
+### type
+
+This is the field `allow` rules use.
+
+| Value | Where you see it | What it means |
+|-------|------------------|---------------|
+| `shopapi_t` | `ps -eZ` after bootstrap | The running shopapi process. Labs 0–6 are about this domain. systemd starts it as `SELinuxContext=system_u:system_r:shopapi_t:s0`. |
+| `shopapi_exec_t` | `ls -Z /opt/shopapi` | The program files under `/opt/shopapi`, including the launcher at `/opt/shopapi/bin/java`. The kernel transitions from this file type into `shopapi_t`. |
+| `shopapi_log_t` | `/var/log/shopapi` after `restorecon` | Log files. A write allow names this type, not the path. |
+| `shopapi_var_lib_t` | `/var/lib/shopapi` after `restorecon` | State files for the app. |
+| `shopapi_var_run_t` | `/run/shopapi` after `restorecon` | Runtime files (pid file, sockets). |
+| `shopapi_port_t` | The TCP port **8091**, once it is labeled | Shopapi's own port type. An early denial may still name a generic port type. |
+| `var_log_t`, `var_lib_t`, `var_spool_t`, `usr_t` | The same paths **before** `restorecon` | Generic base-policy types. A new file keeps one of these until `restorecon` applies the `.fc` line. Lab 2's `/log` denial often shows `var_log_t`. Lab 5's `/feature-spool` denial shows `var_spool_t`. The allow you want names the shopapi type; the denial names the type still on disk. |
+| `unconfined_t` | Your SSH shell | Your login's type. Not the app. |
+| `unconfined_service_t`, `unconfined_java_t` | `ps -eZ` when Java is not confined | The types-only seed did not load, or the unit is not using `SELinuxContext=shopapi_t`. Re-run `sudo bash scripts/demo_bootstrap.sh --shopapi-only`. `ps` should then show `shopapi_t`. |
+| `tomcat_t` | Distro Tomcat in the **202** talk | Vendor domain for the distro package. On this RHEL it is an unconfined file type, so Act 1 can read a file a confined domain would deny. |
+| `jws6_tomcat_t` | JWS Tomcat, when that package is what the box is running | Confined vendor domain. Tune it with `semanage` and `setsebool`. Do not write a `.te` for it. |
+| `myapp_t` and the other `myapp_*` types | `selinux/myapp.te`, `make check` | The offline golden. Fixtures are classified against these. They are not the process on rhel-qa. [Section 11](#11-types-you-will-see-quick-reference) lists them. |
+
+### level
+
+| Value | Where you see it | What it means |
+|-------|------------------|---------------|
+| `s0` | Every label this project writes | Default sensitivity. No special clearance. Read past it. |
+| `s0-s0:c0.c1023` | `id -Z` on your SSH session | Default category range on an unconfined login. Still "no special clearance." This project does not use MLS or MCS, and it never writes this range onto shopapi. |
+
+**MLS/MCS** (Multi-Level / Multi-Category Security) is an advanced RHEL feature for classified or multi-tenant environments. We do not use it here. Treat `:s0` and the login range above as normal.
 
 ---
 
@@ -542,16 +571,29 @@ If you start the app manually as root (`python app.py`) instead of **`systemctl 
 
 ---
 
-## 11. Types in the myapp module (quick reference)
+## 11. Types you will see (quick reference)
+
+Live lab types are declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te). Each one is explained in [§3](#3-the-context-string--four-parts-focus-on-type).
 
 | Type | Used for |
 |------|----------|
-| `myapp_t` | Example process domain (offline golden; live demo is `shopapi_t`) |
+| `shopapi_t` | Running shopapi process (labs 0–6) |
+| `shopapi_exec_t` | Program files under `/opt/shopapi` |
+| `shopapi_log_t` | Logs under `/var/log/shopapi` |
+| `shopapi_var_lib_t` | State under `/var/lib/shopapi` |
+| `shopapi_var_run_t` | Runtime files under `/run/shopapi` |
+| `shopapi_port_t` | TCP port **8091** |
+
+`myapp_*` below is the **offline golden** in [`selinux/myapp.te`](../../selinux/myapp.te). `make check` classifies fixtures against these types. They do not run on rhel-qa.
+
+| Type | Used for |
+|------|----------|
+| `myapp_t` | Process domain in the offline golden (live demo is `shopapi_t`) |
 | `myapp_exec_t` | App binary, Python venv (entrypoint) |
 | `myapp_var_lib_t` | State under `/var/lib/myapp` (soak marker, deploy report) |
 | `myapp_log_t` | Logs under `/var/log/myapp` (`data.log`, rotated files) |
 | `myapp_var_run_t` | Runtime under `/run/myapp` (`notify.sock`; `files_pid_file`) |
-| `myapp_port_t` | TCP port **8888** in the golden fixture (live demo: `shopapi_port_t` **8091**) |
+| `myapp_port_t` | TCP port **8888** in the golden fixture |
 | `myapp_backend_port_t` | TCP port **8889** (backend bind) |
 | `myapp_script_exec_t` | `backup.sh` and scripts in `/opt/myapp/bin/` |
 | `myapp_backend_t` | Running backend stub (`backend_stub.py`) |
