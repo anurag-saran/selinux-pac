@@ -1,781 +1,801 @@
 # 102 — SELinux basics
 
-This guide is a **reading primer** (labels, AVCs, `.te` / `.fc`, permissive vs enforcing). Typed labs use live **shopapi** on one RHEL box — **[101](101-SELINUX.md)** — not Flask and not host commands against `myapp`. Examples below that mention `myapp_t` match the **offline golden** in `selinux/myapp.te` (`make check`). The demo domain is `shopapi_t`.
+Read this before you type the labs in **[101](101-SELINUX.md)**. You do not need to have used SELinux before. Each section explains a word before it uses that word again.
 
-**How to read this guide (about 15–20 minutes reading):**
+Two names show up over and over. They are the same idea, on different files:
 
-1. Sections 1–4 — what SELinux is and how **labels** work (start here; 101 lab 0)
-2. Sections 5–7 — **commands** to view labels, **policy files** (`.te`/`.fc`), **`restorecon`**, and the **two-layer model** (OS Enforcing + permissive app domain)
-3. Section 7.5 — **soak** timeline (why production waits 7–14 days)
-4. Sections 8–10 — **AVC denials**, export filtering, and a **worked example** on `myapp`
-5. Sections 11+ — reference tables, cheat sheet, and admin runbooks
+| Name | What it is |
+|------|------------|
+| **shopapi** | The small Java app you run on the practice machine (**rhel-qa**). Its process label is `shopapi_t`. The labs in **101** and the customer talk in **[202](202-DEMO_GUIDE.md)** use this app. |
+| **myapp** | A sample policy stored in the git repo so tests can run on a laptop (`make check`). No service named myapp is running on rhel-qa. When a snippet says `myapp_t`, read it as "the same kind of label as `shopapi_t`, written against the sample." |
 
-**Typed labs:** **[101](101-SELINUX.md)** (shopapi; finish before the talk). **Talk:** **[202](202-DEMO_GUIDE.md)**. **Ship path:** **[302](../admin/302-PRODUCTION_READINESS.md)**. **Catalog:** [docs/README.md](../README.md).
+**How to read this**
 
-### Where to run commands in this guide
+1. **Sections 1–4** — what SELinux is, and how to read a label. This is lab 0 of **101**.
+2. **Sections 5–7** — the text files that hold the rules, the command that fixes labels on disk, and why the machine stays locked while one app only writes a log.
+3. **Stop here** if you are about to do the **101** labs. Come back after you have seen one denial line.
+4. **Sections 7.5–12** — what production does with the same ideas: a waiting period, the denial log, and the path from that log to a reviewed change.
+5. **Sections 13–16** — mistakes, a command list, and a glossary.
+
+**Where a command runs**
 
 | What you are doing | Where |
 |--------------------|--------|
-| Reading sections 1–7 | Anywhere — no Linux required |
-| **`getenforce`**, **`ls -Z`**, **`semanage permissive`**, labs in [101-SELINUX.md](101-SELINUX.md) | **Linux with SELinux** (rhel-qa, cloud instance, or other RHEL/Fedora host) |
-| **`make check`**, reading `.te` files, 101 laptop appendix | **Repo root** on your laptop |
+| Reading this page | Anywhere |
+| `getenforce`, `ls -Z`, `ps -eZ`, `semanage` | The Linux machine that has SELinux (**rhel-qa**) |
+| `make check`, reading files under `selinux/` | Your laptop, in the repo folder (the directory that contains `Makefile`) |
 
-macOS: you never run SELinux commands on the Mac itself — [101-SELINUX.md — Appendix B](101-SELINUX.md#appendix-b-laptop-no-selinux) (fixtures) or [103-TRAINING_LAB.md — Running on macOS](103-TRAINING_LAB.md#running-on-macos) (two VMs).
+A Mac has no SELinux. You do not type `getenforce` or `semodule` in the Mac terminal. Appendix B of **101** shows the laptop-only version of the later labs.
 
 ---
 
 ## 1. What is SELinux?
 
-**SELinux** (Security-Enhanced Linux) is a kernel security layer that adds **mandatory access control** on top of normal Unix file permissions (`chmod`, owner, group).
+Linux already checks file permissions. Those answer one question: "Is this Unix user allowed to read or write this file?" The owner of the file can change the answer with `chmod` (change mode) or `chown` (change owner).
 
-| Unix permissions ask… | SELinux asks… |
-|----------------------|---------------|
-| "Can user `myapp` read this file?" | "Can a process labeled **`myapp_t`** write to a file labeled **`myapp_var_lib_t`**?" |
-| The file owner decides (within limits) | **Policy** decides — rules are defined by admins and shipped as modules |
-| Tools: `chmod`, `chown` | Tools: `.te` rules, `.fc` path labels, `restorecon`, `semodule` |
+**SELinux** (Security-Enhanced Linux) adds a second check inside the **kernel**, the core of the operating system. It answers a different question: "Is this *program* allowed to do this action to this *object*?" The program cannot turn that check off by changing the file's owner. An administrator ships the rules.
 
-**Why it exists:** if an attacker compromises the app, SELinux still limits which files, ports, and processes that code can touch — independent of Unix ownership.
+That style of control is called **mandatory access control**: the system enforces the rules. Ordinary Unix permissions are called **discretionary access control**: the file owner has a say.
 
-On RHEL, Fedora, and CentOS Stream, SELinux is **on by default**.
+| | Unix permissions | SELinux |
+|--|------------------|---------|
+| Question | Can Unix user `ansible` read this file? | Can a running program labeled `shopapi_t` write a file labeled `shopapi_log_t`? |
+| Who changes the answer | The file owner, with `chmod` / `chown` | An administrator, by editing rules and installing a **module** |
+| Both are checked | A file can be writable by its Unix owner and still be denied by SELinux | |
+
+Why this exists: if an attacker takes over the app, they still only get what that app's label is allowed to touch. They do not inherit every file the Unix user can read.
+
+On Red Hat Enterprise Linux (RHEL), Fedora, and CentOS Stream, SELinux is already turned on.
+
+Three words you will need immediately:
+
+| Word | Meaning |
+|------|---------|
+| **Policy** | The full set of SELinux rules loaded in the kernel. |
+| **Module** | One app's piece of that policy. Shopapi has its own module. `sshd` and `systemd` already have modules that Red Hat shipped. |
+| **Label** | The tag on a process or a file. The next section is only about labels. |
 
 ---
 
 ## 2. Labels — the core idea
 
-Think of SELinux labels like **badges and room signs**:
+Every running program and every file wears a label. When the program tries to open a file, connect to a port, or start another program, the kernel compares the two labels against the policy.
 
-| Real-world idea | SELinux equivalent | Example in this repo |
-|-----------------|-------------------|----------------------|
-| Employee badge color | **Process type** (domain) | `myapp_t` — example process domain (offline golden in `selinux/myapp.te`; live demo is `shopapi_t`) |
-| Sign on a door | **File/directory type** | `myapp_var_lib_t` — files under `/var/lib/myapp`; `myapp_var_run_t` — runtime under `/run/myapp` |
-| Company access policy | **`allow` rules** in `.te` | "Processes with badge `myapp_t` may write to rooms labeled `myapp_var_lib_t`" |
+Picture a building:
 
-**Key facts for beginners:**
+| In the building | In SELinux | Shopapi |
+|-----------------|------------|---------|
+| Badge on a person | Label on a **running process**. When the label is on a process, people call it a **domain**. | `shopapi_t` |
+| Sign on a door | Label on a **file** or directory | `shopapi_log_t` on a log file |
+| Rule book at the front desk | An **allow rule** | "A process badged `shopapi_t` may write a file signed `shopapi_log_t`" |
 
-- **Every running process** has a label — see it with `ps -eZ`.
-- **Every file and directory** has a label — see it with `ls -Z`.
-- On each operation, the kernel checks: *"Does policy allow this **source type** to do **permission** on this **target type**?"*
-- If no rule allows it → **denied** (in Enforcing mode), or **logged only** (if that process domain is permissive).
+Four facts:
+
+- A **process** label is what you see with `ps -eZ` (list processes, and include the SELinux label).
+- A **file** label is what you see with `ls -Z` (list files, and include the SELinux label).
+- The kernel's question is always: "Does policy allow this **source type** to do this **action** to this **target type**?"
+- If no rule allows it, two things can happen. In **Enforcing** mode the action is blocked and a line is written to the audit log. If that one domain is **permissive**, the action still happens and the line is still written. Section 7 defines those modes. The log line is called an **AVC** (section 8).
 
 ```mermaid
 flowchart LR
-  Process["Process myapp_t"] -->|"allow rule?"| Policy["Policy in myapp.te"]
-  File["File myapp_var_lib_t"] --> Policy
-  Policy -->|yes| Allow["Operation allowed"]
-  Policy -->|no| Deny["AVC logged or blocked"]
+  Process["Process shopapi_t"] -->|"is this allowed?"| Policy["Rules in shopapi.te"]
+  File["File shopapi_log_t"] --> Policy
+  Policy -->|yes| Allow["Action happens"]
+  Policy -->|no| Deny["AVC line written; action blocked or logged"]
 ```
 
-### Vocabulary (used everywhere)
+### Words used from here on
 
-| Term | Plain English | In this repo |
-|------|---------------|--------------|
-| **Label / context** | The SELinux tag on a process or object | e.g. `system_u:system_r:myapp_t:s0` |
-| **Type** | The most important part of a label; names a category | `myapp_t`, `myapp_exec_t`, `myapp_var_lib_t` |
-| **Domain** | Word for a **process** type | `myapp_t` when the app is running |
-| **Object class** | Kind of thing being accessed | `file`, `dir`, `tcp_socket`, `process` |
-| **Allow rule** | Explicit permission in policy | `allow myapp_t myapp_var_lib_t:file write;` |
-| **AVC** | Log line when access is denied (or would be) | Lines in `/var/log/audit/audit.log` |
+| Term | Plain English | Shopapi example |
+|------|---------------|-----------------|
+| **Label / context** | The full SELinux tag. Four fields, separated by colons. | `system_u:system_r:shopapi_t:s0` |
+| **Type** | The third field. The category the rules actually name. | `shopapi_t`, `shopapi_log_t` |
+| **Domain** | A type that belongs to a running process. | `shopapi_t` while Java is running |
+| **Object class** | What kind of thing is being touched: a file, a directory, a network socket. | `file`, `dir`, `tcp_socket` |
+| **Allow rule** | One line that permits one action. | `allow shopapi_t shopapi_log_t:file write;` |
+| **AVC** | The log line written when an action is blocked, or would have been blocked. | A line in `/var/log/audit/audit.log` |
+| **Audit log** | The file where the kernel records those lines. A service named `auditd` writes it. | `/var/log/audit/audit.log` |
 
-**Domain vs type:** people say "domain" for process types like `myapp_t`. Technically a domain is still a *type* — it is the type of a running process.
+**Domain and type are almost the same word.** A domain is a type worn by a process. `shopapi_log_t` is a type on a file, so nobody calls it a domain. `shopapi_t` is a type on a process, so people call it the shopapi domain.
 
 ---
 
-## 3. The context string — four parts (focus on `type`)
+## 3. The context string — four parts
 
-A full SELinux context looks like this:
+A label is one string. The colons split it into four fields:
 
 ```text
-user : role : type : level
+user     : role     : type      : level
 system_u : system_r : shopapi_t : s0
-│          │          │           └── level (s0 on this project's labels)
-│          │          └── TYPE — the part policy rules use
-│          └── role (system_r on a process, object_r on a file)
-└── SELinux user (system_u on this project's objects)
 ```
 
-Policy rules match the **third field**, the type. The other three fields tell you what kind of object you are looking at. This project only writes `system_u`, `system_r` or `object_r`, and `s0` on its own labels. Your SSH login on the same box uses a different user, role, and level. Both are expected.
+| Field | Shopapi's process | What you use it for |
+|-------|-------------------|---------------------|
+| user | `system_u` | Tells you "this belongs to the system," or "this is my login." You rarely write rules about it. |
+| role | `system_r` | Tells you "this is a process" (`system_r`) or "this is a file" (`object_r`). |
+| **type** | **`shopapi_t`** | **The field allow rules use.** Read this one. |
+| level | `s0` | A clearance stamp. This project leaves it at the default. |
 
-**Beginner rule:** read the third field. The values below are the ones you will meet in the **101** lab and the **202** talk.
+Your SSH session on the same machine wears a different user, role, and level. That is expected. It is your login, not the app.
 
-### user
+The rest of this section is every value you will meet in the **101** lab and the **202** talk, with what each one means.
 
-| Value | Where you see it | What it means |
-|-------|------------------|---------------|
-| `system_u` | The shopapi service, its files, and every line in `selinux/shopapi/shopapi.fc` | The SELinux user on system objects. Also the usual user on files the system creates. |
-| `unconfined_u` | Your SSH shell (`id -Z`) | Your login, not the app. You will not find this name in `shopapi.te`. |
+### user — not your Linux username
 
-### role
+The first field is an SELinux user. It is a different namespace from the Unix users you log in as (`ansible`, `root`). Changing the Unix owner of a file does not change this field.
 
-| Value | Where you see it | What it means |
-|-------|------------------|---------------|
-| `system_r` | The running shopapi process: `system_u:system_r:shopapi_t:s0` | Role on a process the system started. |
-| `object_r` | Every shopapi `.fc` line, and on ports | Role on a file, directory, or other object. If the role is `object_r`, you are not looking at the running app. |
-| `unconfined_r` | Your SSH shell, next to `unconfined_u` | Role of an unconfined login. Skip it when you are reading the app. |
+**`system_u`**
 
-### type
+The SELinux user on operating-system objects. The shopapi service, its log files, and every label this project writes use `system_u`. When `ls -Z` shows `system_u` at the start of a file's label, the system owns that label. You will see this on `/opt/shopapi`, `/var/log/shopapi`, and the running Java process.
 
-This is the field `allow` rules use.
+**`unconfined_u`**
 
-| Value | Where you see it | What it means |
-|-------|------------------|---------------|
-| `shopapi_t` | `ps -eZ` after bootstrap | The running shopapi process. Labs 0–6 are about this domain. systemd starts it as `SELinuxContext=system_u:system_r:shopapi_t:s0`. |
-| `shopapi_exec_t` | `ls -Z /opt/shopapi` | The program files under `/opt/shopapi`, including the launcher at `/opt/shopapi/bin/java`. The kernel transitions from this file type into `shopapi_t`. |
-| `shopapi_log_t` | `/var/log/shopapi` after `restorecon` | Log files. A write allow names this type, not the path. |
-| `shopapi_var_lib_t` | `/var/lib/shopapi` after `restorecon` | State files for the app. |
-| `shopapi_var_run_t` | `/run/shopapi` after `restorecon` | Runtime files (pid file, sockets). |
-| `shopapi_port_t` | The TCP port **8091**, once it is labeled | Shopapi's own port type. An early denial may still name a generic port type. |
-| `var_log_t`, `var_lib_t`, `var_spool_t`, `usr_t` | The same paths **before** `restorecon` | Generic base-policy types. A new file keeps one of these until `restorecon` applies the `.fc` line. Lab 2's `/log` denial often shows `var_log_t`. Lab 5's `/feature-spool` denial shows `var_spool_t`. The allow you want names the shopapi type; the denial names the type still on disk. |
-| `unconfined_t` | Your SSH shell | Your login's type. Not the app. |
-| `unconfined_service_t`, `unconfined_java_t` | `ps -eZ` when Java is not confined | The types-only seed did not load, or the unit is not using `SELinuxContext=shopapi_t`. Re-run `sudo bash scripts/demo_bootstrap.sh --shopapi-only`. `ps` should then show `shopapi_t`. |
-| `tomcat_t` | Distro Tomcat in the **202** talk | Vendor domain for the distro package. On this RHEL it is an unconfined file type, so Act 1 can read a file a confined domain would deny. |
-| `jws6_tomcat_t` | JWS Tomcat, when that package is what the box is running | Confined vendor domain. Tune it with `semanage` and `setsebool`. Do not write a `.te` for it. |
-| `myapp_t` and the other `myapp_*` types | `selinux/myapp.te`, `make check` | The offline golden. Fixtures are classified against these. They are not the process on rhel-qa. [Section 11](#11-types-you-will-see-quick-reference) lists them. |
+The SELinux user on a normal administrator login. Type `id -Z` in your SSH session and the first field is `unconfined_u`. That string describes *you*. It does not appear in `selinux/shopapi/shopapi.te`, and the app's allow rules do not mention it.
 
-### level
+### role — process or file
 
-| Value | Where you see it | What it means |
-|-------|------------------|---------------|
-| `s0` | Every label this project writes | Default sensitivity. No special clearance. Read past it. |
-| `s0-s0:c0.c1023` | `id -Z` on your SSH session | Default category range on an unconfined login. Still "no special clearance." This project does not use MLS or MCS, and it never writes this range onto shopapi. |
+A role is a coarse tag sitting between the user and the type. In this project you use it as a hint: process versus file. You do not write allow rules about roles.
 
-**MLS/MCS** (Multi-Level / Multi-Category Security) is an advanced RHEL feature for classified or multi-tenant environments. We do not use it here. Treat `:s0` and the login range above as normal.
+**`system_r`**
+
+The role on a process that the system started. Shopapi's Java process looks like `system_u:system_r:shopapi_t:s0`. The `system_r` is how you know you are looking at a process. The `shopapi_t` is which process.
+
+**`object_r`**
+
+The role on a file, a directory, or a port. Every line in `selinux/shopapi/shopapi.fc` uses `object_r`. A label that contains `object_r` is an object the process might touch, not the process itself.
+
+**`unconfined_r`**
+
+The role on your SSH shell, next to `unconfined_u`. Same conclusion as `unconfined_u`: this is your login. When you are reading shopapi, skip any label whose role is `unconfined_r`.
+
+### type — the field the rules use
+
+The type is the category. Two labels can share `system_u` and `system_r` and still be different programs, because the type differs: `shopapi_t` and `sshd_t` are both system processes, and policy treats them differently.
+
+A few words that show up in the list below:
+
+| Word | Meaning |
+|------|---------|
+| **Bootstrap** | `sudo bash scripts/demo_bootstrap.sh --shopapi-only` on rhel-qa. It installs the app, the starter policy, and a systemd unit that starts Java as `shopapi_t`. |
+| **Seed** | That starter policy. It declares the shopapi type names and contains almost no `allow` lines. The allows are added later, from denial logs. |
+| **`restorecon`** | A command that repaints labels on files that are already on disk, using the path map in the `.fc` file. Section 6. |
+| **Confined** | SELinux is holding this process to an allow list. An **unconfined** process is not held to one. |
+| **Vendor domain** | A type Red Hat already ships for a product, such as Tomcat. You adjust the host (a path label, a port, a boolean). You do not author a second module for that product. |
+
+**`shopapi_t`**
+
+The domain of the running shopapi process. After bootstrap, `ps -eZ | grep shopapi` shows this type in the third field. Labs 0–6 are about this domain: what it tried to do, and which allow lines it still needs. The systemd unit sets it directly with `SELinuxContext=system_u:system_r:shopapi_t:s0`, because the `java` binary is shared by every Java app on the machine. Labeling the binary alone would put every Java process in the same domain. Section 10 walks through that.
+
+**`shopapi_exec_t`**
+
+The type on the program files under `/opt/shopapi`, including the launcher at `/opt/shopapi/bin/java`. "exec" means "this file is a program you can execute." `ls -Z /opt/shopapi` shows it. The file type and the process type are a pair: the file is `shopapi_exec_t`, the running process is `shopapi_t`.
+
+**`shopapi_log_t`**
+
+The type log files should have under `/var/log/shopapi`, after `restorecon`. An allow rule names this type. It does not name the path `/var/log/shopapi/whatever.log`. If the file on disk still has a generic type, the allow for `shopapi_log_t` does not cover it.
+
+**`shopapi_var_lib_t`**
+
+The type for state files under `/var/lib/shopapi` (data the app keeps across restarts), after `restorecon`. Same idea as the log type: one type for this kind of file, one allow if the process needs to write them.
+
+**`shopapi_var_run_t`**
+
+The type for runtime files under `/run/shopapi`: a pid file (the process id, so other tools can find the service) and short-lived sockets. These disappear on reboot. `/run` is the directory Linux uses for that kind of file.
+
+**`shopapi_port_t`**
+
+The type for shopapi's TCP port **8091**, once that port has been given an SELinux label. Ports have types too. An early denial may name a generic port type such as `unreserved_port_t` (any high port that nobody has labeled yet). That generic name is what the kernel saw at the time. The label you want on 8091 is `shopapi_port_t`.
+
+**`var_log_t`, `var_lib_t`, `var_spool_t`, `usr_t`**
+
+Generic types from the base policy Red Hat shipped, used before this app's own types are applied:
+
+| Generic type | Typical path before relabel |
+|--------------|-----------------------------|
+| `var_log_t` | Anything under `/var/log` that does not have a more specific type yet. Lab 2's `/log` denial often names this. |
+| `var_lib_t` | Anything under `/var/lib` in the same situation. |
+| `var_spool_t` | Anything under `/var/spool`. Lab 5's `/feature-spool` denial names this, because `/var/spool/shopapi/feature.log` was not in the first module. |
+| `usr_t` | A generic type for files under `/usr`, and sometimes for files under `/opt` before the shopapi file-context line is applied. |
+
+`restorecon` is what replaces these with `shopapi_log_t`, `shopapi_var_lib_t`, and the others. Until that runs, the denial names the generic type that is still on the file. The allow you add names the shopapi type. Both facts are true at once: the log shows the old type, the policy you write names the new one, and `restorecon` makes the file match.
+
+**`unconfined_t`**
+
+The type on your SSH shell. Together with `unconfined_u` and `unconfined_r`, the whole label means "this login is not confined." Commands you type by hand run as `unconfined_t`. The shopapi service does not.
+
+**`unconfined_service_t` and `unconfined_java_t`**
+
+Types you see on the Java process when shopapi was **not** confined. `unconfined_service_t` means systemd started a service and nobody assigned it a domain. `unconfined_java_t` means the Java program started without a domain transition. Either one means bootstrap did not take effect, or the unit is missing `SELinuxContext=shopapi_t`. Run bootstrap again:
+
+```bash
+sudo bash scripts/demo_bootstrap.sh --shopapi-only
+```
+
+Then `ps -eZ | grep shopapi` should show `shopapi_t`.
+
+**`tomcat_t`**
+
+The type of Tomcat from the RHEL package, used in the **202** talk (App A / App B). On this practice RHEL, `tomcat_t` is unconfined: the process is not held to a tight allow list. That is why the talk's "forbidden" page can still be read. You are seeing the vendor type behave as this operating system defines it.
+
+**`jws6_tomcat_t`**
+
+The type of Red Hat JBoss Web Server (JWS) Tomcat, when that product is what the machine is running instead of the distro package. This one is confined. The talk then tunes the host with `semanage` (file labels and ports) and `setsebool` (an on/off switch that vendor policy already defined). You do not add a `shopapi.te`-style module for it. Section 14.5 introduces booleans and port labels.
+
+**`myapp_t` and the other `myapp_*` types**
+
+Types in the sample policy `selinux/myapp.te`. `make check` on a laptop classifies saved denial logs against them. They are not the process on rhel-qa. [Section 11](#11-types-you-will-see-quick-reference) lists each one. Whenever this page shows a `myapp` command, the shopapi lab uses the same command with `shopapi` in the name.
+
+### level — the clearance stamp
+
+The last field is a sensitivity level from MLS/MCS (Multi-Level / Multi-Category Security), a feature for separating data by clearance, the way a classified network separates Secret from Unclassified. This project does not turn that feature on. You still see a value, because the field is always present.
+
+**`s0`**
+
+The default level. Every label this project writes ends in `:s0`. "s0" means the lowest sensitivity, with no extra compartment. When you read `system_u:system_r:shopapi_t:s0`, stop at `shopapi_t`. The `:s0` is the default stamp.
+
+**`s0-s0:c0.c1023`**
+
+What `id -Z` prints as the last field of your SSH session. The `s0-s0` part is a range from the default level to itself. The `c0.c1023` part is the full set of categories (numbered compartments) that an unconfined login is allowed to carry. It is still the default. It means "this login has no special clearance." Shopapi's files and process never use this range. If you see it, you are looking at your shell.
 
 ---
 
 ## 4. Two commands that show labels
 
-The `-Z` flag (capital **Z**) asks tools to print SELinux contexts. **Files and processes are labeled separately.**
+The `-Z` flag (capital **Z**) asks `ls` and `ps` to print the SELinux label next to the name. Lowercase `-z` is a different flag. Use the capital letter.
 
-| Command | Shows labels on | Use when |
-|---------|-----------------|----------|
-| `ls -Z PATH` | **Files and directories** | "What type is this log file / binary?" |
-| `ps -eZ \| grep myapp` | **Running processes** | "What domain is my app running in?" |
+Files and processes are labeled separately. The file's type and the process's type are supposed to differ.
 
-These answer **different questions**. Do not confuse the process label with the file label.
+| Command | What it lists | The question it answers |
+|---------|---------------|-------------------------|
+| `ls -Z /opt/shopapi` | Files and directories | What type is on this program or this log file? |
+| `ps -eZ \| grep shopapi` | Running processes (`-e` means every process) | What domain is the app running in? |
 
-### Example output (annotated)
+`grep shopapi` keeps only lines that contain that word, so you do not have to read every process on the machine.
+
+### What a good answer looks like
 
 ```bash
-$ ls -Z /opt/myapp/app.py
-system_u:object_r:myapp_exec_t:s0    /opt/myapp/app.py
-#                      ^^^^^^^^^^^^
-#                      FILE type — entrypoint the kernel executes
+$ ls -Z /opt/shopapi/bin/java
+system_u:object_r:shopapi_exec_t:s0    /opt/shopapi/bin/java
+#                      ^^^^^^^^^^^^^^
+#                      file type — the launcher on disk
 
-$ ls -Z /var/log/myapp/data.log
-system_u:object_r:myapp_log_t:s0    /var/log/myapp/data.log
-#                      ^^^^^^^^^^^
-#                      FILE type — application log (dedicated log type)
+$ ls -Z /var/log/shopapi
+system_u:object_r:shopapi_log_t:s0    /var/log/shopapi
+#                      ^^^^^^^^^^^^^
+#                      file type — logs, after restorecon
 
-$ ps -eZ | grep -E 'app.py|myapp'
-system_u:system_r:myapp_t:s0    1234 ?  ... python /opt/myapp/app.py
-#                  ^^^^^^^
-#                  PROCESS domain — the running app
+$ ps -eZ | grep shopapi
+system_u:system_r:shopapi_t:s0    1234 ?  ... java
+#                  ^^^^^^^^^
+#                  process domain — the running app
 ```
 
-**Takeaway:** the same application uses **`myapp_t`** when running, **`myapp_var_lib_t`** on state under `/var/lib/myapp`, and **`myapp_log_t`** on logs under `/var/log/myapp`. Policy must **explicitly allow** each access. Having Unix write permission (`chmod`) is not enough.
+Read the third field only. The launcher file is `shopapi_exec_t`. The running process is `shopapi_t`. A log file is `shopapi_log_t`. Policy must allow each of those pairs. A Unix mode of `777` does not grant the SELinux permission.
 
-**Tip:** `-Z` is SELinux (capital Z). Lowercase `-z` on `ls`/`ps` means something else — do not mix them up.
+The sample policy prints the same shape with different names: `myapp_exec_t` on `/opt/myapp/app.py`, `myapp_t` on that sample's process, `myapp_log_t` on `/var/log/myapp/data.log`.
 
 ---
 
-## 5. Policy module pipeline — `.te`, `.fc`, and `.pp`
+## 5. The three policy files — `.te`, `.fc`, and `.pp`
 
-Policy is shipped as a **module**. In Git you edit source files; on the server you install a compiled package.
+A module is stored as text while you edit it, and as a binary package once the kernel loads it.
 
-| File | Analogy | Answers the question… |
-|------|---------|----------------------|
-| **`myapp.te`** | Rule book | *Can `myapp_t` do X to `myapp_var_lib_t`?* |
-| **`myapp.fc`** | Address book | *What label should `/var/log/myapp/data.log` get?* |
-| **`myapp.pp`** | Installed package | Binary loaded into the kernel with `semodule -i` (CI-built artifact — not committed) |
-
-```text
-selinux/myapp.te  ──┐
-                    ├── refpolicy Makefile compile ──► myapp.pp ── semodule -i ──► active kernel policy
-selinux/myapp.fc  ──┘
-```
-
-- You **commit** `.te` and `.fc` to Git (source of truth).
-- CI/playbooks **compile** them to `.pp` via the refpolicy Makefile (`scripts/compile_and_validate.sh`; `checkmodule` fallback when devel Makefile is absent). The compiled `.pp` is uploaded as a CI artifact — it is **not** tracked in Git.
-- CI also runs **`validate_policy_semantics.sh`** (`sesearch` assertions on the compiled module).
-- Admins **install** `.pp` on staging/production hosts (`semodule -i` upgrades in place). Packaged delivery: [`packaging/myapp-selinux.spec`](../../packaging/myapp-selinux.spec).
-
-### Type Enforcement (`.te`) — permission rules
-
-From [`selinux/myapp.te`](../../selinux/myapp.te):
+| File | What to call it | The question it answers |
+|------|-----------------|-------------------------|
+| **`shopapi.te`** | The rule book | May `shopapi_t` write a file of type `shopapi_log_t`? |
+| **`shopapi.fc`** | The address book | What type should files under `/var/log/shopapi` receive? |
+| **`shopapi.pp`** | The installed package | The compiled form. `semodule -i` loads it into the kernel. It is built on the machine. It is not committed to git. |
 
 ```text
-type myapp_t;              # declare process domain
-type myapp_var_lib_t;      # declare data file type
-
-# Can myapp_t write to myapp_var_lib_t files?
-allow myapp_t myapp_var_lib_t:file { create write append ... };
-
-# Can myapp_t bind port 8888? dedicated type, not http_port_t / unreserved_port_t
-allow myapp_t myapp_port_t:tcp_socket name_bind;
-
-# systemd starts app → process transitions into myapp_t
-init_daemon_domain(myapp_t, myapp_exec_t);
+shopapi.te  ──┐
+              ├── compile ──► shopapi.pp ── semodule -i ──► kernel
+shopapi.fc  ──┘
 ```
 
-- **`allow SOURCE TARGET:CLASS { permissions }`** — basic building block.
-- **`init_daemon_domain`** — standard pattern for systemd services.
-- **`require { type ... }`** — types defined in the **base** RHEL policy that you reference but do not create.
+You commit the `.te` and the `.fc`. A script compiles them into the `.pp`. **Compile** here means "translate the text into the binary the kernel accepts." `semodule -i` (**i**nstall) loads that binary. Installing again upgrades the module in place.
 
-The two-host **shopapi** pipeline ([203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md)) installs Spring Boot with a types-only seed so first-ship curls produce `shopapi_t` AVCs, then generates the first real `.te`. This page uses `myapp_t` / `selinux/myapp.te` as the **offline generator golden** (what `make check` classifies against), not a live app.
+For the lab, the files live in `selinux/shopapi/`. The sample copies live in `selinux/myapp.te` and `selinux/myapp.fc`.
 
-### File contexts (`.fc`) — path → label mapping
+### The rule book (`.te`)
 
-From [`selinux/myapp.fc`](../../selinux/myapp.fc):
+A type has to be declared before a rule can name it. The seed does that and stops:
 
 ```text
-/opt/myapp/app\.py     -- gen_context(system_u:object_r:myapp_exec_t,s0)
-/var/lib/myapp(/.*)?   -- gen_context(system_u:object_r:myapp_var_lib_t,s0)
-/run/myapp(/.*)?       -- gen_context(system_u:object_r:myapp_var_run_t,s0)
-/var/run/myapp(/.*)?   -- gen_context(system_u:object_r:myapp_var_run_t,s0)
-/opt/myapp/bin/.*      -- gen_context(system_u:object_r:myapp_script_exec_t,s0)
+type shopapi_t;          # the process domain
+type shopapi_log_t;      # the log-file type
 ```
 
-- Each line says: *files matching this path pattern get this default label*.
-- **FCOS note:** `/var/opt/myapp/*` entries exist because on Fedora CoreOS `/opt` is a symlink; paths must match where files actually live. After `semodule -i`, run **`restorecon`** — `.fc` is the source of truth (no manual `chcon`).
+An allow line, once generation has added one, is read left to right:
 
-**`.te` vs `.fc` in one sentence:** `.fc` assigns labels to paths; `.te` defines what processes with those labels may do to each other.
+```text
+allow shopapi_t shopapi_log_t:file write;
+```
+
+| Piece | Meaning |
+|-------|---------|
+| `allow` | Permit this. Anything not permitted is denied when the domain is enforcing. |
+| `shopapi_t` | Who. The process type. |
+| `shopapi_log_t` | What they touch. The file type. |
+| `file` | The object class: a file, as opposed to a directory or a socket. |
+| `write` | The action. |
+
+A line can list several actions in braces: `{ create write append open }`.
+
+Two helpers you will see in the same file:
+
+| Helper | Meaning |
+|--------|---------|
+| `init_daemon_domain(shopapi_t, shopapi_exec_t)` | A shortcut written by the SELinux policy authors: "when systemd starts a program file of type `shopapi_exec_t`, the new process becomes `shopapi_t`." systemd is the program that starts services on RHEL. |
+| `require { type var_log_t; }` | "I mention a type that the base policy already defined. I am not creating it." `var_log_t` is one of those. |
+
+The shopapi seed ships with the declarations and `init_daemon_domain`, and with almost no `allow` lines. Labs 3 and 6 fill the allows in from the audit log. The sample `selinux/myapp.te` already contains allows, because the laptop tests need a finished module to compare against.
+
+### The address book (`.fc`)
+
+Each line maps a path pattern to a label:
+
+```text
+/var/log/shopapi(/.*)?    gen_context(system_u:object_r:shopapi_log_t,s0)
+```
+
+| Piece | Meaning |
+|-------|---------|
+| `/var/log/shopapi(/.*)?` | The directory itself, and (`(/.*)?`) anything underneath it. |
+| `gen_context(...)` | "Generate this label for files that match." |
+| `system_u:object_r:shopapi_log_t` | The user, role, and type from section 3. |
+| `s0` | The default level. |
+
+The `.fc` file records what the label *should* be. It does not relabel files that are already on disk. `restorecon` does that, next section.
+
+**One sentence:** the `.fc` assigns types to paths. The `.te` says what a process of one type may do to an object of another type.
+
+The compile script (`scripts/compile_and_validate.sh`) also rejects a short list of dangerous allows (for example, letting the app execute every system binary). You will see it in lab 3. You do not need to know its internals to read a label.
 
 ---
 
-## 6. What `restorecon` does (and why it matters)
+## 6. What `restorecon` does
 
-Installing policy updates **rules for new files**, but **existing files on disk** may still have **old labels** from before the module was installed.
+Installing a module updates the kernel's rule book and address book. Files that were created earlier keep whatever label they already had. A new directory under `/var/log` is born as `var_log_t`. After you install a module that says "`/var/log/shopapi` should be `shopapi_log_t`," the directory on disk is still `var_log_t` until you relabel it.
 
-### The problem (mislabeled file)
+The app runs as `shopapi_t`. The allow rule permits writes to `shopapi_log_t`. The file is still `var_log_t`. The kernel denies the write. `chmod` can look perfectly fine at the same time, because Unix permissions and SELinux are separate checks.
 
-```bash
-# What policy SAYS the label should be:
-$ matchpathcon /var/log/myapp/data.log
-/var/log/myapp/data.log    system_u:object_r:myapp_log_t:s0
+### See the gap
 
-# What is ACTUALLY on disk (wrong — e.g. still generic var_log_t):
-$ ls -Z /var/log/myapp/data.log
-system_u:object_r:var_log_t:s0    /var/log/myapp/data.log
-```
-
-The app runs as `myapp_t` and tries to write the file. Policy allows `myapp_t` → `myapp_log_t`, **not** `myapp_t` → `var_log_t`. Result: **denial** even though `chmod` looks fine.
-
-### The fix
+`matchpathcon` asks the policy what the label *should* be. `ls -Z` shows the label actually stored on the file.
 
 ```bash
-$ sudo restorecon -Rv /var/lib/myapp /var/log/myapp /run/myapp /opt/myapp
+$ matchpathcon /var/log/shopapi
+/var/log/shopapi    system_u:object_r:shopapi_log_t:s0
 
-$ ls -Z /var/log/myapp/data.log
-system_u:object_r:myapp_log_t:s0    /var/log/myapp/data.log
+$ ls -Z /var/log/shopapi
+system_u:object_r:var_log_t:s0    /var/log/shopapi
 ```
 
-**`restorecon`** = "**restore** security **con**texts" — re-apply labels from policy to files on disk.
+Those two types differ. That is the gap.
+
+### Close it
+
+```bash
+sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+```
+
+**restorecon** means "restore the security context": look up each path in the address book and write that label onto the file.
 
 | Flag | Meaning |
 |------|---------|
-| `-R` | Recursive (directories) |
-| `-v` | Verbose — print each path changed |
-| `-n` | **Dry run** — show what *would* change, change nothing |
+| `-R` | Walk into directories. |
+| `-v` | Print each path whose label changed. |
+| `-n` | Do not change anything. Print what would change. Use this when you want to look first. |
 
-This repo runs `restorecon` in Ansible canary/enforce playbooks and checks with [`scripts/verify_file_contexts.sh`](../../scripts/verify_file_contexts.sh) (`restorecon -Rv -n` must show no changes before restart).
+Run `restorecon` after `semodule -i`, before you trust a test of the app. Lab 6 adds `/var/spool/shopapi` to that list, because that path is new in the second module.
 
-**When to run it:** immediately after `semodule -i myapp.pp`, before `systemctl restart myapp`.
+The sample paths are the same command with `myapp` instead of `shopapi`.
 
 ---
 
-## 7. Enforcing vs permissive — and `semanage` commands
+## 7. Enforcing and permissive
 
-### Whole-system mode
+SELinux on a host is in one of three modes. Ask with `getenforce` (it prints a single word):
 
-```bash
-$ getenforce
-Enforcing
-```
+| Mode | What a denial does |
+|------|--------------------|
+| **Enforcing** | The action is blocked, and a line is written to the audit log. This is the mode the lab keeps. |
+| **Permissive** | The action is allowed, and a line is still written. The whole machine is in this mode. |
+| **Disabled** | SELinux is off. The lab does not use this. |
 
-| Mode | What happens on denial |
-|------|------------------------|
-| **Enforcing** | Operation **blocked** + logged |
-| **Permissive** | Operation **allowed** + logged (whole OS — avoid in prod) |
-| **Disabled** | SELinux off — do not use in production |
+`setenforce 0` switches the **whole machine** to Permissive. SSH, cron, and every service would then only log denials. This project does not do that.
 
-### Per-domain permissive (what SELinux PaC uses)
+### One domain on a log-only list
 
-You can keep the **OS Enforcing** but mark **one app domain** as permissive:
+You can leave the machine Enforcing and put a single domain on a permissive list. Actions by *that* domain are allowed and logged. Actions by every other domain are still blocked.
 
-| Command | What it does | When |
-|---------|--------------|------|
-| `sudo semanage permissive -a myapp_t` | **Add** `myapp_t` to permissive list | Start canary / soak |
-| `sudo semanage permissive -l` | **List** all permissive domains | Check current state |
-| `sudo semanage permissive -d myapp_t` | **Remove** `myapp_t` from list | Production enforce |
+`semanage` is the command that edits this kind of SELinux setting and keeps it across reboot.
 
-**This is not `setenforce 0`.** The rest of the system stays protected; only processes in `myapp_t` get log-only denials.
+| Command | What it does | When the lab uses it |
+|---------|--------------|----------------------|
+| `sudo semanage permissive -a shopapi_t` | **Add** `shopapi_t` to the log-only list. `-a` is add. | Bootstrap does this. Labs 1–4 depend on it. |
+| `sudo semanage permissive -l` | **List** the domains on that list. `-l` is list. | Any time you want to check. |
+| `sudo semanage permissive -d shopapi_t` | **Delete** `shopapi_t` from the list. The domain is enforcing again. | Lab 5. |
 
-### The two-layer model (Enforcing OS + permissive app domain)
-
-This repo uses **two separate checks**. Beginners often confuse them:
-
-| Check | Command | What it tells you |
-|-------|---------|-------------------|
-| **Whole-system mode** | `getenforce` | Is SELinux enforcing **globally**? (Always **Enforcing** in SELinux PaC.) |
-| **Per-domain log-only list** | `sudo semanage permissive -l` | Which **process types** get log-only denials? (Usually **`myapp_t`** during staging/soak.) |
-
-```text
-Host state during staging and soak:
-  getenforce          →  Enforcing     (SSH, cron, systemd, etc. stay fully protected)
-  semanage permissive -l  →  myapp_t   (example app domain: deny → log only, app keeps running)
-  ps -eZ | grep shopapi   →  shopapi_t       (running demo process label)
-```
-
-**What this means in plain English:**
-
-- **`sshd_t`**, **`init_t`**, **`cron_t`**, and every other domain stay **enforcing** — a denial blocks the operation.
-- Only the **app domain** (`myapp_t` in the golden, `shopapi_t` on the demo host) is on the permissive list — denials are **logged** but the app **keeps working**.
-- We **never** run `setenforce 0` (whole-OS permissive) in production workflows.
-
-#### Example: `-a` vs `-l`
+Success from `-a` and `-d` prints nothing. An empty `-l` means no domain is on the list.
 
 ```bash
 $ getenforce
 Enforcing
 
-$ sudo semanage permissive -a myapp_t
-# (no output on success — that is normal)
-
 $ sudo semanage permissive -l
-myapp_t
-
-# ... after soak, admin enforces:
-
-$ sudo semanage permissive -d myapp_t
-
-$ sudo semanage permissive -l
-# (empty output — no domains listed)
+shopapi_t
 ```
 
-**Summary:**
+Read together: the machine blocks denials, and shopapi is the exception that only logs them. In an AVC line, `permissive=1` means "this domain was on the log-only list, so the action succeeded." `permissive=0` means "the action was blocked."
 
-- **`-a`** = turn on log-only mode **for one domain** (action / change)
-- **`-l`** = show who is currently in that log-only list (read / inspect)
-- **`-d`** = turn log-only mode off for that domain (enforce)
+The sample pages write the same three commands with `myapp_t`. On rhel-qa you type `shopapi_t`.
 
-### Two permissive phases (do not confuse them)
+### Two times the domain is log-only
 
-| Phase | When | Policy on host | Why `myapp_t` is permissive |
-|-------|------|----------------|----------------------------|
-| **Staging discovery** | Demo Acts 1–2, `dev_generate_policy.sh` | Stub or minimal module | Run tests, collect AVC evidence, AI writes `.te` |
-| **Canary soak** | Demo Acts 6–8, production rollout | **Full** `myapp.pp` installed | Real policy loaded; watch 7–14 days for missed edge cases before enforce |
+| Phase | When | What is installed | Why the domain is log-only |
+|-------|------|-------------------|----------------------------|
+| **Discovery** | Labs 1–4, and the first generate | The seed: type names, almost no allows | So the app can run and the audit log fills with the lines you will turn into allows. |
+| **Soak** | After a finished module is installed in production | The real `shopapi.pp` | So rare jobs (a weekly task, log rotation) can still reveal a missing allow before you take the domain off the list. Section 7.5. |
 
-Both phases keep `getenforce` = **Enforcing**. Only **`myapp_t`** is log-only.
+Both phases leave `getenforce` printing `Enforcing`.
 
 ---
 
-## 7.5 What soak means (production)
+## 7.5 What soak means
 
-**Soak** = run the app with **real policy installed** but **`myapp_t` still permissive** for **7–14 days**, watching for new AVC surprises (weekly cron, logrotate, cert renewals, restarts).
+Read this after lab 6. The labs stop at "the new URL works under Enforcing." Production then waits.
+
+**Canary** means: install the new module on a host and watch it, with the app domain still on the log-only list.
+
+**Soak** means: leave it that way for 7–14 days. The point is to catch work that does not happen during a demo (a weekly cron job, log rotation, a certificate renewal).
+
+**Net-new** means: a permission the installed module does not already allow. The same denial printed again tomorrow is not net-new if the module already has that allow. The wait fails only when something new shows up.
+
+**dontaudit** is a policy feature that hides noisy denials the author decided not to show. `semodule -DB` turns that hiding off for the wait, so a real gap is visible. You do not type this in the 101 labs.
+
+**AAP** (Ansible Automation Platform) is the place an administrator runs these steps in production. Until that exists, the same playbooks run from a laptop with `ansible-playbook`. Playbooks are the YAML files under `ansible/`.
 
 ```text
-Day 0   Canary deploy
-        → semodule -i myapp.pp
-        → semanage permissive -a myapp_t
-        → write marker: /var/lib/myapp/selinux_canary_deployed_at
-        → semodule -DB (disable dontaudit during soak)
+Day 0   Canary
+        → semodule -i shopapi.pp          load the module
+        → semanage permissive -a shopapi_t   keep the app log-only
+        → write a timestamp file              the wait starts now
+        → semodule -DB                        show hidden denials
 
-Days 1–14   Soak (production)
-        → app keeps running; myapp_t still log-only
-        → daily: AAP **SELinux – Soak monitor** (`soak_monitor.yml`, net-new vs installed policy)
-        → goal: zero **net-new** access needs (not zero raw AVC lines)
-        → if net-new appears: [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md) (PR, not live patch)
+Days 1–14
+        → the app keeps running
+        → once a day, compare the log to the installed module (net-new)
+        → a net-new line becomes a new pull request, not a live edit on the server
 
-Enforce gate   Ansible collect_soak_facts / soak_status must pass ALL:
-        → marker age ≥ 7 days
-        → net-new count for myapp_t since marker ≤ 0 (raw AVC if sesearch missing)
-        → deploy report at /var/lib/myapp/selinux_deploy_report.json with pass + endpoint coverage
-
-Enforce   semanage permissive -d myapp_t
-        → denials now BLOCK the app if policy is incomplete
-        → getenforce still Enforcing (only myapp_t changed)
+After the wait passes
+        → semanage permissive -d shopapi_t
+        → a missing allow now blocks the app
+        → getenforce still prints Enforcing
 ```
 
-| Artifact | Purpose |
-|----------|---------|
-| `/var/lib/myapp/selinux_canary_deployed_at` | Epoch timestamp — soak clock starts here |
-| `/var/lib/myapp/selinux_soak_last_fail.json` | Last soak-monitor fail (copy to rhel-qa; see [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md)) |
-| `ansible/soak_monitor.yml` | Daily AAP **Soak monitor** — fail if **net-new** needs remain |
-| `ansible/soak_status.yml` / `collect_soak_facts.sh` | First node of **Promote to enforce** |
-
-**"Zero AVCs during soak"** in this repo means no **net-new access needs** vs the **installed** canary module (duplicate log lines from cron do not fail the gate). It does **not** mean the audit log is empty globally.
-
-If policy changes mid-soak, redeploy canary and **reset the soak clock**. Full admin runbook: [302-PRODUCTION_READINESS.md §6–12](../admin/302-PRODUCTION_READINESS.md). Ansible hub: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md). Prod AVC: [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md).
+The timestamp file and the daily check are how the wait is measured. The admin write-up is **[302](../admin/302-PRODUCTION_READINESS.md)**. The "we found a new denial" write-up is **[303](../admin/303-DENIAL_RESPONSE.md)**.
 
 ---
 
-## 8. AVC denials — evidence for policy updates
+## 8. AVC denials — the log line you will read
 
-When SELinux blocks (or would block) access, the kernel logs an **AVC** (Access Vector Cache) line:
+When the kernel blocks an action, or would have blocked it, it writes an **AVC** line. AVC stands for Access Vector Cache, which is the kernel's record of an access check. You can treat the letters as "the denial line."
 
 ```text
-type=AVC msg=audit(1234567890.123:456): avc: denied { write } for pid=1234 comm="python3"
-  scontext=system_u:system_r:myapp_t:s0
-  tcontext=system_u:object_r:myapp_var_lib_t:s0
+avc: denied { write } for pid=1234 comm="java"
+  scontext=system_u:system_r:shopapi_t:s0
+  tcontext=system_u:object_r:var_log_t:s0
   tclass=file permissive=1
 ```
 
-| Field | Meaning |
+| Field | On this line | Meaning |
+|-------|--------------|---------|
+| `denied { write }` | `write` | The action that was not allowed. |
+| `comm="java"` | `java` | The program name, from the process list. |
+| `scontext` | `shopapi_t` | **Source.** Who did it. Read the type. |
+| `tcontext` | `var_log_t` | **Target.** What they touched. Read the type. |
+| `tclass=file` | `file` | The object class. |
+| `permissive=1` | `1` | The domain was log-only, so the write still happened. `0` would mean the write failed. |
+
+Read the line as a sentence: "shopapi_t tried to write a file labeled var_log_t, and no allow covers that pair."
+
+Search the audit log with `ausearch` (it needs root, because the log is not world-readable):
+
+```bash
+sudo ausearch -m avc -ts recent | grep shopapi_t
+```
+
+| Piece | Meaning |
 |-------|---------|
-| `denied { write }` | Operation that was blocked (or logged) |
-| `scontext` | **Source** — process type (`myapp_t`) |
-| `tcontext` | **Target** — object type (`myapp_var_lib_t`) |
-| `tclass=file` | Object class |
-| `permissive=1` | Domain was permissive — app kept running; denial was logged |
+| `ausearch` | Search the audit log. |
+| `-m avc` | Only denial messages. `-m` is the message type. |
+| `-ts recent` | The last ten minutes. `-ts` is the time start. |
+| `grep shopapi_t` | Keep lines about this domain. |
 
-Search recent denials:
+`audit2why`, on the same lines, prints a shorter English hint (which allow or boolean would have permitted it). You read it. The lab does not pipe a generator named `audit2allow` straight into `semodule`. That tool turns every denial into a raw allow and would load startup noise along with the real gap.
 
-```bash
-sudo ausearch -m avc -ts recent
-sudo ausearch -m avc -ts recent | grep myapp_t
-```
+### What the tool keeps
 
-### What goes into `policy_out/avc.log`
+`dev_generate_policy.sh` copies matching lines into `policy_out/avc.log`. `policy_out/` is a scratch directory in the repo. It is not committed.
 
-**Important:** `avc.log` does **not** contain every SELinux denial on the host.
+The copy is filtered to this app. Denials for `sshd_t` or `init_t` stay in the host audit log and stay out of `policy_out/avc.log`. Included lines are the ones whose source type is `shopapi_t`, or whose path is one of the app's directories (`/opt/shopapi`, `/var/log/shopapi`, `/var/lib/shopapi`, `/run/shopapi`, `/var/spool/shopapi`).
 
-Export scripts filter the audit log to **app-related evidence only**:
+The generator then does three things before it writes a `.te`:
 
-```bash
-# Simplified from the AVC export used by scripts/dev_generate_policy.sh
-ausearch -m avc -ts boot --raw | grep -E "myapp|/opt/myapp|/var/lib/myapp|/run/myapp"
-```
+1. **Merge** duplicate lines that are the same source, target, and object class.
+2. **Drop** actions the current `.te` already allows. Those are **baseline**: already covered. Lab 4 expects the `/log` write to land here.
+3. **Write** only what is still missing.
 
-| Included in `avc.log` | Not included |
-|-------------------------|--------------|
-| Denials where **`myapp_t`** is the source (`scontext`) | Denials for **`sshd_t`**, **`init_t`**, other domains |
-| Lines mentioning **`/opt/myapp`**, **`/var/lib/myapp`**, or **`/run/myapp`** paths | Unrelated system AVCs |
-
-So: the host audit log records **all** domains; **`policy_out/avc.log`** is filtered input for **this app's policy update** — not a full-server security report.
-
-This repo exports matching lines to `policy_out/avc.log` (raw audit trail for PR review) and feeds a **processed** summary to the AI CLI — instead of blindly running `audit2allow`, which often creates over-broad rules.
-
-### Raw log vs processed summary
-
-| File | Purpose |
-|------|---------|
-| `policy_out/avc.log` | Raw AVC lines from `ausearch` — kept for audit and PR excerpts |
-| `policy_out/avc_summary.txt` | Merged, deduped access needs sent to the LLM |
-
-Before calling the LLM, `cli/selinux_gen.py` (via [`cli/avc_preprocess.py`](../../cli/avc_preprocess.py)):
-
-1. **Merge** — combine duplicate lines that share the same source type, target type, and object class (union permissions)
-2. **Subtract** — drop permissions already allowed in the existing `.te` file
-3. **Structure** — send net-new needs as a table, not repetitive raw AVC bullets
-
-Example: 42 raw lines may collapse to 6 merged rows, with only 2 net-new after subtracting existing policy.
+So "the log has AVC lines" and "the `.te` needs a new allow" are different statements. A line can be in the log because the domain is permissive, even after the allow exists.
 
 ---
 
-## 9. Worked example — `/save-log` end to end
+## 9. One request, end to end
 
-This ties labels, `.te`, `.fc`, AVCs, and the reference app together.
+This is lab 2's URL, `GET /log` on shopapi. The app appends a line under `/var/log/shopapi`.
 
-Live demo analog: shopapi `GET /log` appends under `/var/log/shopapi`. The golden [`selinux/myapp.te`](../../selinux/myapp.te) shows the same pattern for `GET /save-log` writing `/var/log/myapp/data.log` (`LogsDirectory=myapp` in the fixture unit).
-
-### Step 0 — Confirm two-layer SELinux state
-
-Before hitting the endpoint, verify the host is Enforcing but the app domain is log-only:
+**Step 0. Two layers.**
 
 ```bash
-$ getenforce
-Enforcing
-
-$ sudo semanage permissive -l
-myapp_t
+getenforce                         # Enforcing
+sudo semanage permissive -l        # shopapi_t
 ```
 
-SSH and other services stay enforcing; only the app process domain is permissive.
+The machine is enforcing. Shopapi is log-only. Your SSH session is unaffected.
 
-### Step 1 — Process and file labels
+**Step 1. Labels.**
 
 ```bash
-$ ps -eZ | grep app.py
-system_u:system_r:myapp_t:s0    ... python /opt/myapp/app.py
-
-$ ls -Z /var/log/myapp/data.log
-system_u:object_r:myapp_log_t:s0    /var/log/myapp/data.log
+ps -eZ | grep shopapi              # third field shopapi_t
+ls -Z /var/log/shopapi             # third field shopapi_log_t after restorecon
 ```
 
-Process is `myapp_t`. File is `myapp_log_t`. Good — labels match what policy expects **if** `.fc`, `logging_log_filetrans()`, and `restorecon` were applied.
+If the file still says `var_log_t`, section 6 is the gap. `matchpathcon` shows the type policy wants.
 
-### Step 2 — Policy must allow the write
-
-In [`selinux/myapp.te`](../../selinux/myapp.te):
+**Step 2. The allow, after lab 3 has generated it.**
 
 ```text
-logging_log_filetrans(myapp_t, myapp_log_t, file)
-allow myapp_t myapp_log_t:file { create write append open ... };
+allow shopapi_t shopapi_log_t:file { create write append open };
 ```
 
-Without these rules, SELinux denies the write even when Unix permissions allow it.
+With that line loaded, a write to a file of type `shopapi_log_t` is permitted. A write to a file that is still `var_log_t` is a different pair, and still denied.
 
-### Step 3 — If rule is missing → AVC
+**Step 3. The denial, before that allow exists.**
 
 ```text
-avc: denied { write } ...
-  scontext=...:myapp_t:s0
-  tcontext=...:myapp_log_t:s0
+avc: denied { write }
+  scontext=...:shopapi_t:s0
+  tcontext=...:var_log_t:s0
   tclass=file permissive=1
 ```
 
-Read it as: **`myapp_t` tried to `write` a `file` labeled `myapp_log_t` — not allowed.**
+Because `permissive=1`, the HTTP request still succeeds. The line is the evidence lab 3 turns into the allow.
 
-During soak (`semanage permissive -a myapp_t`), the write **still succeeds**; the line is **evidence** for policy authors.
+**Step 4. Lab 5 changes the ending.**
 
-### Step 4 — Demo pipeline picks it up
+`semanage permissive -d shopapi_t` takes shopapi off the log-only list. `/log` still works, because that allow is loaded and the file is labeled. `/feature-spool` fails, because `/var/spool/shopapi` was never in the first module. The new AVC has `permissive=0`. Lab 6 generates only that new surface.
 
-```text
-integration probes (all HTTP paths)  →  export to policy_out/avc.log  →  merge into selinux/myapp.te  →  PR + CI  →  canary  →  soak  →  enforce
-```
-
-Same pattern applies to `/run-script` (execute `myapp_script_exec_t`), `/rotate-log` (rename/create under `myapp_log_t`), `/probe-backend` (outbound TCP to `myapp_backend_t` on port 8889), and `/notify-socket` (Unix stream to `/run/myapp/notify.sock`).
-
-### Tier 6 network endpoints (policy v1.1.1+)
-
-These fixture-module endpoints exercise **cross-domain** rules between `myapp_t` and `myapp_backend_t` (types in the golden `.te`; not a live app):
-
-| Endpoint | Client domain | Server / target | Typical net-new allows |
-|----------|---------------|-----------------|------------------------|
-| `/probe-backend` | `myapp_t` | `myapp_backend_t` on TCP **8889** | `connectto`; `self:tcp_socket getopt`; read-only `cert_t` for `urllib` |
-| `/notify-socket` | `myapp_t` | `myapp_backend_t` on `/run/myapp/notify.sock` | `unix_stream_socket connectto`; backend needs `myapp_var_run_t:dir remove_name` to replace stale sockets |
-
-**Backend process:** `systemd` starts `/opt/myapp/backend_stub.py` (labeled `myapp_backend_exec_t`) → `init_daemon_domain(myapp_backend_t, ...)` → listener on `:8889` and Unix socket under `/run/myapp`.
-
-**Script pitfall:** `backup.sh` must not call `/usr/bin/date`, `mkdir`, or other **`bin_t`** helpers — CI rejects `allow ... bin_t:file execute`. Use bash builtins (e.g. `printf '%(%Y-%m-%dT%H:%M:%SZ)T' -1`) and append to `/var/log/myapp/backup.log` only.
+The sample policy tells this same story with `GET /save-log` writing `/var/log/myapp/data.log` and the types `myapp_t` / `myapp_log_t`. The laptop tests use a few more sample URLs (`/run-script`, `/probe-backend`, `/notify-socket`) so the generator can be checked against a finished `myapp` module. You do not curl those on rhel-qa.
 
 ---
 
-## 10. How the app process gets type `myapp_t`
+## 10. How a process gets its type
 
-Processes do not choose their own label. The kernel assigns a type based on **how the process starts** and **policy transition rules**.
+A process does not pick its own label. The kernel assigns one from how the process was started.
+
+**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared. If every Java process inherited a label from that one file, every Java app would share a domain. The systemd unit therefore sets the process label itself:
 
 ```text
-systemd (runs as init_t)
-    → starts /opt/myapp/venv/bin/python /opt/myapp/app.py
-    → binary path labeled myapp_exec_t (.fc + restorecon)
-    → init_daemon_domain() transition in .te
-    → running process labeled myapp_t
+SELinuxContext=system_u:system_r:shopapi_t:s0
 ```
 
-If you start the app manually as root (`python app.py`) instead of **`systemctl restart myapp`**, you may get a **different domain** and **different AVCs** than production. The demo playbooks always restart via systemd for this reason.
+systemd is the program that starts services (`systemctl start shopapi`). It runs as `init_t`. It starts shopapi, and the unit tells the kernel the new process's label. The launcher file under `/opt/shopapi` is still labeled `shopapi_exec_t`, so `ls -Z` and the process label agree about which app this is.
 
-**Script execution:** `GET /run-script` runs `backup.sh` labeled `myapp_script_exec_t`. Policy uses `domain_auto_trans(..., myapp_t)` so the process **remains `myapp_t`** — not a separate backup helper domain. The script intentionally avoids external `/usr/bin/*` binaries so policy stays within forbidden-pattern CI limits.
+**The sample app, the other pattern.** `myapp` is started from a program file labeled `myapp_exec_t`. The helper `init_daemon_domain(myapp_t, myapp_exec_t)` tells the kernel: "systemd is starting that file, so the new process is `myapp_t`." That is a **type transition**: the file type plus the parent process decide the child process type.
 
-**Backend execution:** `myapp-backend.service` starts `backend_stub.py` labeled `myapp_backend_exec_t` → running process is **`myapp_backend_t`**. The fixture client connects to it over TCP **8889** and the Unix socket at `/run/myapp/notify.sock`.
+If you start either app by hand from your SSH shell (`java -jar ...` with no unit), the new process keeps your shell's label, `unconfined_t`. The denials you collect then describe your login, not the service. The labs always use systemd.
 
 ---
 
 ## 11. Types you will see (quick reference)
 
-Live lab types are declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te). Each one is explained in [§3](#3-the-context-string--four-parts-focus-on-type).
+The suffix on a type name is a hint:
+
+| Suffix | Means |
+|--------|--------|
+| `_t` | A type. Every SELinux type ends in `_t`. |
+| `_exec_t` | A program file. Executing it can start a domain. |
+| `_log_t` | Log files. |
+| `_var_lib_t` | State that should survive a reboot. |
+| `_var_run_t` | Runtime files under `/run` that disappear on reboot. |
+| `_port_t` | A network port. |
+
+Each shopapi type is explained in [section 3](#3-the-context-string--four-parts). They are declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te).
 
 | Type | Used for |
 |------|----------|
-| `shopapi_t` | Running shopapi process (labs 0–6) |
+| `shopapi_t` | The running shopapi process |
 | `shopapi_exec_t` | Program files under `/opt/shopapi` |
 | `shopapi_log_t` | Logs under `/var/log/shopapi` |
 | `shopapi_var_lib_t` | State under `/var/lib/shopapi` |
-| `shopapi_var_run_t` | Runtime files under `/run/shopapi` |
+| `shopapi_var_run_t` | Pid file and sockets under `/run/shopapi` |
 | `shopapi_port_t` | TCP port **8091** |
 
-`myapp_*` below is the **offline golden** in [`selinux/myapp.te`](../../selinux/myapp.te). `make check` classifies fixtures against these types. They do not run on rhel-qa.
+`myapp_*` is the laptop sample in [`selinux/myapp.te`](../../selinux/myapp.te). `make check` uses these types. They do not run on rhel-qa.
 
 | Type | Used for |
 |------|----------|
-| `myapp_t` | Process domain in the offline golden (live demo is `shopapi_t`) |
-| `myapp_exec_t` | App binary, Python venv (entrypoint) |
-| `myapp_var_lib_t` | State under `/var/lib/myapp` (soak marker, deploy report) |
-| `myapp_log_t` | Logs under `/var/log/myapp` (`data.log`, rotated files) |
-| `myapp_var_run_t` | Runtime under `/run/myapp` (`notify.sock`; `files_pid_file`) |
-| `myapp_port_t` | TCP port **8888** in the golden fixture |
-| `myapp_backend_port_t` | TCP port **8889** (backend bind) |
-| `myapp_script_exec_t` | `backup.sh` and scripts in `/opt/myapp/bin/` |
-| `myapp_backend_t` | Running backend stub (`backend_stub.py`) |
-| `myapp_backend_exec_t` | Backend entrypoint (`/opt/myapp/backend_stub.py`) |
+| `myapp_t` | The sample's process domain. The live equivalent is `shopapi_t`. |
+| `myapp_exec_t` | The sample program file under `/opt/myapp` |
+| `myapp_lib_t` | Libraries inside the sample's Python virtualenv |
+| `myapp_var_lib_t` | State under `/var/lib/myapp` |
+| `myapp_log_t` | Logs under `/var/log/myapp` |
+| `myapp_var_run_t` | Runtime files under `/run/myapp`, including a socket |
+| `myapp_port_t` | TCP port **8888** in the sample |
+| `myapp_script_exec_t` | A shell script the sample runs (`backup.sh`) |
+| `myapp_backend_t` | A second sample process, used so tests can check two domains talking |
+| `myapp_backend_exec_t` | The program file for that second process |
+| `myapp_backend_port_t` | TCP port **8889**, where that second process listens |
 
 ---
 
-## 12. How this maps to the SELinux PaC workflow
+## 12. How this maps onto the tool
+
+After the labs, the same pieces are what the tool runs for you. **[201](201-CODE_WALKTHROUGH.md)** names the scripts. The sequence is:
 
 ```text
-1. Run app as myapp_t (permissive)     →  AVCs logged, app still works
-2. Export AVCs                         →  policy_out/avc.log
-3. Generate policy                     →  selinux/myapp.te + .fc updates
-4. Review + CI                         →  no wildcards / no shadow_t allows
-5. Canary deploy                       →  AAP **Release canary** (semodule -i + permissive domain)
-6. Soak + monitor                      →  AAP **Soak monitor** (net-new); fail → 303-DENIAL_RESPONSE.md
-7. Enforce                             →  AAP **Promote to enforce** (`change_ticket`)
-8. Deploy verification                 →  wait_for_endpoints.sh + selinux_deploy_report.json
-9. Outage?                             →  AAP **Rollback**, then PR (not live semodule -i)
+1. Run shopapi_t on the log-only list     denials are written, the app still answers
+2. Export those lines                     policy_out/avc.log
+3. Generate                               update shopapi.te and shopapi.fc from the lines
+4. Review                                 a pull request. Automated checks reject dangerous allows before anyone merges.
+5. Canary                                 install the module, keep the domain log-only
+6. Soak                                   watch for net-new permissions
+7. Enforce                                take the domain off the log-only list
+8. A later denial                         another pull request
 ```
 
-**Deploy verification:** after canary, enforce, or rollback, playbooks run `scripts/wait_for_endpoints.sh` (HTTP probes from the manifest **plus domain-context check**) and write a deploy report JSON. Enforce uses Ansible **block/rescue** — on failure, the app domain is restored to permissive before the playbook exits. Production soak uses AAP **Soak monitor** (`soak_monitor.yml`, net-new vs installed policy). Prod AVC: [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md).
+Steps 5–8 are the production path in **[301](../admin/301-ANSIBLE_OPERATIONS.md)** and **[302](../admin/302-PRODUCTION_READINESS.md)**. On the practice host, labs 3 and 6 load the module with `semodule -i` so you can see it work. Production installs a signed package through Ansible instead of typing `semodule -i` on the server.
 
-### App-visible SELinux signals
-
-The reference app exposes SELinux state so app teams can distinguish policy issues from application bugs:
-
-- **`GET /`** health JSON includes `"selinux": { "mode", "domain", "domain_permissive", "policy_version" }`
-- Permission errors may include `"selinux_context"` alongside `"Permission denied"`
-
-Full triage steps for app teams: [302-PRODUCTION_READINESS.md §12.5](../admin/302-PRODUCTION_READINESS.md).
-
-Presenter steps: [202-DEMO_GUIDE.md](202-DEMO_GUIDE.md) (`demo_present.sh`). Admin gates: [302-PRODUCTION_READINESS.md](../admin/302-PRODUCTION_READINESS.md). Principles and anti-patterns: [207-SELINUX_BEST_PRACTICES.md](../policy/207-SELINUX_BEST_PRACTICES.md).
+The customer talk (**[202](202-DEMO_GUIDE.md)**) uses the same ideas on three apps: a Tomcat that is already confined, a Tomcat you only relabel, and shopapi, which is the one you generate.
 
 ---
 
 ## 13. Common beginner mistakes
 
-| Mistake | Why it hurts | What this repo does |
-|---------|--------------|---------------------|
-| Confusing process and file labels | Wrong mental model for AVCs | Use `ps -eZ` vs `ls -Z` (section 4) |
-| Setting entire OS permissive (`setenforce 0`) | Removes protection for everything | Only `myapp_t` permissive during soak |
-| Using `audit2allow` blindly | Over-broad rules (`allow myapp_t *:*`) | AI + forbidden-pattern CI + human review |
-| Allowing `bin_t:file execute` for helper scripts | CI rejects; over-broad | Keep `backup.sh` on bash builtins only |
-| Skipping `restorecon` after deploy | Old files keep wrong types | `verify_file_contexts.sh`, Ansible playbooks |
-| Testing only manual `python app.py` | Missing systemd transition AVCs | Playbooks restart via **systemd** |
-| Wrong port type for 8888 | `http_port_t` / raw `unreserved_port_t` | Dedicated **`myapp_port_t`** + `seport` |
-| Enforcing immediately | Misses weekly cron / logrotate edge cases | **7–14 day soak** before enforce |
+| What happens | Why it misleads you | What to do |
+|--------------|---------------------|------------|
+| You compare `chmod` and the app still fails | Unix permissions and SELinux are both checked | Read the AVC type fields (section 8) |
+| You run `setenforce 0` | The whole machine only logs denials | Put only `shopapi_t` on the permissive list (section 7) |
+| You pipe `audit2allow` into `semodule` | Every denial becomes an allow, including startup noise | Generate with `dev_generate_policy.sh`. It writes `policy_out/findings.json`, one row per denial, saying whether that row is already allowed or still needs a rule. |
+| You skip `restorecon` | The allow names `shopapi_log_t` while the file is still `var_log_t` | Run `restorecon` after `semodule -i` (section 6) |
+| You start Java from the shell | The process is `unconfined_t`, so the denials describe your login | Start it with systemd |
+| You curl `/feature-spool` during lab 2 | The first module then contains rules you have not learned yet | Curl only the URL the lab names |
+| You enforce on day one in production | A weekly job can still be missing an allow | Soak (section 7.5) |
 
 ---
 
-## 14. Install and manage policy modules
+## 14. Install a module on the practice host
+
+Lab 3 types this. The two environment variables tell the script which module the directory holds. The argument is the directory with the `.te` and `.fc`.
 
 ```bash
-# Compile (this repo — refpolicy Makefile)
-bash scripts/compile_and_validate.sh selinux
-
-# Semantic checks on rhel-qa
-bash scripts/validate_policy_semantics.sh selinux
-
-# Install / upgrade on host (in-place — no semodule -r step)
-sudo semodule -i selinux/myapp.pp
-
-# List loaded modules
-sudo semodule -l | grep myapp
+POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
+  bash scripts/compile_and_validate.sh selinux/shopapi
+sudo semodule -i selinux/shopapi/shopapi.pp
+sudo semodule -l | grep shopapi
 ```
+
+| Command | What you should see |
+|---------|---------------------|
+| `compile_and_validate.sh` | A line `Built …/shopapi.pp` |
+| `semodule -i` | No output. The module is loaded. |
+| `semodule -l` | A line containing `shopapi`. `-l` lists loaded modules. It needs root (`sudo`). |
+
+`semodule -i` again, after lab 6, replaces the module with the updated one.
 
 ---
 
-## 14.5 Production topics (beyond the reference app)
+## 14.5 Three host settings that are not a `.te` file
 
-This demo focuses on custom types, `.te` allows, canary soak, and enforce. Real RHEL apps often also need:
+The **202** talk's App B is vendor Tomcat. The fix is a host setting. Red Hat's module already contains the allow, aimed at a type or a boolean you have not turned on.
 
-### auditd (AVC source)
-
-| Command | Purpose |
-|---------|---------|
-| `systemctl status auditd` | Confirm denial logging is on |
-| `ausearch -m avc -ts recent` | Query structured AVC events |
-| `grep '^type=AVC' /var/log/audit/audit.log` | Raw log fallback |
-
-Export scripts prefer `ausearch`; if auditd is stopped, `policy_out/avc.log` will be empty.
-
-### SELinux booleans
-
-Booleans toggle optional base-policy behavior without a custom module:
+**File label.** The files are on a path the vendor module does not know about.
 
 ```bash
-getsebool -a | head
-semanage boolean -l | head
+sudo semanage fcontext -a -t tomcat_var_lib_t '/opt/appdata(/.*)?'
+sudo restorecon -Rv /opt/appdata
 ```
 
-This repo uses **custom `.te` rules** instead of toggling booleans (e.g. `httpd_can_network_connect`). A boolean is only the right fix when base policy already has one — the generator says so.
+`fcontext -a` adds an address-book line (`-a` add, `-t` the type). `restorecon` paints the files. This is the same pair as section 5 and section 6.
 
-### Port labeling (`semanage port`)
+**Port label.** The app listens on a port that does not have the HTTP port type.
 
-Port **8888** is labeled **`myapp_port_t`** (`semanage port` / canary `seport`) — not `http_port_t` and not a blanket `unreserved_port_t` bind. Before that label exists, AVCs still name `unreserved_port_t`; that is the *denial*, not the intended allow.
+```bash
+sudo semanage port -a -t http_port_t -p tcp 8090
+```
 
-### Process transitions
+`-t http_port_t` is the type vendor policy already allows a web server to bind. `-p tcp` is the protocol. **8090** is the talk's Tomcat port. Shopapi's port is **8091** and uses `shopapi_port_t`.
 
-`domain_auto_trans(myapp_t, myapp_script_exec_t, myapp_t)` keeps `backup.sh` in **`myapp_t`** — not a separate helper domain.
+**Boolean.** An on/off switch that vendor policy already compiled in.
 
-`init_daemon_domain(myapp_backend_t, myapp_backend_exec_t)` gives the backend stub its own domain for Tier 6 TCP/Unix rules.
+```bash
+sudo setsebool -P tomcat_can_network_connect on
+```
+
+`setsebool` sets it. `-P` stores it so a reboot keeps it. `on` is the value. Use a boolean when `audit2why` names one. Shopapi's missing allows are not booleans. They are new lines in `shopapi.te`, because no vendor module ships `shopapi_t`.
 
 ---
 
-## 15. Command cheat sheet (by task)
+## 15. Command cheat sheet
 
-Examples below use **`myapp`**. Live **shopapi** copies of the same rows: **[101 — Command cheat sheet](101-SELINUX.md#command-cheat-sheet)**.
+The lab's copy, with shopapi paths, is the cheat sheet at the bottom of **[101](101-SELINUX.md#command-cheat-sheet)**.
 
-**Check SELinux status**
+**Is SELinux on?** `getenforce` prints `Enforcing`, `Permissive`, or `Disabled`. `sestatus` prints the same fact plus the name of the loaded policy.
 
-```bash
-getenforce
-sestatus
-```
+**What label is on a file?** `ls -Z /opt/shopapi`
 
-**View labels**
+**What label is on the process?** `ps -eZ | grep shopapi`
 
-```bash
-ls -Z /path/to/file          # file label
-ps -eZ | grep myapp          # process label
-matchpathcon /path/to/file   # label policy expects
-```
+**What label should this path have?** `matchpathcon /var/log/shopapi`
 
-**Fix labels on disk**
+**Relabel from the address book.** `sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi`
 
-```bash
-sudo restorecon -Rv /opt/myapp /var/lib/myapp /var/log/myapp /run/myapp
-sudo restorecon -Rv -n /var/log/myapp    # dry run only
-```
+**Look first.** Add `-n` to `restorecon` to print changes without writing them.
 
-**Permissive domain (one app)**
+**Log-only for one domain.** `sudo semanage permissive -a shopapi_t`, then `-l` to list, `-d` to remove.
 
-```bash
-sudo semanage permissive -a myapp_t   # add — start soak
-sudo semanage permissive -l           # list — inspect
-sudo semanage permissive -d myapp_t   # delete — enforce
-```
+**Read denials.** `sudo ausearch -m avc -ts recent | grep shopapi_t`
 
-**Audit / denials**
+**Is the audit service running?** `systemctl status auditd --no-pager`. If it is stopped, the export file stays empty.
 
-```bash
-sudo systemctl status auditd          # must be active for AVC export
-sudo ausearch -m avc -ts recent
-sudo ausearch -m avc -ts recent | grep myapp_t
-```
-
-If `auditd` is stopped, `policy_out/avc.log` export will be empty even when the app runs.
-
-**Policy modules**
-
-```bash
-sudo semodule -l
-bash scripts/compile_and_validate.sh selinux   # build myapp.pp locally
-sudo semodule -i selinux/myapp.pp              # upgrades in place
-```
+**Build and load, on the practice host.** Section 14.
 
 ---
 
 ## 16. Glossary
 
-| Term | One-line definition |
-|------|---------------------|
-| **MAC** | Mandatory Access Control — system policy, not user choice |
-| **Label / context** | SELinux tag on a process or object (`user:role:type:level`) |
-| **Type** | Third field of a context; used in `allow` rules |
-| **Domain** | Process type (e.g. `myapp_t`) |
-| **TE** | Type Enforcement — rule language in `.te` files |
-| **FC** | File Contexts — path-to-label mappings in `.fc` files |
-| **AVC** | Access Vector Cache denial log entry |
-| **restorecon** | Re-apply policy-defined labels to files on disk |
-| **semanage** | Manage SELinux settings (including per-domain permissive list) |
-| **DAC** | Discretionary Access Control — classic Unix `rwx` permissions |
-| **MLS/MCS** | Advanced classification; not used in this project (always `s0`) |
+| Term | Meaning |
+|------|---------|
+| **Kernel** | The core of the operating system. SELinux checks run here. |
+| **Unix permissions** | Owner, group, and mode bits (`chmod`). Checked as well as SELinux. |
+| **MAC** | Mandatory access control. The system enforces SELinux rules. |
+| **DAC** | Discretionary access control. Unix permissions, which the file owner can change. |
+| **Policy** | The full set of SELinux rules loaded in the kernel. |
+| **Module** | One app's piece of policy (`.te` + `.fc`, compiled to `.pp`). |
+| **Label / context** | The four-field tag `user:role:type:level`. |
+| **Type** | The third field. The category allow rules name. |
+| **Domain** | A type on a running process, such as `shopapi_t`. |
+| **Object class** | The kind of object: `file`, `dir`, `tcp_socket`. |
+| **Allow rule** | One permitted action, written in the `.te` file. |
+| **`.te`** | The rule book (type enforcement). |
+| **`.fc`** | The address book (file contexts): path to label. |
+| **`.pp`** | The compiled module package. |
+| **Enforcing** | Denials block the action. `getenforce` prints this for the whole machine. |
+| **Permissive** | Denials are logged and the action still happens. Either the whole machine, or one domain on the permissive list. |
+| **AVC** | The denial line in the audit log. |
+| **auditd** | The service that writes `/var/log/audit/audit.log`. |
+| **ausearch** | Search that log. |
+| **restorecon** | Repaint file labels from the `.fc` rules. |
+| **semanage** | Change a persistent SELinux setting (permissive list, file context, port type). |
+| **semodule** | Install (`-i`) or list (`-l`) policy modules. |
+| **setsebool** | Turn a vendor-policy switch on or off. |
+| **Confined** | Held to an allow list. |
+| **Unconfined** | Not held to an allow list. Your SSH shell is unconfined. Distro `tomcat_t` on this RHEL is unconfined. |
+| **Vendor domain** | A type shipped by Red Hat for a product. Tune the host. Do not write a parallel module. |
+| **Seed** | A starter module that declares types and has almost no allows. |
+| **Canary** | Install a new module and watch it, with the app domain still log-only. |
+| **Soak** | Leave the canary in place for days, watching for net-new denials. |
+| **Net-new** | A permission the installed module does not already allow. |
+| **MLS/MCS** | Clearance and category labels. This project leaves them at the default `s0`. |
 
 ---
 
 ## 17. Further reading
 
 - [Red Hat SELinux User's and Administrator's Guide](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/using_selinux/index)
-- On RHEL hosts: `man selinux`, `man semodule`, `man restorecon`, `man ausearch`
+- On the practice host: `man selinux`, `man semodule`, `man restorecon`, `man ausearch`
 
 ---
 
@@ -783,13 +803,12 @@ sudo semodule -i selinux/myapp.pp              # upgrades in place
 
 Numbered catalog: [docs/README.md](../README.md).
 
-| # | Guide | Audience |
-|---|--------|----------|
-| **101** | [SELinux 101](101-SELINUX.md) | Typed shopapi labs before the talk |
-| **This file (102)** | | New to SELinux — labels, `.te`/`.fc` |
-| **103** | [Hands-on recap](103-TRAINING_LAB.md) | After 101: recap + `demo_present.sh` |
-| **201** | [Code walkthrough](201-CODE_WALKTHROUGH.md) | Code tour |
-| **202** | [Three-app customer talk](202-DEMO_GUIDE.md) | `demo_present.sh` |
-| **204** | [Deterministic policy](../developers/204-DETERMINISTIC_POLICY.md) | Offline generator |
-| **205** | [Testing](../developers/205-TESTING.md) | Endpoints, smoke, CI |
-| **302** | [Production readiness](../admin/302-PRODUCTION_READINESS.md) | Soak, canary, enforce |
+| # | Guide | When you need it |
+|---|--------|------------------|
+| **101** | [SELinux 101](101-SELINUX.md) | Type the shopapi labs. Read sections 1–7 of this page first. |
+| **This file (102)** | | What the words and commands mean |
+| **103** | [Hands-on recap](103-TRAINING_LAB.md) | A one-screen recap after 101 |
+| **201** | [Code walkthrough](201-CODE_WALKTHROUGH.md) | Which script implements the steps in section 12 |
+| **202** | [Three-app customer talk](202-DEMO_GUIDE.md) | After 101 |
+| **204** | [Deterministic policy](../developers/204-DETERMINISTIC_POLICY.md) | How a denial becomes `baseline` or a new allow |
+| **302** | [Production readiness](../admin/302-PRODUCTION_READINESS.md) | Soak, canary, and enforce in full |
