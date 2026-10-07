@@ -54,13 +54,15 @@ sudo bash scripts/demo_bootstrap.sh --shopapi-only
 
 Use this when you want to see each step. Skip it if you already ran the one command above.
 
-**1. Install the tools.** Maven builds the app. Java runs it. `selinux-policy-devel` compiles a `.te` into a `.pp`.
+**1. Install the tools.** Maven builds the app. Java runs it. `python3-pyyaml` lets Python read `config/shopapi.manifest.yml` (`import yaml`). Without it, bootstrap and the generator stop at that import. `selinux-policy-devel` is the policy compiler. It supplies `/usr/share/selinux/devel/Makefile`, which turns `shopapi.te` and `shopapi.fc` into `shopapi.pp`. The Mac does not have this package.
 
 ```bash
 sudo dnf install -y maven java-17-openjdk-devel python3 python3-pyyaml selinux-policy-devel
 ```
 
-**2. Create the Unix account the service will run as.** This is a Linux user. It is not the SELinux user `system_u`.
+**2. Create the Unix account the service will run as.** This is a Linux user and group. It is not the SELinux user `system_u`, and it is not the type `shopapi_t`.
+
+`groupadd --system shopapi` creates a system group (a low group id, for a service, not a person). `useradd` then creates the user in that group. `--home-dir /opt/shopapi` sets the home directory to the install tree. `--shell /sbin/nologin` refuses an interactive login. systemd can still start the service as this user. Files are later owned `shopapi:shopapi`, so the service can read them and your `ansible` login is not the owner.
 
 ```bash
 sudo groupadd --system shopapi
@@ -69,7 +71,7 @@ sudo useradd --system --gid shopapi --home-dir /opt/shopapi --shell /sbin/nologi
 
 If the account already exists, `groupadd` / `useradd` print "already exists". Continue.
 
-**3. Create the directories.**
+**3. Create the directories.** `mkdir -p` creates them and does not fail if they already exist. They have to exist before `chown` and `restorecon`. The unit's `StateDirectory`, `LogsDirectory`, and `RuntimeDirectory` also create three of them when the service starts. `/opt/shopapi` and `/var/spool/shopapi` are not created that way.
 
 ```bash
 sudo mkdir -p /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi /var/spool/shopapi
@@ -106,7 +108,11 @@ sudo cp -a "$java_home/conf/." /opt/shopapi/conf/
 sudo chown -R shopapi:shopapi /opt/shopapi
 ```
 
-`/etc/shopapi.env` is the port and the directories. `/etc/systemd/system/shopapi.service` starts the private Java and sets the process label from **102** §3.
+`/etc/shopapi.env` is the port and the directories the Java process reads (`SHOPAPI_PORT`, `SHOPAPI_LOG_DIR`, and the rest). `/etc/systemd/system/shopapi.service` is how the machine starts shopapi after a reboot.
+
+`SELinuxContext=system_u:system_r:shopapi_t:s0` is the whole label pinned on the process at start. systemd requires all four fields. `system_u` means a system object. `system_r` means a process (`object_r` would mean a file). `shopapi_t` is the type `allow` rules use. `s0` is the default level. The letters after `_` are part of the name (`_u` user, `_r` role, `_t` type). They are not a switch you can replace with another letter. The line is required because `java` is a shared binary. Without it the process comes up as `unconfined_service_t`, and the denials do not name shopapi.
+
+`WantedBy=multi-user.target` is read by `systemctl enable`, not by writing the file. It hooks shopapi into a normal boot so a reboot starts it again. `systemctl start` alone would not do that.
 
 ```bash
 sudo tee /etc/shopapi.env >/dev/null <<'EOF'
@@ -142,7 +148,11 @@ WantedBy=multi-user.target
 EOF
 ```
 
-**6. Compile the types-only seed and load it.** The `.te` declares the type names. It has almost no `allow` lines yet.
+**6. Compile the types-only seed and load it.** The `.te` declares the type names. It has almost no `allow` lines yet. You do not write this file in the lab. It is already in git. A new app with no module yet uses `scaffold_sepolicy_module.sh` (Lab 1). Shopapi's file is already there, so that script will not replace it.
+
+`compile_and_validate.sh` reads `shopapi.te` and `shopapi.fc` because `POLICY_MODULE=shopapi`. The default name is `myapp`, and `selinux/shopapi/myapp.te` does not exist. `SELINUX_DOMAIN=shopapi_t` makes the check fail if that type name is missing from the `.te`. The script rejects dangerous allows, then writes `shopapi.pp`. The kernel does not read the `.te`.
+
+`semodule -i` loads that `.pp`. `-i` installs or replaces the module named `shopapi`. It prints nothing on success. It does not relabel files, and it does not assign port 8091. Check with `sudo semodule -l | grep shopapi`.
 
 ```bash
 sudo env POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
@@ -150,13 +160,24 @@ sudo env POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
 sudo semodule -i selinux/shopapi/shopapi.pp
 ```
 
-**7. Paint those labels onto the files already on disk.**
+**7. Paint those labels onto the files already on disk.** Look first. `ls -Z` reads the label stored on the file. `matchpathcon` does not open the file. It looks up the path in the loaded address book and prints the type the policy wants. When the two types differ, `restorecon` is what copies the policy's answer onto the file.
+
+```bash
+ls -Z /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+matchpathcon /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+```
+
+Before `restorecon`, expect `usr_t` or `bin_t` on `/opt/shopapi` (the copied `java` is still wearing the shared-binary type), `var_lib_t` under `/var/lib/shopapi`, and `var_log_t` under `/var/log/shopapi`. `matchpathcon` should already say `shopapi_exec_t`, `shopapi_var_lib_t`, and `shopapi_log_t`. `/run/shopapi` may not exist yet (`RuntimeDirectory` creates it when the service starts). `ls` then says "No such file or directory", and `matchpathcon` can print `var_run_t`, the type of `/run` itself, because the directory is absent.
 
 ```bash
 sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 ```
 
-**8. Label port 8091, and put only `shopapi_t` on the log-only list.** `getenforce` stays `Enforcing`.
+`-R` walks directories. `-v` prints only paths whose label changed. A `Relabeled` line for `/opt/shopapi/bin/java` should go from `bin_t` to `shopapi_exec_t`. This command cannot relabel `/run/shopapi` until that directory exists, and it does not touch `/var/spool/shopapi`. That path is lab 6.
+
+**8. Label port 8091, and put only `shopapi_t` on the log-only list.** Loading `shopapi.pp` created the type `shopapi_port_t`. It did not attach that type to TCP 8091. `semanage port -a` writes that assignment. `-t` is the type, `-p tcp` is the protocol. Check first with `sudo semanage port -l | grep 8091`. If the port is already listed, skip `-a`.
+
+`semanage permissive -a shopapi_t` adds only this process type to the log-only list. A missing allow still writes an AVC, and the action still succeeds (`permissive=1` on the line). `getenforce` stays `Enforcing`. This is not `setenforce 0`. Lab 5 removes the domain with `-d`.
 
 ```bash
 sudo semanage port -a -t shopapi_port_t -p tcp 8091
@@ -169,7 +190,7 @@ If the port is already labeled, `semanage port -a` says it is defined. Continue 
 sudo semanage port -m -t shopapi_port_t -p tcp 8091
 ```
 
-**9. Start the service.** A line of JSON from `curl` means it is up.
+**9. Start the service.** `daemon-reload` makes systemd read the new unit file. Writing `/etc/systemd/system/shopapi.service` updates the disk. systemd keeps the previous copy in memory until this reload. The reload does not start the service. `enable --now` starts it now and, because of `WantedBy=multi-user.target`, starts it again on the next boot. A line of JSON from `curl` means it is up.
 
 ```bash
 sudo systemctl daemon-reload
@@ -222,7 +243,9 @@ ps -eZ | grep shopapi
 | `ls -Z` | A line with `system_u:object_r:`**`shopapi_exec_t`**`:s0` (file **type**, third field) |
 | `ps -eZ` | A java line with `system_u:system_r:`**`shopapi_t`**`:s0` (process **domain**) |
 
-**Checkpoint:** What is the difference between the type on the **file** and the type on the **running process**? (File = room sign. Process = badge. Policy matches badge → room.)
+**Checkpoint:** What is the difference between the type on the **file** and the type on the **running process**?
+
+The file type and the process type are supposed to differ. On a good run, `ls -Z /opt/shopapi` shows `shopapi_exec_t` (the sign on the program files, including `bin/java` and `shopapi.jar`). `ps -eZ | grep shopapi` shows `shopapi_t` (the badge on the running Java process). An `allow` rule names both: may a process badged `shopapi_t` use a file signed `shopapi_exec_t`? Starting the program does not change the file's type into `shopapi_t`. `restorecon` labeled the files. `SELinuxContext` in the unit labeled the process. `getenforce` still prints `Enforcing`. The log-only list does not change either type.
 
 ---
 
@@ -323,11 +346,15 @@ sudo ausearch -m avc -ts recent
 
 You may see **more than one** line (JVM startup plus the log write). Pick **one** that you can explain.
 
-`audit2why` turns that same search into a shorter English hint. `| tail -n 40` keeps the last 40 lines. Read it. Do not pipe `audit2allow` into `semodule`.
+`audit2why` turns a denial into a shorter English hint. Keep the `grep shopapi_t`. `| tail -n 40` keeps the last 40 lines. Read the hint. Do not pipe `audit2allow` into `semodule`. `audit2why` will suggest that. The lab does not do it.
 
 ```bash
-sudo ausearch -m avc -ts recent | audit2why | tail -n 40
+sudo ausearch -m avc -ts recent | grep shopapi_t | audit2why | tail -n 40
 ```
+
+**If you leave out `grep shopapi_t`, shopapi disappears.** `ausearch` returns every domain from the last ten minutes, and `tail` keeps only the end of that list. On this practice VM a leftover `myapp` service often fills those lines: `comm="python"` or `backend_stub.py`, `scontext=init_t` (systemd, not shopapi), `tcontext=unlabeled_t`, and `trawcon` mentioning `myapp_exec_t`. `unlabeled_t` means the `myapp` module is not loaded, so the kernel no longer knows that type. `audit2why` then says "missing allow rule" about those lines. That is not the `/log` denial. A shopapi line has `scontext=...shopapi_t` and `comm="java"`.
+
+If the grepped command prints nothing, the `/log` curl was more than ten minutes ago, or it has not been run yet. Curl `/log` again, then run the grepped search. Do not generate a module from the `myapp` lines.
 
 **How to read one line** (ignore timestamps):
 
@@ -712,7 +739,7 @@ sudo semanage permissive -d shopapi_t   # lab 5
 ```bash
 sudo ausearch -m avc -ts recent
 sudo ausearch -m avc -ts recent | grep shopapi_t
-sudo ausearch -m avc -ts recent | audit2why
+sudo ausearch -m avc -ts recent | grep shopapi_t | audit2why
 ```
 
 **Module (QA 101 only)**
