@@ -244,11 +244,38 @@ systemctl status shopapi --no-pager
 ps -o label=,args= -C java | head
 ```
 
-`sed -n '1,32p'` prints lines 1 through 32 of the rule book and then stops. You are checking that the seed names the types and has almost no `allow` lines.
+`sed -n '1,32p'` prints lines 1 through 32 of the rule book and then stops. You are checking that the seed names the types and has almost no `allow` lines. `cat` prints the whole file.
 
 ```bash
 sed -n '1,32p' selinux/shopapi/shopapi.te
 ```
+
+### Where `shopapi.te` came from
+
+This lab uses the file already in git. Read it. Leave it in place. Labs 2–6 start from this seed.
+
+A **new** app has no `selinux/<name>/` yet. Then you create the starter once, with `scaffold_sepolicy_module.sh`. That script will not replace a `.te` that already exists. Running it for shopapi prints `Skipping ... already exists` and does nothing. Do not delete `shopapi.te` to force a new one. `sepolicy-generate` writes Red Hat's unconfined template, which is a different file from this seed.
+
+**One command,** for a new module (the example name is `payments`, not shopapi):
+
+```bash
+sudo dnf install -y policycoreutils-devel
+bash scripts/scaffold_sepolicy_module.sh payments payments_t
+```
+
+`policycoreutils-devel` supplies `sepolicy-generate`. The script's two arguments are the module name and the process type.
+
+**What that script does, one command at a time.** Skip this on the shopapi lab. It is here so the wrapper is not a mystery.
+
+`sepolicy-generate` writes a starter in a temporary directory. `-a payments_t` is the domain to create. `-t unconfined_t` is the Red Hat template it starts from.
+
+```bash
+sepolicy-generate -a payments_t -t unconfined_t
+```
+
+The script then copies `payments.te`, `payments.if`, and `payments.fc` into `selinux/payments/` only when those files are missing. `.te` is the rule book. `.fc` is the address book. `.if` is a list of helpers other modules can call. The copy still has no allows from a real denial. Those come from `dev_generate_policy.sh` after the app has run.
+
+Shopapi's committed seed is that same kind of starter, trimmed so you can see the type names and the absence of a `/log` allow. The address book that goes with it is `selinux/shopapi/shopapi.fc`.
 
 **Good sign**
 
@@ -344,7 +371,14 @@ sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "
 | `--app-root "$(pwd)"` | This directory. `"$(pwd)"` is the current directory as one argument. |
 | `--apply` | After generation, copy `policy_out/shopapi.te` and `.fc` into `selinux/shopapi/`. |
 
-That command checks that no vendor module already confines shopapi, copies this app's denials into `policy_out/avc.log`, runs the generator, and with `--apply` copies the result into `selinux/shopapi/`.
+That one command hides six steps. The section below types each one. Use the one command, or type the steps. Do not do both for the same generate.
+
+1. Check that no vendor module already confines this app.
+2. Copy this app's denials into `policy_out/avc.log`.
+3. Run `cli/deterministic_gen.py`, which writes `policy_out/shopapi.te`, `.fc`, and `findings.json`.
+4. Run `validate_forbidden_patterns.sh` on that output.
+5. Compile `policy_out/` to a `.pp`.
+6. With `--apply`, copy the `.te` and `.fc` into `selinux/shopapi/`.
 
 If it **exits 1** and mentions `execmem` / `needs_review`, the JVM asked for a permission that weakens the domain. For this 101 only, run the same command with one more flag. `--allow-needs-review` writes that permission because it was in the log. Do not type `execmem` into the `.te` yourself if it was not in the log.
 
@@ -356,16 +390,24 @@ sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "
 
 Skip this if you already ran the one command.
 
-**1. Save this app's denials.** `--input-logs` reads the audit log files. `--subject shopapi_t` keeps that process type. `--format raw` is the form the generator reads. `-ts boot` means since boot.
+**1. Vendor check.** The generator refuses to write a module when Red Hat already ships the domain (Tomcat, httpd, and similar). Shopapi has no such module, so this check continues. `semodule -l` lists loaded modules. `grep` looks for names that would stop generation.
+
+```bash
+sudo semodule -l | grep -E 'tomcat|httpd|shopapi' || true
+```
+
+You should see `shopapi` only if prep already loaded the seed. You should not see a vendor module that means "shopapi is already confined by Red Hat."
+
+**2. Save this app's denials.** `--input-logs` reads the audit log files. `--subject shopapi_t` keeps that process type. `--format raw` is the form the generator reads. `-ts boot` means since boot. `tee` writes the lines into `policy_out/avc.log`.
 
 ```bash
 sudo mkdir -p policy_out
 sudo ausearch --input-logs -m AVC,USER_AVC -ts boot --subject shopapi_t --format raw | sudo tee policy_out/avc.log >/dev/null
 ```
 
-The one command then drops lines that are outside this app's directories. The file you just wrote is the full `shopapi_t` log. For the same module the later labs expect, prefer the one command. This step is here so you can open `policy_out/avc.log` and see the input.
+The one command then drops lines that are outside this app's directories. The file you just wrote is the full `shopapi_t` log. Open it if you want to see the input. For the same module the later labs expect, prefer the one command, because of that extra filter.
 
-**2. Turn that log into a rule book.** The generator compares the log with the `.te` and `.fc` you already have. It writes `policy_out/`, not `selinux/`, until you copy.
+**3. Turn that log into a rule book.** `deterministic_gen.py` compares the log with the `.te` and `.fc` you already have. It writes `policy_out/`. It does not edit `selinux/` yet.
 
 ```bash
 cp selinux/shopapi/policy_version.txt policy_out/policy_version.txt
@@ -379,9 +421,35 @@ python3 cli/deterministic_gen.py \
   --bump-version
 ```
 
+| Flag | What it is |
+|------|------------|
+| `--avc-log` | The denial file from step 2. |
+| `--manifest` | Paths and port from `config/shopapi.manifest.yml`. |
+| `--existing-te` / `--existing-fc` | The seed already on disk. Lines it already allows are marked `baseline`. |
+| `--out-dir` | Where the new `.te`, `.fc`, and `findings.json` go. |
+| `--bump-version` | Advances the version number stored next to the module. |
+
 Add `--allow-needs-review` on that command only when it exits 1 and names `execmem`.
 
-**3. Copy the new rule book and address book into the directory you commit.**
+**4. Reject dangerous allows before you compile.** `validate_forbidden_patterns.sh` reads the `.te` and `.fc` and exits 1 if a rule is one this repo will not ship. `compile_and_validate.sh` runs this same script first. Run it by itself so a failure is about the rules, not the compiler.
+
+```bash
+POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
+  bash scripts/validate_forbidden_patterns.sh policy_out
+```
+
+| It checks | Why |
+|-----------|-----|
+| No `allow` with a `*` wildcard | A wildcard permits every type or every class. |
+| No `bin_t:file execute` | That would let the app run every system binary. App programs get their own `*_exec_t`. |
+| No allow of `shadow_t`, `unconfined_t`, or `sysadm_t` | Those are high-privilege types. |
+| The file contains `policy_module(...)` | That is the module header. |
+| The file mentions `shopapi_t` | `SELINUX_DOMAIN` must appear in the `.te`. |
+| The `.fc` mentions `/opt/shopapi`, `/var/lib/shopapi`, `shopapi_exec_t`, and `shopapi_var_lib_t` | The address book has to cover the install path and the state path. |
+
+A good last line is `Forbidden-pattern checks passed for shopapi`.
+
+**5. Copy the new rule book and address book into the directory you commit.** This is what `--apply` does.
 
 ```bash
 sudo cp policy_out/shopapi.te selinux/shopapi/shopapi.te
@@ -396,7 +464,7 @@ python3 -m json.tool policy_out/findings.json | head -n 80
 tail -n 40 policy_out/shopapi.te
 ```
 
-**Compile and load**, one command at a time. `POLICY_MODULE` and `SELINUX_DOMAIN` tell the script which files to build. `compile_and_validate.sh` rejects dangerous allows, then writes `shopapi.pp`. `semodule -i` loads that package. `restorecon` paints the new labels onto existing files. `semodule -l | grep shopapi` confirms the module name is loaded.
+**6. Compile and load.** `compile_and_validate.sh` runs step 4 again on `selinux/shopapi`, then calls the policy compiler from `selinux-policy-devel` and writes `shopapi.pp`. `semodule -i` loads that package. `restorecon` paints the new labels onto existing files. `semodule -l | grep shopapi` confirms the name is loaded.
 
 ```bash
 POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
