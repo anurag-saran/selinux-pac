@@ -20,7 +20,7 @@ usage() {
 Usage: $(basename "$0") <subcommand> [options]
 
 Two RHEL boxes is the default lab: one **QA** (AVC discovery / generate) and
-one **prod** (canary → soak → enforce). See docs/admin/203-RHEL_TWO_HOST.md.
+one **prod** (canary → soak → enforce). See docs/demo/203-RHEL_TWO_HOST.md.
 
 Subcommands:
   write     Write ansible/inventory.dev.yml (QA host rhel-qa) and inventory.production.yml
@@ -180,7 +180,7 @@ print_bootstrap() {
     fi
     cat <<EOF
 === Bootstrap the QA RHEL box (run over SSH as a user with sudo) ===
-=== Next: docs/admin/203-RHEL_TWO_HOST.md (look at the prompt: Mac vs rhel-qa) ===
+=== Next: docs/demo/203-RHEL_TWO_HOST.md (look at the prompt: Mac vs rhel-qa) ===
 
 ssh ${ANSIBLE_USER}@${dev_hint}
 sudo dnf install -y git java-17-openjdk-headless maven python3 python3-pyyaml \\
@@ -201,7 +201,7 @@ open a GitHub PR on selinux-pac, then canary from the controller:
   ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml
 
 === PROD RHEL box (no git clone) ===
-=== Explained in docs/admin/203-RHEL_TWO_HOST.md ===
+=== Explained in docs/demo/203-RHEL_TWO_HOST.md ===
 
 # App first (scp demo/shopapi + demo_bootstrap.sh --shopapi-only --no-seed --unconfined).
 # Then RPMs for policy.
@@ -216,7 +216,7 @@ sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml \\
   ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \\
     -e change_ticket=DEMO -e force_enforce=true
 
-Docs: docs/admin/203-RHEL_TWO_HOST.md
+Docs: docs/demo/203-RHEL_TWO_HOST.md
 EOF
 }
 

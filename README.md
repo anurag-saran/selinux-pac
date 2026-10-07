@@ -6,10 +6,10 @@ The **customer talk** is **202** — three applications (vendor Tomcat already e
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/training/202-DEMO_GUIDE.md)** |
+| **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
-| **Application developer** | [Developers](#developers) and **[206](docs/developers/206-ONBOARDING.md)** |
+| **Application developer** | [Developers](#developers) and **[206](docs/developers/201-CODE_WALKTHROUGH.md#add-an-application)** |
 | **Offline check (any laptop)** | `make check` (**205**) |
 
 ---
@@ -47,7 +47,7 @@ Those are complementary, not substitutes: his loop detects and routes; this tool
 
 - **Developers own the allow list in git.** `.te` / `.fc` / `selinux_ports` are reviewed like application code. CI blocks `shadow_t`, wildcards, `bin_t` execute, and the rest of the forbidden set.
 - **Admins own production mutation.** The only control plane is AAP (same YAML on a laptop until the project is imported). Execution nodes SSH in; they never clone this repo onto prod.
-- **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/303-DENIAL_RESPONSE.md](docs/admin/303-DENIAL_RESPONSE.md))
+- **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship))
 - **Soak is evidence, not a calendar sticker.** Daily net-new vs the installed module. Fail closed if `sesearch` is missing (`setools-console` is an RPM require).
 - **Break-glass is still gated.** `force_enforce` defaults false and still needs `change_ticket`. Rollback does not require an API key.
 
@@ -95,16 +95,13 @@ Prod     Release canary → Soak monitor → Promote to enforce
 
 ## Admins: your environment
 
-Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-click datacenter installer; this is the customer path. Full checklist: [docs/admin/304-ADOPTION_CHECKLIST.md](docs/admin/304-ADOPTION_CHECKLIST.md). Doc index: [docs/README.md](docs/README.md).
+Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-click datacenter installer; this is the customer path. Full checklist: [docs/admin/301-ANSIBLE_OPERATIONS.md#roll-this-out](docs/admin/301-ANSIBLE_OPERATIONS.md#roll-this-out). Doc index: [docs/README.md](docs/README.md).
 
 | Follow | For |
 |--------|-----|
-| **[304](docs/admin/304-ADOPTION_CHECKLIST.md)** | CODEOWNERS, CI, signed RPM repo, AAP objects |
-| **[203](docs/admin/203-RHEL_TWO_HOST.md)** | QA box + prod box; **no git clone on prod** |
-| **[301](docs/admin/301-ANSIBLE_OPERATIONS.md)** | Playbooks and extra-vars |
+| **[203](docs/demo/203-RHEL_TWO_HOST.md)** | QA box + prod box; **no git clone on prod** |
+| **[301](docs/admin/301-ANSIBLE_OPERATIONS.md)** | Canary, soak, enforce, rollback, and a denial after ship |
 | [ansible/aap/README.md](ansible/aap/README.md) | Click-create job templates + **Release canary** / **Promote to enforce** |
-| **[302](docs/admin/302-PRODUCTION_READINESS.md)** | Soak, enforce, rollback |
-| **[303](docs/admin/303-DENIAL_RESPONSE.md)** | File/port denied after ship → PR, not live `semodule -i` |
 
 **Scripts** (run from the controller — laptop or AAP execution node):
 
@@ -118,7 +115,7 @@ bash scripts/setup_rhel_hosts.sh doctor
 # bootstrap — print (do not run) SSH steps for rhel-qa only
 bash scripts/setup_rhel_hosts.sh bootstrap
 # next app after the shopapi demo
-bash scripts/selinux_pac_adopt.sh init payments     # see 206-ONBOARDING.md
+bash scripts/selinux_pac_adopt.sh init payments     # see docs/developers/201-CODE_WALKTHROUGH.md#add-an-application
 
 # Package + publish (see packaging/internal.env.example)
 bash packaging/build_rpms.sh                        # selinux-policy-ops + shopapi-selinux (demo) + myapp-selinux (test fixture)
@@ -159,7 +156,7 @@ macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still ru
 
 Those IPs are this Mac’s UTM shared network (`rhel-qa` = `192.168.64.6`, `rhel-prod` = `192.168.64.5`). Re-check with `ping` if a VM was recreated.
 
-**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/admin/203-RHEL_TWO_HOST.md)** (plain-language, one computer at a time), especially [Present this lab (three terminals)](docs/admin/203-RHEL_TWO_HOST.md#present-this-lab-three-terminals). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
+**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/demo/203-RHEL_TWO_HOST.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
 
 **Before the talk (101):** [docs/training/101-SELINUX.md](docs/training/101-SELINUX.md) (one host, shopapi). Then pick **one** demo:
 
@@ -179,7 +176,7 @@ bash scripts/demo_present.sh --preflight
 bash scripts/demo_present.sh --profile customer
 ```
 
-See **[202](docs/training/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
+See **[202](docs/demo/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
 
 **203 three-host pipeline:** three Terminal windows. The Mac script is the conductor; press Enter between steps.
 
@@ -212,7 +209,7 @@ The generator classifies the denial: **file** → `.fc` + `restorecon`; **port**
 
 CI must pass `forbidden-patterns` and `version-consistency` (the generator already ran the same forbidden-pattern check). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`.
 
-New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[206](docs/developers/206-ONBOARDING.md)**.
+New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[206](docs/developers/201-CODE_WALKTHROUGH.md#add-an-application)**.
 
 Ports stay in the committed manifest (`selinux_ports`). Probe host/IP is per inventory (`http_probe_host`).
 
@@ -226,10 +223,10 @@ selinux/      Policy source of truth (.te/.fc, policy_version.txt)
 ansible/      selinux_pac role + aap/ Controller workflows
 packaging/    selinux-policy-ops + <app>-selinux; publish_internal.sh
 scripts/      setup_rhel_hosts.sh (admins), demo_e2e_*.sh (three-window lab talk track)
-docs/training/    101 labs, 102 basics, 103 recap, 201 walkthrough, 202 talk
-docs/admin/       203 two-host, 301–304 ship/run
-docs/developers/  204 generator, 205 tests, 206 onboarding
-docs/policy/      207 best practices
+docs/training/    101 labs, 102 basics
+docs/demo/        202 customer talk, 203 three-host ship talk
+docs/admin/       301 ship
+docs/developers/  201 how the tool works, 205 tests
 ```
 
 ---
@@ -237,6 +234,6 @@ docs/policy/      207 best practices
 ## Safety
 
 - Never `force_enforce` without a change ticket. Never copy `soak_min_days: 0` from `inventory.dev.yml` onto prod (enforce refuses it on the `production` group). The three-window demo may pass `force_enforce=true` with `-e change_ticket=DEMO` so the talk can finish.
-- If a file or port is denied after ship: [docs/admin/303-DENIAL_RESPONSE.md](docs/admin/303-DENIAL_RESPONSE.md) — PR + recanary, not live `semodule -i`.
+- If a file or port is denied after ship: [docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) — PR + recanary, not live `semodule -i`.
 - Optional LLM polishes `pr_summary.md` only. Legacy `--legacy-full-policy` is emergency/controller-only.
 - AAP is the control plane (RPMs, `serial: 1`). Do not `semodule -i` generated policy on prod.

@@ -11,7 +11,7 @@ E2E_SSH_USER="${ANSIBLE_SSH_USER:-ansible}"
 e2e_usage_common() {
     cat <<EOF
 For the ~20 min single-host customer talk, see scripts/demo_present.sh.
-Guide: docs/training/202-DEMO_GUIDE.md  ·  docs/admin/203-RHEL_TWO_HOST.md
+Guide: docs/demo/202-DEMO_GUIDE.md  ·  docs/demo/203-RHEL_TWO_HOST.md
 
 Options:
   --auto       No Enter pauses. On the Mac script, also SSH and run the VM talk tracks.

@@ -1,6 +1,6 @@
 # 101 — SELinux 101 (commands before the demo)
 
-Finish this guide **before** the three-app talk (**[202](202-DEMO_GUIDE.md)**). Words and labels are **[102](102-SELINUX_BASICS.md)** (skim §1–4 in lab 0). The talk is short because it assumes you can already: read a label, decode one AVC, generate a module from that log, load it, see that the **same** denial is not added again, then watch a **new** URL fail under enforcing and fix only the net-new rule.
+Finish this guide **before** the three-app talk (**[202](../demo/202-DEMO_GUIDE.md)**). Words and labels are **[102](102-SELINUX_BASICS.md)** (skim §1–4 in lab 0). The talk is short because it assumes you can already: read a label, decode one AVC, generate a module from that log, load it, see that the **same** denial is not added again, then watch a **new** URL fail under enforcing and fix only the net-new rule.
 
 This page is that practice. One app (**shopapi**), one RHEL box, typed commands. It is not the customer talk and not the two-host AAP pipeline.
 
@@ -205,7 +205,7 @@ git checkout -- selinux/shopapi/
 sudo bash scripts/demo_bootstrap.sh --shopapi-only
 ```
 
-Need two VMs from a Mac first? [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md). Run every command in this 101 **on rhel-qa**, not in macOS Terminal.
+Need two VMs from a Mac first? [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md). Run every command in this 101 **on rhel-qa**, not in macOS Terminal.
 
 ---
 
@@ -673,7 +673,7 @@ sudo semanage permissive -a shopapi_t
 
 ## Lab 7 — Map to the talk
 
-You now have the skills the demo assumes. **Do not** run the full talk yet — read the table, then open **[202](202-DEMO_GUIDE.md)**.
+You now have the skills the demo assumes. **Do not** run the full talk yet — read the table, then open **[202](../demo/202-DEMO_GUIDE.md)**.
 
 | Talk act | What they will show | What you already practiced |
 |----------|---------------------|----------------------------|
@@ -683,7 +683,7 @@ You now have the skills the demo assumes. **Do not** run the full talk yet — r
 | **3 shopapi** | Types-only seed, first-ship `/health` `/state` `/log`, generate from **observed** AVCs | Labs 1–4 (the talk curls three first-ship URLs at once; you split `/log` so one AVC was readable). |
 | **4–5** (technical) | PR, canary, soak, `/feature-spool` on **prod**, rollback, recanary | Labs 5–6 on **one** QA host. Prod does **not** `semodule -i`. |
 
-Next: **[202](202-DEMO_GUIDE.md)** (`demo_present.sh`). Two-host ship path: **[203](../admin/203-RHEL_TWO_HOST.md)**.
+Next: **[202](../demo/202-DEMO_GUIDE.md)** (`demo_present.sh`). Two-host ship path: **[203](../demo/203-RHEL_TWO_HOST.md)**.
 
 ---
 
@@ -749,7 +749,7 @@ python3 cli/deterministic_gen.py --explain \
   --existing-fc selinux/myapp.fc
 ```
 
-Expect **`fc_fix`**. Full golden suite: `make test-fixtures`. Concepts: [204-DETERMINISTIC_POLICY.md](../developers/204-DETERMINISTIC_POLICY.md). `selinux/myapp.te` is the **offline golden**, not a live app.
+Expect **`fc_fix`**. Full golden suite: `make test-fixtures`. Concepts: [201 — Generate a module](../developers/201-CODE_WALKTHROUGH.md#generate-a-module). `selinux/myapp.te` is the **offline golden**, not a live app.
 
 ---
 
@@ -816,4 +816,4 @@ sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "
 - `setenforce 0`
 - `audit2allow` piped to `semodule` on the box
 - `curl …/feature-spool` before lab 5
-- `semodule -i` on **prod** (Ansible / RPM — [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md))
+- `semodule -i` on **prod** (Ansible / RPM — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md))

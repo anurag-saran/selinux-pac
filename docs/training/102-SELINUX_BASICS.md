@@ -6,7 +6,7 @@ Two names show up over and over. They are the same idea, on different files:
 
 | Name | What it is |
 |------|------------|
-| **shopapi** | The small Java app you run on the practice machine (**rhel-qa**). Its process label is `shopapi_t`. The labs in **101** and the customer talk in **[202](202-DEMO_GUIDE.md)** use this app. |
+| **shopapi** | The small Java app you run on the practice machine (**rhel-qa**). Its process label is `shopapi_t`. The labs in **101** and the customer talk in **[202](../demo/202-DEMO_GUIDE.md)** use this app. |
 | **myapp** | A sample policy stored in the git repo so tests can run on a laptop (`make check`). No service named myapp is running on rhel-qa. When a snippet says `myapp_t`, read it as "the same kind of label as `shopapi_t`, written against the sample." |
 
 **How to read this**
@@ -475,7 +475,7 @@ After the wait passes
         → getenforce still prints Enforcing
 ```
 
-The timestamp file and the daily check are how the wait is measured. The admin write-up is **[302](../admin/302-PRODUCTION_READINESS.md)**. The "we found a new denial" write-up is **[303](../admin/303-DENIAL_RESPONSE.md)**.
+The timestamp file and the daily check are how the wait is measured. Soak, enforce, and a new denial are **[301](../admin/301-ANSIBLE_OPERATIONS.md)**.
 
 ---
 
@@ -643,7 +643,7 @@ Each shopapi type is explained in [section 3](#3-the-context-string--four-parts)
 
 ## 12. How this maps onto the tool
 
-After the labs, the same pieces are what the tool runs for you. **[201](201-CODE_WALKTHROUGH.md)** names the scripts. The sequence is:
+After the labs, the same pieces are what the tool runs for you. **[201](../developers/201-CODE_WALKTHROUGH.md)** names the scripts. The sequence is:
 
 ```text
 1. Run shopapi_t on the log-only list     denials are written, the app still answers
@@ -656,9 +656,9 @@ After the labs, the same pieces are what the tool runs for you. **[201](201-CODE
 8. A later denial                         another pull request
 ```
 
-Steps 5–8 are the production path in **[301](../admin/301-ANSIBLE_OPERATIONS.md)** and **[302](../admin/302-PRODUCTION_READINESS.md)**. On the practice host, labs 3 and 6 load the module with `semodule -i` so you can see it work. Production installs a signed package through Ansible instead of typing `semodule -i` on the server.
+Steps 5–8 are the production path in **[301](../admin/301-ANSIBLE_OPERATIONS.md)**. On the practice host, labs 3 and 6 load the module with `semodule -i` so you can see it work. Production installs a signed package through Ansible instead of typing `semodule -i` on the server.
 
-The customer talk (**[202](202-DEMO_GUIDE.md)**) uses the same ideas on three apps: a Tomcat that is already confined, a Tomcat you only relabel, and shopapi, which is the one you generate.
+The customer talk (**[202](../demo/202-DEMO_GUIDE.md)**) uses the same ideas on three apps: a Tomcat that is already confined, a Tomcat you only relabel, and shopapi, which is the one you generate.
 
 ---
 
@@ -807,8 +807,7 @@ Numbered catalog: [docs/README.md](../README.md).
 |---|--------|------------------|
 | **101** | [SELinux 101](101-SELINUX.md) | Type the shopapi labs. Read sections 1–7 of this page first. |
 | **This file (102)** | | What the words and commands mean |
-| **103** | [Hands-on recap](103-TRAINING_LAB.md) | A one-screen recap after 101 |
-| **201** | [Code walkthrough](201-CODE_WALKTHROUGH.md) | Which script implements the steps in section 12 |
-| **202** | [Three-app customer talk](202-DEMO_GUIDE.md) | After 101 |
-| **204** | [Deterministic policy](../developers/204-DETERMINISTIC_POLICY.md) | How a denial becomes `baseline` or a new allow |
-| **302** | [Production readiness](../admin/302-PRODUCTION_READINESS.md) | Soak, canary, and enforce in full |
+| **201** | [How the tool works](../developers/201-CODE_WALKTHROUGH.md) | Which script implements the steps in section 12 |
+| **202** | [Customer talk](../demo/202-DEMO_GUIDE.md) | After 101 |
+| **203** | [Two Linux VMs](../demo/203-RHEL_TWO_HOST.md) | The ship talk |
+| **301** | [Ship the module](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |

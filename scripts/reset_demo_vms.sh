@@ -10,7 +10,7 @@
 #   bash scripts/reset_demo_vms.sh --dev-only
 #   bash scripts/reset_demo_vms.sh --prod-only
 #
-# After this, start docs/admin/203-RHEL_TWO_HOST.md at Part 1 (write / ping / rsync).
+# After this, start docs/demo/203-RHEL_TWO_HOST.md at Part 1 (write / ping / rsync).
 #
 set -euo pipefail
 
@@ -268,5 +268,5 @@ fi
 
 echo
 echo "Next: customer talk → bash scripts/demo_present.sh --preflight (202)."
-echo "      three-host ship → docs/admin/203-RHEL_TWO_HOST.md at Part 1 (write / ping / rsync / scp)."
+echo "      three-host ship → docs/demo/203-RHEL_TWO_HOST.md at Part 1 (write / ping / rsync / scp)."
 echo "Do not canary until demo_bootstrap.sh --shopapi-only and generate --apply have run on rhel-qa."

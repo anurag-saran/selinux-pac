@@ -1,6 +1,6 @@
 # 202 — Three-app customer talk
 
-**Finish [101](101-SELINUX.md) before Acts 0–3.** That guide is the typed shopapi loop (one AVC, generate, same URL adds no rule, new URL fails under enforcing). This talk assumes those commands.
+**Finish [101](../training/101-SELINUX.md) before Acts 0–3.** That guide is the typed shopapi loop (one AVC, generate, same URL adds no rule, new URL fails under enforcing). This talk assumes those commands.
 
 **LAST_VERIFIED:** 2026-09-18 — live on RHEL with distro Tomcat (`tomcat_t`) + JDK 17. JWS 6 + `jws6-tomcat-selinux` is still the confined App A/B path.
 
@@ -11,13 +11,13 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 | | Audience | Setup | Length | Command |
 |---|----------|--------|--------|---------|
 | **This guide (202)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
-| **[203](../admin/203-RHEL_TWO_HOST.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
+| **[203](203-RHEL_TWO_HOST.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
 Use `--profile customer`. That is Acts 0, 1, 2, and 3, about 20 minutes. `--profile technical` adds Act 4 (open a pull request) and Act 5 (a pointer at the 203 talk). Act 5 does not run the 203 talk.
 
-`make check` on a laptop rehearses both talks from saved sample files. The sample module is `selinux/myapp.te`. It does not start an application.
+On a laptop, `--dry-run` prints this talk and runs nothing. `make check` runs the offline tests, including a dry-run of both talk scripts. The sample module in those tests is `selinux/myapp.te`. Nothing starts an application.
 
 ```mermaid
 flowchart LR
@@ -37,7 +37,7 @@ flowchart LR
 | **2** | A second Tomcat on port 8090, files in `/opt/appdata`, and a call out to a payment service. | You do not write a policy file. `git status` of `selinux/` stays empty. |
 | **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool`. That failure is the next meeting. |
 
-The next meeting, when they want Ansible, RPMs, and the soak gate, is [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md).
+The next meeting, when they want Ansible, RPMs, and the soak gate, is [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md).
 
 If you run `--help` on either talk script, the help text names the other script. The customer story is edited in `scripts/demo_present.sh`. The two-VM story is edited in `scripts/demo_e2e_mac.sh`, `demo_e2e_rhel_qa.sh`, and `demo_e2e_rhel_prod.sh`.
 
@@ -96,17 +96,7 @@ bash scripts/demo_present.sh --profile customer
 
 A second Act 2 on the same VM uses the same Mac reset as step 1, then `--preflight` again.
 
-The three-host generate/canary/soak talk is **[203](../admin/203-RHEL_TWO_HOST.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
-
-## Acts
-
-| Act | Time | What you show |
-|-----|------|----------------|
-| **0 Triage** | ~2 min | Vendor-policy check: which apps are covered, which are unconfined. Names **shopapi** as the generate target. Runs **before** staging. |
-| **1 App A** | ~1 min | `getenforce`, process domain, successful `/standard/`, then `/standard/forbidden.jsp` + `ausearch`. Distro `tomcat_t`: expect `UNEXPECTED_READ` + `seinfo` unconfined attributes. JWS: expect `DENIED`. No changes. |
-| **2 App B** | ~5 min | Trigger label / port / boolean denials. `ausearch \| audit2why`. Optional `--tune-report` (same host commands, no `.te`). One-line fixes. End the act with `git status --short selinux/` (empty) and `semodule -l \| wc -l` (unchanged) so “we authored nothing” is on screen. |
-| **3 shopapi** | rest of customer path | `SELinuxContext=shopapi_t`, types-only seed, generate from **observed** AVCs. First-ship: `/health` `/state` `/log`. |
-| **4–5** | technical | PR on `selinux/shopapi/`; canary, soak, `/feature-spool` outage, rollback via `demo_e2e_*.sh`. |
+The three-host generate/canary/soak talk is **[203](203-RHEL_TWO_HOST.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
 
 ## What you say, command by command
 
@@ -122,7 +112,7 @@ The three-host generate/canary/soak talk is **[203](../admin/203-RHEL_TWO_HOST.m
 |-----|------------|------------|
 | Enforcing | `getenforce` is Enforcing. The talk never runs `setenforce 0`. | The host is Permissive or Disabled. |
 | Tomcat unit and port 8080 | App A is installed and listening. | Run bootstrap. |
-| Port 8090 | App B's port is not labeled yet, so Act 2 can show a bind denial. | Already labeled. Act 2 would have nothing to fix. Reset from the Mac. |
+| Port 8090 | Not labeled yet. **PASS** if nothing is listening. **WARN** if it is already listening with no label. That WARN is normal on this host: distro Tomcat can bind the port, so Act 2 will not show a bind denial. | **FAIL** only when the port is already labeled. Reset from the Mac. |
 | App B fcontext | `/opt/appdata` has no custom mapping yet. | Already mapped. Same reset. |
 | App B boolean | The outbound-connect switch is off. | It is on. Same reset. |
 | App A denials | A **WARN** on distro `tomcat_t` is expected. The type is unconfined, so Acts 1 and 2 will not produce file or port denials. Shopapi in Act 3 still confines. | A missing App A is a FAIL, not this WARN. |
@@ -131,26 +121,38 @@ The three-host generate/canary/soak talk is **[203](../admin/203-RHEL_TWO_HOST.m
 
 ### Act 0 — Triage (~2 min)
 
-Say: three situations. We do not write a policy module until the third.
+Say: three apps. We do not write a policy module until the third.
 
-The script runs the vendor check twice. The first names Tomcat. The second names shopapi.
-
-```bash
-vendor_policy_preflight --report --app-name tomcat --unit tomcat.service
-vendor_policy_preflight --report --app-name shopapi --unit shopapi.service
+```mermaid
+flowchart TD
+  tomcat["Check Tomcat"] --> loaded["situation=loaded, action=tune<br/>Red Hat already ships this module"]
+  shop["Check shopapi"] --> none["situation=none, action=generate<br/>This is the only module we will write"]
+  loaded --> ps["ps shows tomcat_t on this host"]
+  none --> ps
 ```
 
-`situation=loaded` and `action=tune` for Tomcat means Red Hat already ships a module, so we will tune the host, not author a `.te`. `situation=none` and `action=generate` for shopapi means there is no such module. That is the only app this talk generates for.
+You do not type these. The script prints two lines. Read them aloud:
 
-```bash
-ps -eo label,comm | grep -E 'tomcat|java|shopapi' | head -n 20
+```text
+[INFO] TRIAGE situation=loaded ... app=tomcat ... action=tune
+[INFO] TRIAGE situation=none ... app=shopapi ... action=generate
+variant=tomcat domain=tomcat_t
 ```
 
-`ps -eo label,comm` prints the SELinux label and the program name. `head` keeps the first 20 lines. You want `tomcat_t` or `jws6_tomcat_t` on the Tomcat process. Shopapi may already show `shopapi_t` if the seed is loaded.
+`situation=loaded` and `action=tune` means we will adjust the host later, in Act 2. `situation=none` and `action=generate` means shopapi has no Red Hat module. Then `ps` lists the SELinux label and the program name. You want `tomcat_t` on the Tomcat process. Shopapi may already show `shopapi_t` if the seed is loaded.
 
 ### Act 1 — App A (~1 min)
 
-Say: this one was installed on the standard paths and port 8080. It is already enforcing. We change nothing.
+Say: this one was installed the normal way, on port 8080. It is already enforcing. We change nothing.
+
+```mermaid
+flowchart TD
+  ge["getenforce → Enforcing"] --> ps["ps → tomcat_t"]
+  ps --> ok["curl /standard/ → page OK"]
+  ok --> forb["curl /standard/forbidden.jsp"]
+  forb --> here["This host: UNEXPECTED_READ<br/>seinfo shows unconfined<br/>ausearch is empty"]
+  forb --> jws["JWS host: DENIED<br/>ausearch shows a denied read"]
+```
 
 ```bash
 getenforce
@@ -176,21 +178,41 @@ curl -sS http://127.0.0.1:8080/standard/forbidden.jsp
 
 This page reads a file the app should not read. The file is world-readable on purpose, so ordinary file permissions cannot hide an SELinux denial.
 
-On **this** host, distro `tomcat_t` is unconfined. The page returns `UNEXPECTED_READ` and there is no AVC. Say that out loud: the vendor module is loaded, and this type does not confine. JWS `jws6_tomcat_t` would return `DENIED`.
+On **this** host the page returns `UNEXPECTED_READ`. Say that out loud: a module named `tomcat` is loaded, and this type does not confine.
 
 ```bash
 seinfo -t tomcat_t -x | tr ',' '\n' | grep unconfined
+sudo ausearch -m avc -ts recent | grep -E 'out-of-scope|user_home_t|forbidden' | tail -n 5
 ```
 
-`seinfo -t tomcat_t -x` prints the attributes of that type. `tr` puts each attribute on its own line. `grep unconfined` keeps `unconfined_domain_type` or `files_unconfined_type`. That is the proof. We still authored nothing.
+`seinfo -t tomcat_t -x` prints the attributes of that type. `tr` puts each attribute on its own line. `grep unconfined` keeps `unconfined_domain_type` or `files_unconfined_type`. The `ausearch` line is empty. That pair is the proof. We still authored nothing.
 
-On a JWS host the script instead runs `ausearch` and you read a real `denied { read }` for `jws6_tomcat_t`. Same sentence: vendor policy, already enforcing, we authored nothing.
+On a JWS host the same curl returns `DENIED`, and `ausearch` shows `denied { read }` for `jws6_tomcat_t`. Same closing sentence: vendor policy, already enforcing, we authored nothing.
 
 ### Act 2 — App B (~5 min)
 
-Say: someone else already had port 8080, so this instance listens on 8090. The files landed in `/opt/appdata`. It calls a payment gateway. That is a normal inherited app. If a probe produces no denial, we say so and skip the fix. We do not invent a `.te`.
+Say: someone else already had port 8080, so this instance listens on 8090. The files landed in `/opt/appdata`. It calls a payment service. If a probe produces no denial, we say so and skip the fix. We do not invent a policy file.
 
-On distro `tomcat_t` the three probes produce no AVC, the script skips every fix, and the checkpoint is: zero `.te`, and JWS would have needed the three host commands. Shopapi is still the generate target. Walk the probes anyway so the audience sees the shape.
+```mermaid
+flowchart TD
+  p1["Probe 1: port 8090"] --> d1{Denial?}
+  d1 -->|Yes| f1["Label the port and restart Tomcat"]
+  d1 -->|No, this host| s1["Say so and skip"]
+  f1 --> p2["Probe 2: /opt/appdata"]
+  s1 --> p2
+  p2 --> d2{Denial?}
+  d2 -->|Yes| f2["Add the label and restorecon"]
+  d2 -->|No| s2["Skip"]
+  f2 --> p3["Probe 3: payment call"]
+  s2 --> p3
+  p3 --> d3{Denial?}
+  d3 -->|Yes| f3["Turn the connect switch on"]
+  d3 -->|No| s3["Skip"]
+  f3 --> proof["tune-report, empty git status, same module count"]
+  s3 --> proof
+```
+
+On this host all three answers are **No**. The script skips every fix. The checkpoint is: zero policy file, and a JWS host would have needed the three commands below. Shopapi is still the app we will generate for. Walk the probes anyway so the audience sees the shape.
 
 **Probe 1, the port.**
 
@@ -255,11 +277,20 @@ git status --short selinux/
 sudo semodule -l | wc -l
 ```
 
-`git status --short selinux/` empty means we did not edit a policy file. `semodule -l | wc -l` is the count of loaded modules. The count is the same as at the start of the act. Say: four kinds of denial, one-line host fixes, zero policy authored.
+`git status --short selinux/` empty means we did not edit a policy file. `semodule -l | wc -l` is the count of loaded modules. The count matches the start of the act. Say: three probes, a fix only when a denial was real, zero policy authored.
 
 ### Act 3 — shopapi (the rest of the 20 minutes)
 
-Say: this is the first time we author a module. We declined twice. Spring Boot has no vendor module. The unit runs a private copy of Java at `/opt/shopapi/bin/java`, labeled `shopapi_exec_t`. `SELinuxContext=` puts the process in `shopapi_t`.
+Say: this is the first time we author a module. We declined twice. Spring Boot has no Red Hat module. The unit runs a private copy of Java at `/opt/shopapi/bin/java`, labeled `shopapi_exec_t`. `SELinuxContext=` puts the process in `shopapi_t`.
+
+```mermaid
+flowchart LR
+  unit["Unit file<br/>private Java and shopapi_t"] --> ps["ps shows shopapi_t"]
+  ps --> curls["/health, /state, /log"]
+  curls --> log["ausearch keeps shopapi_t"]
+  log --> gen["Generate and apply"]
+  gen --> stop["Stop<br/>do not open /feature-spool"]
+```
 
 ```bash
 systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'
@@ -295,26 +326,25 @@ This is the Lab 3 command. `--allow-needs-review` is already on the flag list be
 
 Say: the allows came from the denials we just produced, not from a list of Java permissions. If `execmem` had not been in the log, we would not add it.
 
-Then stop. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. Acts 4 and 5 are the technical profile. They are not this meeting. The ship path is [203](../admin/203-RHEL_TWO_HOST.md).
+Then stop. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. Acts 4 and 5 are the technical profile. They are not this meeting. The ship path is [203](203-RHEL_TWO_HOST.md).
 
-## Presenter framing
+## Remember while you talk
 
-- Decline the generator twice (A covered, B tuned) before it appears. That restraint is the point.
-- Act 1 without the forbidden curl is just an assertion. Always show the denial **or** the unconfined proof (`seinfo` attributes). The file is world-readable on purpose so DAC cannot hide the AVC when the domain is confined.
-- Act 2: if a probe produces **no** AVC, say so — do not invent a fix. Optional beat: `--tune-report` prints the same three host commands into `policy_out/tune_report.md` (attach to a ticket). Still no `.te`. End on the two proof commands so the audience does not have to infer zero authoring.
-- shopapi policy: **no JVM cookbook**. If `execmem` is in the AVC log, generate uses `--allow-needs-review` so CODEOWNERS see it. If it is not in the log, do not add it.
-- `SELinuxContext=` plus a private JRE launcher at `/opt/shopapi/bin/java` (labeled `shopapi_exec_t`). `/usr/bin/java` is shared `bin_t` and `203/EXEC` under enforcing `shopapi_t`.
-- Do not curl `/feature-spool` until after the first module is enforcing on prod.
+- App A and App B come before the generator. That order is the point.
+- Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
+- Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
+- Shopapi allows come from the denials just produced. `execmem` is written only because it was in the log and `--allow-needs-review` is on the command. The shared `/usr/bin/java` is `bin_t` and cannot be the program that enters `shopapi_t`. The private copy can.
+- Do not open `/feature-spool` in this meeting.
 
 ## Self-service
 
 | Who | Path |
 |-----|------|
-| New to SELinux | [101-SELINUX.md](101-SELINUX.md) first, then this talk. |
+| New to SELinux | [101-SELINUX.md](../training/101-SELINUX.md) first, then this talk. |
 | Us (maintained host) | App A persists. `--preflight` the night before. Act 1 is evidence. |
 | Colleague on a throwaway VM | `make demo-bootstrap` (idempotent; resume after Ctrl-C). |
 | Customer after the meeting | Same bootstrap + `--dry-run` on a laptop first. |
-| Laptop, no RHEL | 101 [Appendix B](101-SELINUX.md#appendix-b-laptop-no-selinux) + `--dry-run`. `make check` uses deterministic fixtures (no live app). |
+| Laptop, no RHEL | 101 [Appendix B](../training/101-SELINUX.md#appendix-b-laptop-no-selinux) + `--dry-run`. `make check` uses deterministic fixtures (no live app). |
 
 `payments/` remains a **CI multi-module fixture**, not a talk app.
 
@@ -324,4 +354,4 @@ Then stop. The checkpoint on screen is: this is the first time we authored polic
 - Generating a `.te` for Tomcat App A or App B.
 - `semodule -i` (or `audit2allow`) on prod.
 
-**Ship path after generate:** [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) → [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md) → [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md).
+**Ship path after generate:** [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md) → [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).

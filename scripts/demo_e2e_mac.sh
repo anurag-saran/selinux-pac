@@ -256,5 +256,5 @@ curl /feature-spool should return 200 under the new module." \
     "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part retest $(e2e_auto_flags)'"
 
 echo
-echo -e "${TLAB_BOLD}End of the Mac talk track.${TLAB_NC} Full script: docs/admin/203-RHEL_TWO_HOST.md"
+echo -e "${TLAB_BOLD}End of the Mac talk track.${TLAB_NC} Full script: docs/demo/203-RHEL_TWO_HOST.md"
 echo

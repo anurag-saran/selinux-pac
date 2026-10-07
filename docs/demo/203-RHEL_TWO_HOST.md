@@ -1,0 +1,240 @@
+# 203 — Two Linux VMs (generate / canary / soak)
+
+This is the meeting after [202](202-DEMO_GUIDE.md). 202 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 202.
+
+**LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`192.168.64.6`) + rhel-prod (`192.168.64.5`). The host stayed Enforcing the whole way.
+
+The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
+
+```mermaid
+flowchart LR
+  p1["1 Mac<br/>Reach both VMs"]
+  p2["2 QA<br/>Install shopapi"]
+  p3["3 QA<br/>Generate the module"]
+  p4["4 Mac<br/>Copy policy and open a PR"]
+  p5["5 Mac<br/>Canary, then enforce on QA"]
+  p6["6 Prod<br/>RPMs, soak, then enforce"]
+  p7["7 Prod fails<br/>Restore, fix on QA, ship again"]
+  p1 --> p2 --> p3 --> p4 --> p5 --> p6 --> p7
+```
+
+The Mac script is the conductor. It prints when to switch windows. Parts 2 and 3 are the QA window, so the Mac banner jumps from **Part 1** to **Part 4**. That skip is expected.
+
+Press Enter when a window says `Press Enter`. Look at the prompt before you paste.
+
+| Window | Prompt you must see | Start |
+|--------|---------------------|--------|
+| **Mac** | `asaran@… selinux-pac %` | `cd` to this repo, then `bash scripts/demo_e2e_mac.sh` |
+| **QA** | `[ansible@rhel-qa ~]$` | `ssh ansible@192.168.64.6` |
+| **Prod** | `[ansible@rhel-prod ~]$` | `ssh ansible@192.168.64.5` |
+
+Those addresses are this Mac’s UTM network. If `ping` fails after a VM was recreated, use the new addresses. If the prompt already says `rhel-qa` or `rhel-prod`, you are on that VM. Do not `ssh` again.
+
+A second run on the same VMs starts on the **Mac**:
+
+```bash
+bash scripts/reset_demo_vms.sh
+```
+
+That unloads leftover shopapi modules and prod RPMs, puts the types-only seed back, and clears the audit log so the first generate does not pick up an old `/feature-spool` denial. It does not remove Java.
+
+To read the narration on a laptop without the VMs: `bash scripts/demo_e2e_mac.sh --dry-run`.
+
+## Part 1 — Mac: can you reach both VMs?
+
+```mermaid
+flowchart LR
+  write["Write the two inventories"] --> ping["Ping both VMs"]
+  ping --> doctor["Each host is Enforcing"]
+  doctor --> copy["Copy the repo to QA<br/>Copy a bundle to prod"]
+```
+
+Say: this laptop is the remote control. QA is where we discover denials. Prod never gets a git clone.
+
+```bash
+bash scripts/setup_rhel_hosts.sh write --qa-host 192.168.64.6 --prod-host 192.168.64.5 --user ansible
+bash scripts/setup_rhel_hosts.sh ping
+bash scripts/setup_rhel_hosts.sh doctor
+```
+
+`write` creates the two inventory files the later playbooks use. They name shopapi, the policy package, and the manifest. `ping` prints `SUCCESS` and `pong` for both VMs. `doctor` prints `Enforcing` and the paths to `ausearch` and `sesearch`.
+
+```bash
+bash scripts/sync_rhel_dev.sh
+```
+
+`sync_rhel_dev.sh` copies this checkout onto QA at `~/selinux-pac`. The script then `scp`s a small bundle to prod at `~/e2e-demo`. Prod still has no clone of the repo.
+
+`bash scripts/setup_rhel_hosts.sh bootstrap` installs the packages the later steps need. When it finishes, switch to the QA window.
+
+## Part 2 — QA: install shopapi and collect denials
+
+The Mac tells you to run:
+
+```bash
+bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app
+```
+
+```mermaid
+flowchart LR
+  tools["Install Java and SELinux tools"] --> boot["Bootstrap shopapi<br/>types-only seed, permissive"]
+  boot --> curls["/health /state /log"]
+  curls --> avc["ausearch shows shopapi_t"]
+```
+
+`--shopapi-only` installs the service, the private Java at `/opt/shopapi/bin/java`, and the types-only seed. `shopapi_t` is permissive: denials are logged and the requests still succeed. `getenforce` stays `Enforcing`.
+
+Curl only `/health`, `/state`, and `/log`. Do not open `/feature-spool` here. That URL is the outage on prod, later.
+
+A good end: the process label is `shopapi_t`, and `ausearch` shows `shopapi_t` lines. Go back to the Mac. It copies the JAR QA just built onto prod, so prod does not need Maven.
+
+## Part 3 — QA: turn those denials into a module
+
+Still on QA, when the Mac says so:
+
+```bash
+bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate
+```
+
+```mermaid
+flowchart LR
+  relabel["restorecon on shopapi paths"] --> gen["Generate with --apply and --allow-needs-review"]
+  gen --> pp["Compile shopapi.pp"]
+  pp --> load["semodule -i and label port 8091"]
+```
+
+`restorecon` paints `shopapi_exec_t` onto the private Java before generate reads the log. `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. If the compile stops on `allow shopapi_t bin_t:file { entrypoint }`, the audit log still has a denial from before that relabel. Reset from the Mac and start this lab again.
+
+Then the script compiles, loads the package with `semodule -i`, and labels TCP 8091 as `shopapi_port_t`. A good end is `Built …/shopapi.pp`. Go back to the Mac. Do not canary yet.
+
+## Part 4 — Mac: copy the policy and open a pull request
+
+```mermaid
+flowchart LR
+  scp["scp shopapi.te, .fc, .pp back to the Mac"] --> check["Forbidden-pattern check"]
+  check --> pr["Open a GitHub PR"]
+```
+
+Say: the module was written on QA. The pull request is on this laptop’s checkout. Prod still does not generate policy.
+
+The script copies `shopapi.te`, `shopapi.fc`, `policy_version.txt`, and `shopapi.pp` from QA into `selinux/shopapi/`. `validate_forbidden_patterns.sh` reads that module. `demo_open_generated_pr.sh` opens the PR when `gh` is logged in. Merging can wait. The `.pp` is already on the Mac, and the next step ships that file.
+
+## Part 5 — Mac: canary, then enforce on QA
+
+```mermaid
+flowchart LR
+  canary["deploy_canary.yml on QA"] --> lab["LAB ONLY banner"]
+  lab --> enf["enforce_production.yml with ticket LAB"]
+```
+
+Say: canary loads the module and leaves only `shopapi_t` in log-only mode. The rest of the machine stays Enforcing.
+
+```bash
+ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml
+```
+
+A good playbook ends with `failed=0`.
+
+QA’s inventory has `soak_min_days: 0` so this talk can lock the domain down immediately. The script prints a red **LAB ONLY** banner there. Production’s inventory stays at 7 days. Do not copy the zero onto prod.
+
+```bash
+ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e change_ticket=LAB
+```
+
+After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permissive.
+
+## Part 6 — Prod: RPMs, a clean soak, then enforce
+
+```mermaid
+flowchart TD
+  rpm["Mac builds two RPMs and scp's them"] --> inst["Prod: --part rpms"]
+  inst --> canary["Mac: canary on prod"]
+  canary --> soak["Prod: /health /state /log return 200"]
+  soak --> mon["Mac: soak_monitor failed=0"]
+  mon --> empty["Prod: no soak-fail file"]
+  empty --> enf["Mac: enforce with force_enforce and ticket DEMO"]
+```
+
+Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`.
+
+On the Mac the script runs `bash packaging/build_rpms.sh` and copies `dist/*.rpm` to the prod home directory. Switch to prod:
+
+```bash
+bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
+```
+
+`rpm -q selinux-policy-ops shopapi-selinux` prints two versions. The unit then starts in `shopapi_t`. Until this step, Java on prod was unconfined.
+
+Back on the Mac, canary uses the production inventory:
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
+```
+
+On prod, `--part soak` curls `/health`, `/state`, and `/log`. Each returns 200. `ausearch` shows no `shopapi` denial since the canary. Do not curl `/feature-spool` yet.
+
+The Mac then runs `soak_monitor.yml`. `failed=0` means nothing new was denied. `--part soak-avc` on prod confirms there is no `/var/lib/shopapi/selinux_soak_last_fail.avc`.
+
+`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording does not wait. It enforces with an extra flag:
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true
+```
+
+`force_enforce=true` is for the recording. A real shop omits it and waits seven clean days. `failed=0` means prod is enforcing `shopapi_t`.
+
+## Part 7 — The new URL fails, then the fix is generated on QA
+
+```mermaid
+flowchart TD
+  fail["Prod: /feature-spool returns 500"] --> roll["Mac: emergency_rollback.yml"]
+  roll --> up["Prod: app returns 200 again<br/>policy is not fixed"]
+  up --> copy["Mac copies the denial log to QA"]
+  copy --> gen["QA: generate --skip-export"]
+  gen --> ship["Second PR, canary, new RPMs"]
+  ship --> ok["Prod: /feature-spool returns 200"]
+```
+
+Say: the first module never mentioned `/var/spool/shopapi/feature.log`. Enforcing makes that request fail. We still do not run `semodule -i` on prod.
+
+On prod:
+
+```bash
+bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
+```
+
+`curl -sf` exits non-zero. The page is HTTP 500. The denial is `shopapi_t` opening a `var_spool_t` file. The script saves those lines in `/tmp/prod-feature-spool.avc`.
+
+On the Mac:
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml
+```
+
+That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. The policy is not fixed. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason.
+
+The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA:
+
+```bash
+bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export
+```
+
+`--skip-export` uses that file. It does not reread QA’s audit log. Generate runs on QA, not on prod.
+
+The Mac copies the new module back, opens a second PR, canaries QA, rebuilds the RPMs, and ships prod again. Prod `--part retest` curls `/feature-spool`. HTTP 200 under the new module is the end.
+
+## URLs
+
+| When | What you curl | Why |
+|------|----------------|-----|
+| Generate and soak | `http://127.0.0.1:8091/health`, `/state`, `/log` | These are in the first module. |
+| After prod enforce | `http://127.0.0.1:8091/feature-spool` | Writes `/var/spool/shopapi/feature.log`, which the first module does not allow. |
+
+The port is `http.port` in `config/shopapi.manifest.yml`.
+
+## Related
+
+- Practice the commands first: [101-SELINUX.md](../training/101-SELINUX.md)
+- The 20-minute customer talk: [202-DEMO_GUIDE.md](202-DEMO_GUIDE.md)
+- Ansible jobs after this talk: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)
+- What to do when a denial shows up after ship: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)

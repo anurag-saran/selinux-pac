@@ -21,7 +21,7 @@
           generate_emergency_patch.yml is controller-only. It writes policy_out/
           for a PR. Do not run it on production hosts and do not semodule -i
           the result. Copy /tmp/emergency_avc.log or selinux_soak_last_fail.avc
-          onto this checkout (see docs/admin/303-DENIAL_RESPONSE.md).
+          onto this checkout (see docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
       when: not emergency_te_stat.stat.exists
 
     - name: Require emergency AVC log

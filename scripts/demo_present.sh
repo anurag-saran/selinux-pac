@@ -43,7 +43,7 @@ tune inherited Tomcat (App B, no .te) → generate for Spring Boot (shopapi).
 
   One RHEL box. Do not run this as the three-host production walkthrough.
   Multi-host (~45 min, Mac + rhel-qa + rhel-prod):  bash scripts/demo_e2e_mac.sh
-  Guide: docs/training/202-DEMO_GUIDE.md
+  Guide: docs/demo/202-DEMO_GUIDE.md
 
 Options:
   --profile customer|technical   customer = acts 0,1,2,3 (~20 min)
@@ -468,17 +468,17 @@ act2_app_b() {
         e2e_run "bash scripts/dev_generate_policy.sh --tune-report --app-name tomcat --unit $(demo_tomcat_service)" || true
     fi
 
-    tlab_explain "Proof: four denials, four one-line host fixes, zero policy authored."
+    tlab_explain "Proof: three probes, one-line host fixes only when a denial was real, zero policy authored."
     e2e_run "git -C ${PROJECT_ROOT} status --short selinux/ 2>/dev/null || echo '(no git metadata on this host — selinux/ still unauthored)'"
     demo_expect "empty — nothing under selinux/"
     e2e_run "sudo semodule -l | wc -l"
     demo_expect "${modules_before} — unchanged; we did not load a new module"
     if [[ "${E2E_DRY}" -eq 1 ]]; then
-        tlab_checkpoint "Four denials, four one-line fixes, zero .te. If you were about to write a module for App B, the app was configured wrong."
+        tlab_checkpoint "Three probes, one-line fixes only when a denial was real, zero .te. If you were about to write a module for App B, the app was configured wrong."
     elif demo_selinux_type_unconfined "$(demo_tomcat_domain)"; then
         tlab_checkpoint "Distro tomcat_t is unconfined — App B probes produced no AVC, so we skipped the tunings. Zero .te. JWS would have needed the three host commands. shopapi is still the generate target."
     else
-        tlab_checkpoint "Four denials, four one-line fixes, zero .te. If you were about to write a module for App B, the app was configured wrong."
+        tlab_checkpoint "Three probes, one-line fixes only when a denial was real, zero .te. If you were about to write a module for App B, the app was configured wrong."
     fi
     tlab_pause
 }

@@ -6,12 +6,12 @@ You do **not** need to know every script on day one. Read this in order, pause w
 
 | Your goal | Start here |
 |-----------|------------|
-| Understand SELinux words (domain, AVC, `.te`) | **[102](102-SELINUX_BASICS.md)** §1–7 |
-| **Practice commands on a SELinux host** | **[101](101-SELINUX.md)** (then **[103](103-TRAINING_LAB.md)**) |
+| Understand SELinux words (domain, AVC, `.te`) | **[102](../training/102-SELINUX_BASICS.md)** §1–7 |
+| **Practice commands on a SELinux host** | **[101](../training/101-SELINUX.md)**, then the talk in **[202](../demo/202-DEMO_GUIDE.md)** |
 | See how this tool fits together | [What SELinux PaC does](#what-selinux-pac-does-in-plain-english) → [Story of one policy change](#story-of-one-policy-change) |
 | Find a folder or file | [Directory map](#directory-map-what-each-folder-is-for) |
-| Three-app customer talk | **[202](202-DEMO_GUIDE.md)** — finish **101** first |
-| Deploy to real servers | **[203](../admin/203-RHEL_TWO_HOST.md)** then **[302](../admin/302-PRODUCTION_READINESS.md)** |
+| Three-app customer talk | **[202](../demo/202-DEMO_GUIDE.md)** — finish **101** first |
+| Deploy to real servers | **[203](../demo/203-RHEL_TWO_HOST.md)** then **[301](../admin/301-ANSIBLE_OPERATIONS.md)** |
 
 **Time:** about 30–45 minutes if you read the basics doc first; 60+ minutes if you read both cover to cover.
 
@@ -24,11 +24,11 @@ You do **not** need to know every script on day one. Read this in order, pause w
 | Environment | When to use it | Typical commands from this guide |
 |-------------|----------------|----------------------------------|
 | **Repo root on any OS** | Offline tests, Python CLI, reading git | `make check`, `python3 cli/deterministic_gen.py --explain …` |
-| **RHEL two-host lab** | Default: QA + prod boxes | `bash scripts/setup_rhel_hosts.sh write …` — [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) |
+| **RHEL two-host lab** | Default: QA + prod boxes | `bash scripts/setup_rhel_hosts.sh write …` — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) |
 | **Native Linux with SELinux** (RHEL **QA**) | Staging, demo, soak, `semanage` | `sudo bash scripts/demo_bootstrap.sh --shopapi-only`, `curl 127.0.0.1:8091/health` |
 | **RHEL prod** | Ansible deploy lifecycle | Playbooks with `-i ansible/inventory.production.yml` |
 
-macOS has no SELinux — [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) then SSH to **rhel-qa**.
+macOS has no SELinux — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) then SSH to **rhel-qa**.
 
 **Repo root** = directory containing `scripts/` and `docs/` (after `git clone`).
 
@@ -36,7 +36,7 @@ macOS has no SELinux — [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) t
 
 ## Words you will see in this repo
 
-If any term is fuzzy, open [102-SELINUX_BASICS.md](102-SELINUX_BASICS.md). Quick reminders:
+If any term is fuzzy, open [102-SELINUX_BASICS.md](../training/102-SELINUX_BASICS.md). Quick reminders:
 
 | Term | Plain English |
 |------|----------------|
@@ -47,7 +47,7 @@ If any term is fuzzy, open [102-SELINUX_BASICS.md](102-SELINUX_BASICS.md). Quick
 | **AVC** | A log line: “this process tried to do X and policy said no.” |
 | **Domain** | The SELinux type of a **running** process (e.g. `myapp_t`). |
 | **Manifest** | YAML file listing app name, paths, HTTP test URLs, and domains — so scripts do not hardcode `myapp`. |
-| **semanage** | Linux admin tool that changes SELinux’s **live** settings (per-domain permissive, port labels, booleans) — see [102-SELINUX_BASICS.md §7](102-SELINUX_BASICS.md) |
+| **semanage** | Linux admin tool that changes SELinux’s **live** settings (per-domain permissive, port labels, booleans) — see [102-SELINUX_BASICS.md §7](../training/102-SELINUX_BASICS.md) |
 | **`policy_out/`** | Local scratch folder for generated files (not committed to git). |
 | **`selinux/`** | The **real** policy source your team reviews in pull requests. |
 
@@ -61,7 +61,7 @@ If any term is fuzzy, open [102-SELINUX_BASICS.md](102-SELINUX_BASICS.md). Quick
 2. While the app domain is **permissive**, the kernel **logs** denials (AVCs) instead of blocking everything.
 3. Scripts **collect** those logs and **generate** updates to `.te` / `.fc` (deterministic engine; optional LLM summary).
 4. **CI** checks forbidden patterns and version consistency (generator already ran the same forbidden-pattern script). Compile and semantics run on **rhel-qa**.
-5. **Ansible Automation Platform (AAP)** deploys a new module (**Release canary**), runs **Soak monitor** (net-new vs installed policy), then **Promote to enforce**. A denial after ship is a **PR**, not a live host patch ([303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md)).
+5. **Ansible Automation Platform (AAP)** deploys a new module (**Release canary**), runs **Soak monitor** (net-new vs installed policy), then **Promote to enforce**. A denial after ship is a **PR**, not a live host patch ([301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)).
 
 You are not expected to memorize every bash script. Most days you touch **`selinux/`**, **`config/*.manifest.yml`**, **`scripts/dev_generate_policy.sh`**, and AAP.
 
@@ -92,12 +92,12 @@ flowchart TD
 **Step by step:**
 
 1. **Staging** — `scripts/demo_bootstrap.sh --shopapi-only` installs Spring Boot and puts `shopapi_t` in permissive mode so you can collect denials safely.
-2. **Trigger the app** — curl first-ship `/health` `/state` `/log` on :8091. See [102-SELINUX_BASICS.md §9](102-SELINUX_BASICS.md) for the mapping.
+2. **Trigger the app** — curl first-ship `/health` `/state` `/log` on :8091. See [102-SELINUX_BASICS.md §9](../training/102-SELINUX_BASICS.md) for the mapping.
 3. **Export AVCs** — `scripts/dev_generate_policy.sh --app shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
 4. **Generate policy** — Default engine is **`cli/deterministic_gen.py`** (offline, rule-based). Optional: **`cli/summarize_pr.py`** polishes `pr_summary.md` only. Legacy all-in-one LLM: **`cli/selinux_gen.py --legacy-full-policy`**.
 5. **Review** — Output lands in **`policy_out/`** (`.te`, `.fc`, `pr_summary.md`, `findings.json`). You compare to **`selinux/`** and open a PR.
 6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `forbidden-patterns` and `version-consistency`. The generator already ran the same forbidden-pattern check, so these jobs should pass.
-7. **Deploy** — Admins use **AAP** ([`ansible/aap/`](../../ansible/aap/)): workflow **Release canary**, daily **Soak monitor**, then **Promote to enforce**. Soak fail: [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md). See [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
+7. **Deploy** — Admins use **AAP** ([`ansible/aap/`](../../ansible/aap/)): workflow **Release canary**, daily **Soak monitor**, then **Promote to enforce**. Soak fail: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). See [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
 
 **Golden rule:** committed policy lives in **`selinux/`**. **`policy_out/`** is disposable local output.
 
@@ -117,7 +117,7 @@ Think of the repo in **layers**: app → policy source → generators → automa
 | [`scripts/lib/`](../../scripts/lib/) | Shared code **sourced** by other scripts (not usually run alone). |
 | [`ansible/`](../../ansible/) | Playbooks that install `.pp`, soak monitor, enforce, rollback (role **`selinux_pac`**). |
 | [`packaging/`](../../packaging/) | RPM specs (`selinux-policy-ops`, `<app>-selinux`) and compile container. |
-| [`docs/`](../) | Guides (`admin/`, `developers/`, `policy/`, `training/`). |
+| [`docs/`](../) | Guides: `training/` (learn), `demo/` (the two talks), `admin/` (ship), `developers/` (this page and tests). |
 | [`policy_out/`](../../policy_out/) | Generated output on your machine (gitignored). |
 | [`.github/workflows/`](../../.github/workflows/) | PR CI: `forbidden-patterns` + `version-consistency`. Ship is AAP / Mac ansible-playbook. |
 | [`tests/fixtures/`](../../tests/fixtures/) | Small policy snippets used to test the blast-radius classifier in CI. |
@@ -144,7 +144,7 @@ Think of the repo in **layers**: app → policy source → generators → automa
 | **`myapp.te`** | Human-readable rules: types, `allow` lines, and reusable **macros** from refpolicy. |
 | **`myapp.fc`** | “This path on disk should have type X.” Used by `restorecon`. |
 | **`policy_version.txt`** | Version number (must match the `policy_module(myapp, …)` line in `.te`; CI checks this). |
-| **`payments/`** | Example second application module (see [206-ONBOARDING.md](../developers/206-ONBOARDING.md)). |
+| **`payments/`** | Example second application module (see [Add an application](#add-an-application)). |
 
 **Review tip:** prefer **interface macros** (shared refpolicy helpers) over one-off allows copied from `audit2allow`. That matches what [`scripts/validate_forbidden_patterns.sh`](../../scripts/validate_forbidden_patterns.sh) enforces in CI.
 
@@ -193,7 +193,7 @@ No API key. For each net-new denial it assigns a **verdict** (fix file labeling,
 
 Run golden tests: **`bash scripts/run_deterministic_fixtures.sh`**. Payments must not leak `myapp` strings: **`bash scripts/run_deterministic_payments_check.sh`**.
 
-Details: [204-DETERMINISTIC_POLICY.md](../developers/204-DETERMINISTIC_POLICY.md).
+Details: [Generate a module](#generate-a-module).
 
 ### Optional: `selinux_gen.py` (LLM)
 
@@ -270,7 +270,7 @@ Most scripts expect your shell’s **current directory** to be the **repo root**
 |--------|------|
 | **`demo_present.sh`** | Customer talk, one host (~20 min). |
 | **`demo_bootstrap.sh`** | Idempotent App A/B + shopapi estate (`make demo-bootstrap`). |
-| **`demo_e2e_mac.sh`**, **`demo_e2e_rhel_qa.sh`**, **`demo_e2e_rhel_prod.sh`** | Three-host pipeline of [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) (~45 min). |
+| **`demo_e2e_mac.sh`**, **`demo_e2e_rhel_qa.sh`**, **`demo_e2e_rhel_prod.sh`** | Three-host pipeline of [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) (~45 min). |
 | **`reset_demo_vms.sh`** | Wipe leftover shopapi policy and untune App B (Mac). JVM stays. |
 | **`demo_open_generated_pr.sh`** | Live generate → GitHub PR (needs `gh`). |
 
@@ -293,7 +293,7 @@ Playbooks are short; behavior lives in the **`selinux_pac`** role (manifest-driv
 
 **Enforce (simplified):** `collect_soak_facts` (prefer **net-new**) → remove permissive → rebuild policy store → smoke again.
 
-Inventory examples: **`inventory.dev.example.yml`** (RHEL dev), **`inventory.production.example.yml`** (RHEL prod). Generate with **`scripts/setup_rhel_hosts.sh`**. AAP objects: [`ansible/aap/`](../../ansible/aap/) and [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md). Denial after ship: [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md). Two-host walkthrough: [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md).
+Inventory examples: **`inventory.dev.example.yml`** (RHEL dev), **`inventory.production.example.yml`** (RHEL prod). Generate with **`scripts/setup_rhel_hosts.sh`**. AAP objects: [`ansible/aap/`](../../ansible/aap/) and [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md). Denial after ship: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). Two-host walkthrough: [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md).
 
 ---
 
@@ -325,12 +325,12 @@ PR checklist template: [`.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md`
 
 ## Suggested path for new contributors
 
-1. Type **[101](101-SELINUX.md)** on a SELinux VM (**[102](102-SELINUX_BASICS.md)** §1–4 if labels are fuzzy).
-2. Watch **[202](202-DEMO_GUIDE.md)**.
+1. Type **[101](../training/101-SELINUX.md)** on a SELinux VM (**[102](../training/102-SELINUX_BASICS.md)** §1–4 if labels are fuzzy).
+2. Watch **[202](../demo/202-DEMO_GUIDE.md)**.
 3. Skim [README.md](../../README.md) architecture diagram.
 4. Open **`config/shopapi.manifest.yml`** and **`demo/shopapi/`** — match each first-ship path to a permission story. Generator goldens live in **`selinux/myapp.te`**.
 5. Trace one AVC through **`cli/avc_preprocess.py`**, then try **`bash scripts/dev_generate_policy.sh --skip-export`** with a saved **`policy_out/avc.log`**.
-6. When ready for ops: **[301](../admin/301-ANSIBLE_OPERATIONS.md)** + **[303](../admin/303-DENIAL_RESPONSE.md)** + **[302](../admin/302-PRODUCTION_READINESS.md)**.
+6. When ready to ship: **[301](../admin/301-ANSIBLE_OPERATIONS.md)**.
 
 ---
 
@@ -348,24 +348,111 @@ PR checklist template: [`.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md`
 
 ---
 
-## Other docs in `docs/`
+## Generate a module
 
-Numbered catalog: [docs/README.md](../README.md).
+`dev_generate_policy.sh` is the default engine. It does not call an LLM. CI uses the same classifier.
 
-| # | Guide | Best for |
-|---|--------|----------|
-| **101** | [SELinux 101](101-SELINUX.md) | Typed shopapi labs before the talk |
-| **102** | [SELinux basics](102-SELINUX_BASICS.md) | First-time SELinux readers |
-| **103** | [Hands-on recap](103-TRAINING_LAB.md) | After 101: recap + `demo_present.sh` |
-| **202** | [Three-app customer talk](202-DEMO_GUIDE.md) | `demo_present.sh` |
-| **203** | [Two Linux VMs](../admin/203-RHEL_TWO_HOST.md) | QA + prod |
-| **204** | [Deterministic policy](../developers/204-DETERMINISTIC_POLICY.md) | Offline generator and fixtures |
-| **205** | [Testing](../developers/205-TESTING.md) | PR CI and local `make check` |
-| **206** | [Onboarding](../developers/206-ONBOARDING.md) | Adding `payments` or your own app |
-| **207** | [Best practices](../policy/207-SELINUX_BEST_PRACTICES.md) | What CI accepts |
-| **301** | [Ansible operations](../admin/301-ANSIBLE_OPERATIONS.md) | AAP / playbooks |
-| **302** | [Production readiness](../admin/302-PRODUCTION_READINESS.md) | Canary → enforce |
-| **303** | [Denial response](../admin/303-DENIAL_RESPONSE.md) | Prod AVC → PR |
-| **304** | [Adoption checklist](../admin/304-ADOPTION_CHECKLIST.md) | Fork/org wiring |
+```mermaid
+flowchart TD
+  start["dev_generate_policy.sh"] --> vendor{"Vendor module already covers this app?"}
+  vendor -->|yes| tune["Stop. --tune-report prints host commands. No .te"]
+  vendor -->|no| class["Classify each AVC"]
+  class --> fc["fc_fix or fc_drift: label, then restorecon"]
+  class --> allow["direct or interface: one allow"]
+  class --> block["forbidden or needs_review: stop unless you pass the flag"]
+```
 
-If this guide disagrees with the code, **trust the repository** and send a PR to update the doc.
+| Situation | What you do |
+|-----------|-------------|
+| `loaded` / `base_policy` | Vendor or targeted policy already confines this app. `--tune-report`. Do not generate a second module. |
+| `package_installed` / `package_available` / `unconfined` | Install or enable the vendor RPM (`jws6-tomcat-selinux`, `eap*-selinux`). Do not generate. |
+| `none` | No vendor module (shopapi, Node, Spring Boot). Generation continues. |
+| Laptop, no `semodule` | One skip line. Offline fixtures still run. |
+
+`--tune-report` writes `policy_out/tune_report.md` and never a `.te`. `--force "reason"` is the only bypass, and the reason lands in the PR. Bare `--force` is rejected.
+
+| Verdict | Meaning |
+|---------|---------|
+| `fc_fix` | Path is in the manifest and not in `.fc` yet. Add a line, then `restorecon`. |
+| `fc_drift` | `.fc` already covers the path. `restorecon` only. |
+| `private_port` | `name_bind` on a shared port type. Use the app's `_port_t`. |
+| `boolean` | A switch already in policy. `setsebool -P`, not a new allow. |
+| `interface` | A refpolicy macro matched (`sepolgen-ifgen` on the RHEL box). |
+| `direct` | A module-private type, or no macro fit. |
+| `baseline` | Already in the `.te` or a baseline macro. `cgroup_t` getattr is omitted on purpose. |
+| `needs_review` | Domain-weakening (`execmem`, `dac_override`). Not written unless `--allow-needs-review`. |
+| `forbidden` | Refused (`shadow_t`, and the same patterns CI rejects). |
+| `toolchain_required` | A base type, and interface matching is not installed. Pass `--allow-degraded` only if you mean that. |
+
+Classify one fixture without compiling:
+
+```bash
+python3 cli/deterministic_gen.py --explain \
+  --avc-log docs/examples/fixtures/deterministic/01-mislabeled-var-lib/avc.log \
+  --manifest config/myapp.manifest.yml \
+  --existing-te selinux/myapp.te \
+  --existing-fc selinux/myapp.fc
+```
+
+Goldens: `make test-fixtures` (`docs/examples/fixtures/deterministic/`, cases `01`–`13`). Ship after the PR is [301](../admin/301-ANSIBLE_OPERATIONS.md).
+
+## Add an application
+
+Customer policy lives in **the application repo**, not in this one. Generate on **rhel-qa**. Prod never clones git. This repo is the generator, the CI helpers, and the AAP jobs. `selinux/myapp.te` is an offline golden. The live demo module is `selinux/shopapi/`.
+
+```text
+app repo  --deploy-->  rhel-qa  --generate-->  PR on the app repo
+app repo  --merged-->  RPM  --AAP canary-->  rhel-prod
+```
+
+`payments` is the second module you can practice **in this clone**:
+
+```bash
+cp config/payments.manifest.example.yml config/payments.manifest.yml
+bash scripts/validate_app_manifest.sh config/payments.manifest.example.yml
+bash scripts/scaffold_sepolicy_module.sh payments payments_t
+POLICY_MODULE=payments SELINUX_DOMAIN=payments_t \
+  bash scripts/compile_and_validate.sh selinux/payments
+```
+
+`scaffold_sepolicy_module.sh` will not overwrite a `.te` that is already in git. The checked-in `payments.if` publishes `payments_read_public_state` and `payments_domtrans` for other modules. Manifest field that matters: `policy.module_dir: selinux/payments`.
+
+## What a pull request must not contain
+
+CI rejects these. The generator is supposed to refuse them first.
+
+| Do not write | Why |
+|--------------|-----|
+| A custom module for JWS, EAP, httpd, named, or postgresql | Vendor or base policy already confines them. Tune, do not duplicate. |
+| `allow … self:process execmem` or `dac_override` without the review flag | Domain-weakening. `needs_review` blocks until `--allow-needs-review`. |
+| `allow … unreserved_port_t:tcp_socket name_bind` | Binds every high port. Use the app's port type. |
+| `allow … bin_t:file execute` | Label the binary with the app exec type. |
+| `allow … *:*` or `self:*` | Unbounded. |
+| `chcon` in a playbook | Lost on the next `restorecon`. |
+| `setenforce 0` for one app | Host-wide. Use `semanage permissive -a` for that domain. |
+| `audit2allow` pasted in | Wildcards and the wrong class. |
+
+File-context lines for directories do not use `--` (that means regular file only). Cover `/run/app` and `/var/run/app`. Split a Python venv: the interpreter is the exec type, the rest is the lib type.
+
+Review checklist for a policy PR:
+
+- Interfaces, not a raw `audit2allow` dump
+- Dedicated port types, not `unreserved_port_t`
+- `.fc` uses FHS paths and has no `--` on directories
+- `forbidden-patterns` and `version-consistency` are green
+- `selinux/policy_version.txt` matches `policy_module()` in the `.te`
+- Compile happened on RHEL (`compile_and_validate.sh`), not on a laptop
+- A denial after ship is a new PR ([301](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)), not `semodule -i` on prod
+
+## The other guides
+
+| Guide | For |
+|-------|-----|
+| [101](../training/101-SELINUX.md) | Type the shopapi labs |
+| [102](../training/102-SELINUX_BASICS.md) | Read the words |
+| [202](../demo/202-DEMO_GUIDE.md) | The 20-minute customer talk |
+| [203](../demo/203-RHEL_TWO_HOST.md) | The three-host ship talk |
+| [205](205-TESTING.md) | `make check` |
+| [301](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce |
+
+If this guide disagrees with the code, trust the repository and send a PR to update the doc.

@@ -1,12 +1,13 @@
 # SELinux PaC documentation
 
-Guides are numbered like a course. **100** = learn, **200** = demo and develop, **300** = ship.
+Four folders. **training** is the lab. **demo** is the two talks. **admin** is how you ship. **developers** is the tool and the tests.
 
-| Band | Meaning | Start |
-|------|---------|--------|
-| **100** | Labels, one AVC, generate a module | **[101](training/101-SELINUX.md)** then **[102](training/102-SELINUX_BASICS.md)** |
-| **200** | Three-app talk, two-host lab, generator, new apps | **[202](training/202-DEMO_GUIDE.md)** (after 101) |
-| **300** | AAP, soak, incidents, org rollout | **[301](admin/301-ANSIBLE_OPERATIONS.md)** |
+| Folder | Start |
+|--------|--------|
+| [training/](training/101-SELINUX.md) | **[101](training/101-SELINUX.md)** on one RHEL box, **[102](training/102-SELINUX_BASICS.md)** when a word is new |
+| [demo/](demo/202-DEMO_GUIDE.md) | **[202](demo/202-DEMO_GUIDE.md)** (20 min, one host) then **[203](demo/203-RHEL_TWO_HOST.md)** (45 min, three windows) |
+| [admin/](admin/301-ANSIBLE_OPERATIONS.md) | **[301](admin/301-ANSIBLE_OPERATIONS.md)** canary, soak, enforce |
+| [developers/](developers/201-CODE_WALKTHROUGH.md) | **[201](developers/201-CODE_WALKTHROUGH.md)** how the tool works, **[205](developers/205-TESTING.md)** `make check` |
 
 | Pattern | Meaning |
 |---------|---------|
@@ -19,7 +20,7 @@ Guides are numbered like a course. **100** = learn, **200** = demo and develop, 
 | You are | Start here |
 |---------|------------|
 | **New to SELinux** | **101** → **102** §1–4 if needed → **202** |
-| **RHEL admin (customer env)** | **[304](admin/304-ADOPTION_CHECKLIST.md)** → **300**s below |
+| **RHEL admin (customer env)** | **[301](admin/301-ANSIBLE_OPERATIONS.md)** |
 | **Trying this on a Mac** | [../README.md](../README.md#try-it-on-a-mac) — two RHEL VMs + `setup_rhel_hosts.sh` |
 | **Laptop only (no VM)** | **101** [Appendix B](training/101-SELINUX.md#appendix-b-laptop-no-selinux) + `make check` (**205**) |
 
@@ -27,35 +28,18 @@ Guides are numbered like a course. **100** = learn, **200** = demo and develop, 
 
 ## Catalog
 
-### 100 — Learn
-
 | # | Guide | You need |
 |---|--------|----------|
-| **101** | [SELinux 101](training/101-SELINUX.md) | Typed shopapi loop on **one** RHEL box |
-| **102** | [SELinux basics](training/102-SELINUX_BASICS.md) | Reading primer (lab 0 is §1–4) |
-| **103** | [Hands-on recap](training/103-TRAINING_LAB.md) | One-screen recap after 101; `make training-lab` is the talk dry-run |
-
-### 200 — Demo and develop
-
-| # | Guide | You need |
-|---|--------|----------|
-| **201** | [Code walkthrough](training/201-CODE_WALKTHROUGH.md) | What each folder and script is for |
-| **202** | [Three-app customer talk](training/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min; finish **101** first |
-| **203** | [Two Linux VMs](admin/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three hosts, ~45 min |
-| **204** | [Deterministic policy](developers/204-DETERMINISTIC_POLICY.md) | Offline AVC → `.te` / `.fc` |
+| **101** | [SELinux 101](training/101-SELINUX.md) | Type the shopapi loop on **one** RHEL box |
+| **102** | [SELinux basics](training/102-SELINUX_BASICS.md) | What the words mean (lab 0 is §1–4) |
+| **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
+| **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
+| **201** | [How the tool works](developers/201-CODE_WALKTHROUGH.md) | Folders, generate, a second app, what a PR must not contain |
 | **205** | [Testing](developers/205-TESTING.md) | `make check`, CI, endpoints |
-| **206** | [Onboarding an application](developers/206-ONBOARDING.md) | Point a developer at a new app |
-| **207** | [Best practices](policy/207-SELINUX_BEST_PRACTICES.md) | What this repo accepts in a policy PR |
+| **301** | [Ship the module](admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |
 
-### 300 — Ship
+`make training-lab` prints the 202 talk and runs nothing. It is not a third lab.
 
-| # | Guide | You need |
-|---|--------|----------|
-| **301** | [Ansible operations](admin/301-ANSIBLE_OPERATIONS.md) | AAP / ansible-playbook |
-| **302** | [Production readiness](admin/302-PRODUCTION_READINESS.md) | Soak, enforce, rollback |
-| **303** | [Denial response](admin/303-DENIAL_RESPONSE.md) | File or port denied after ship |
-| **304** | [Adoption checklist](admin/304-ADOPTION_CHECKLIST.md) | CODEOWNERS, RPM repo, branch protection |
+**Contributors (no SELinux on laptop):** from repo root run `make check` — **205**.
 
-**Contributors (no SELinux on laptop):** from repo root run `make check` — **205** §1.6.
-
-Samples (not numbered): [examples/README.md](examples/README.md). App manifest schema: [../config/README.md](../config/README.md). Ansible playbooks: [../ansible/README.md](../ansible/README.md). New app: `bash scripts/selinux_pac_adopt.sh init <app>` (**206**). Repo entry: [../README.md](../README.md).
+Samples (not numbered): [examples/README.md](examples/README.md). App manifest schema: [../config/README.md](../config/README.md). Ansible playbooks: [../ansible/README.md](../ansible/README.md). New app: `bash scripts/selinux_pac_adopt.sh init <app>` ([201 — Add an application](developers/201-CODE_WALKTHROUGH.md#add-an-application)). Repo entry: [../README.md](../README.md).

@@ -90,7 +90,7 @@ type=AVC msg=audit(1730000006.106:506): avc: denied { connectto } for pid=4421 c
 
 ### 6. Security and Sysadmin Checklist (Admin Team Review)
 
-> Full principles and anti-patterns: [`docs/policy/207-SELINUX_BEST_PRACTICES.md`](../policy/207-SELINUX_BEST_PRACTICES.md) (§8 review checklist).
+> Full principles and anti-patterns: [`docs/developers/201-CODE_WALKTHROUGH.md`](../developers/201-CODE_WALKTHROUGH.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
 
 | Security Check | Status | Notes / Approver Initials |
 | --- | --- | --- |
@@ -110,9 +110,9 @@ type=AVC msg=audit(1730000006.106:506): avc: denied { connectto } for pid=4421 c
 
 **After merge:** Compile with CLI, then AAP **SELinux – Release canary** (`ansible/deploy_canary.yml`).
 
-**Soak:** Daily AAP **Soak monitor** (`soak_monitor.yml`). Before enforce: **Soak status** (`soak_status.yml`). Soak fail → [303-DENIAL_RESPONSE.md](../admin/303-DENIAL_RESPONSE.md), not live patch.
+**Soak:** Daily AAP **Soak monitor** (`soak_monitor.yml`). Before enforce: **Soak status** (`soak_status.yml`). Soak fail → [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship), not live patch.
 
-**Production enforce (manual):** AAP **SELinux – Promote to enforce** (`ansible/enforce_production.yml`). See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) and [`docs/admin/302-PRODUCTION_READINESS.md`](../admin/302-PRODUCTION_READINESS.md).
+**Production enforce (manual):** AAP **SELinux – Promote to enforce** (`ansible/enforce_production.yml`). See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md).
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary

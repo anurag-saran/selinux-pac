@@ -2,7 +2,7 @@
 
 **Ansible Automation Platform (AAP)** / Automation Controller is the production control plane. These files are the click-create spec. They are **not** playbooks. Do not add `ansible.controller` to host `requirements.yml`.
 
-When a file or port is denied after ship: [303-DENIAL_RESPONSE.md](../../docs/admin/303-DENIAL_RESPONSE.md). Soak-monitor failure is investigate-without-mutate — attach a Controller **notification template** to **SELinux – Soak monitor** (job failed). Do not auto-install policy.
+When a file or port is denied after ship: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). Soak-monitor failure is investigate-without-mutate — attach a Controller **notification template** to **SELinux – Soak monitor** (job failed). Do not auto-install policy.
 
 ## Create in Automation Controller
 
