@@ -379,11 +379,15 @@ avc:  denied  { write } for ... path="..." \
 
 ---
 
-## Lab 3 — Create policy and load it
+## Lab 3 — Add the missing allows and load them
 
-**Why:** this is the first time you **author** policy. The talk declines the generator twice (App A covered, App B tuned) before this step. Shopapi has no vendor module, so pre-flight lets it through.
+**Why:** the seed already exists. This lab adds the missing `allow` lines to that same module. It does not create a second policy.
 
-From the repo root. Pick **one** way to generate. Both write the same files when you pass the same flags.
+`selinux/shopapi/shopapi.te` and `shopapi.fc` are already on disk. They name `shopapi_t`, `shopapi_log_t`, and the other types. They do not yet allow the `/log` write from lab 2. The generator reads those files, compares them with the denial log, and writes an updated copy. An access the `.te` already allows is marked `baseline` and is not written again. An access that is missing becomes a new line. `--apply` copies that result back onto the same two paths, so the module name stays `shopapi`. Typing an `allow` by hand would edit the same file. The generator chooses the line from the denial you just read. Lab 4 checks that `/log` works with this module loaded. It does not run the generator a second time.
+
+`semodule -i` afterward replaces the loaded `shopapi` module in place. `-i` on a module that is already installed is an upgrade.
+
+From the repo root. Pick **one** way to generate. Both update the same files when you pass the same flags. The talk declines the generator twice (App A covered, App B tuned) before this step. Shopapi has no vendor module, so the pre-flight lets it through.
 
 ### One command
 
@@ -407,11 +411,54 @@ That one command hides six steps. The section below types each one. Use the one 
 5. Compile `policy_out/` to a `.pp`.
 6. With `--apply`, copy the `.te` and `.fc` into `selinux/shopapi/`.
 
-If it **exits 1** and mentions `execmem` / `needs_review`, the JVM asked for a permission that weakens the domain. For this 101 only, run the same command with one more flag. `--allow-needs-review` writes that permission because it was in the log. Do not type `execmem` into the `.te` yourself if it was not in the log.
+On this lab the one command stops before step 6. That stop is expected. The screen looks like this:
+
+```text
+[INFO] vendor policy check: no vendor or base module covers 'shopapi'; continuing
+[INFO] Exported 8991 AVC lines to .../policy_out/avc.log
+*** GENERATION BLOCKED — domain-weakening permission requires --allow-needs-review ***
+NEEDS REVIEW: ... process:execmem ...
+Wrote .../policy_out/findings.json (generation_blocked=true)
+```
+
+Read it in three parts:
+
+- The vendor line means Red Hat does not already confine this app, so generation was allowed to start.
+- `8991 AVC lines` is the same denial written many times. Permissive mode logs every attempt. It is not 8991 different rules.
+- `GENERATION BLOCKED` means Java asked for `execmem`: memory that is both writable and executable. The tool recorded that in `findings.json` and refused to put it in the `.te`. `shopapi.te` and `shopapi.fc` are still the seed. `--apply` did not copy anything.
+
+For this 101 only, run the same command with one more flag. `--allow-needs-review` writes that permission because it was in the log. Do not type `execmem` into the `.te` yourself if it was not in the log.
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)" --allow-needs-review
 ```
+
+That second run can still fail at the compiler, after `Forbidden-pattern checks passed`. The error names this line:
+
+```text
+allow shopapi_t bin_t:file { entrypoint };
+```
+
+`entrypoint` means this file type may be the program that enters `shopapi_t`. The seed already allows that for `shopapi_exec_t`. The denial is from before `restorecon`, when `/opt/shopapi/bin/java` was still `bin_t`, the type a copied `/usr/bin/java` keeps. The audit line has `path="/opt/shopapi/bin/java"` and `tcontext=...:bin_t:s0`. `permissive=0` and a new pid every few seconds is systemd retrying that start. The forbidden-pattern check looks for `bin_t:file execute`, so `entrypoint` gets through. The compiler then says `unknown type bin_t` because this module never declares that type. The `insights_core.if` lines above the error are duplicate-definition warnings from the RHEL policy package.
+
+Check the file now:
+
+```bash
+ls -Z /opt/shopapi/bin/java
+```
+
+`shopapi_exec_t` means the label is already correct and those audit lines are old. Leave them out of the log and generate again. `--skip-export` reads the file you pass and does not reread the audit log. `--allow-needs-review` is still required, because `execmem` is still in the kept lines.
+
+```bash
+grep -v 'denied  { entrypoint } for .* path="/opt/shopapi/bin/java".*object_r:bin_t' policy_out/avc.log > /tmp/shopapi-avc.log
+sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --skip-export --avc-log /tmp/shopapi-avc.log --app-name shopapi --app-root "$(pwd)"
+```
+
+A good run prints `14 net-new denial(s)` (the `bin_t` line is the one you removed), `Built .../policy_out/shopapi.pp`, `AVC coverage OK`, and `Updated .../selinux/shopapi/shopapi.te`. The version in the diff goes from `1.0.0` to `1.0.1`. `allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission.
+
+The script then prints `Next steps (Git PR handoff)` and may warn `no selinux/shopapi.te at merge-base`. That block is the pull-request helper. It looks for `selinux/shopapi.te` at the repository root. This lab's file is `selinux/shopapi/shopapi.te`. Do not commit, push, or run `gh pr create`. The next commands are step 6. They compile the copy `--apply` just wrote and load it.
+
+`semodule -i` prints nothing when the install works. `semodule -l | grep shopapi` prints two names. `shopapi` is the module you installed. `permissive_shopapi_t` is the log-only switch from prep. `restorecon` prints no `Relabeled` lines when the files already have the types in the address book.
 
 ### The same work, one command at a time
 
@@ -501,7 +548,7 @@ sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi
 sudo semodule -l | grep shopapi
 ```
 
-**Good sign:** `compile_and_validate` prints `Built …/shopapi.pp`. `semodule -l` lists `shopapi`. `findings.json` rows have verdicts (`direct`, `interface`, `fc_fix`, …) — not a dump of raw `audit2allow`.
+**Good sign:** `compile_and_validate` prints `Built …/shopapi.pp`. `semodule -l` lists both `shopapi` and `permissive_shopapi_t`. `findings.json` rows have verdicts (`direct`, `interface`, `fc_fix`, …) — not a dump of raw `audit2allow`.
 
 **Checkpoint:** Where do the new `allow` lines come from — a JVM cookbook, or the AVC log you just exported?
 
@@ -509,28 +556,24 @@ sudo semodule -l | grep shopapi
 
 ## Lab 4 — Same test, no new rule
 
-**Why:** soak and the generator both care about **net-new** access, not “were there log lines.” Duplicate `allow`s mean you are not tracking what policy already has.
+**Why:** the loaded module should allow the access you already generated. A new denial for that same access means the rule did not land.
 
-Same three actions as lab 2, then generate again. Type them one at a time, or paste the block. Add `--allow-needs-review` to the generate command only if lab 3 needed it.
-
-`curl -sf` calls `/log` again. `echo` prints a blank line. The `ausearch` pipeline is the lab 2 search, with `tail -n 5` keeping five lines instead of twenty. The generate command is the lab 3 one-command path. It should classify the `/log` write as already allowed.
+`curl -sf` calls `/log` again. `echo` prints a blank line. The `ausearch` pipeline is the lab 2 search, with `tail -n 5` keeping five lines instead of twenty.
 
 ```bash
 curl -sf http://127.0.0.1:8091/log
 echo
 sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 5
-sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
 ```
 
 **Good sign**
 
-- `/log` still returns **200**.
-- `findings.json` for that same access is **`baseline`** / already allowed — **not** a second identical `allow` in `selinux/shopapi/shopapi.te`.
-- `git diff selinux/shopapi/shopapi.te` should not grow a duplicate line for the lab 2 permission. (Startup noise can still add unrelated net-new rows; the point is the **`/log` write is not duplicated**.)
+- The curl prints `LOG /var/log/shopapi/shopapi.log`.
+- `ausearch` prints no `shopapi_t` lines. An allow does not produce an AVC. Permissive mode only logs access the rules still refuse.
 
-This is the same idea as “soak net-new is 0,” without Ansible.
+Do not run `dev_generate_policy.sh` again in this lab. The `execmem` line already in the file is `allow shopapi_t self:process execmem;`, with no braces. The generator only treats a rule as already present when the permissions sit inside `{ }`, and it records the target word `self` separately from the type `shopapi_t`. A second run therefore stops on `execmem` again. Adding `--allow-needs-review` this time would append a second copy of that line. The blocked run does not change `selinux/shopapi/shopapi.te`. Leave the loaded `1.0.1` module as it is and go to lab 5.
 
-**Checkpoint:** If the kernel logs the same denial again while the rule already exists, what should generate do?
+**Checkpoint:** If curl prints the log line and `ausearch` is empty, what does that say about the `/log` allow?
 
 ---
 
@@ -584,11 +627,22 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 
 **Why:** a second generate should add **`/var/spool/shopapi`** (label + allow), not replay lab 3.
 
-The lab 5 denials are already in the audit log. Use the lab 3 **one command** again, or the lab 3 step-by-step. Add `--allow-needs-review` only if generate exits 1 and names `needs_review`.
+The lab 5 denials are new, so `/tmp/shopapi-avc.log` from lab 3 does not contain them. Export again, then drop the old `bin_t` entrypoint lines the same way as lab 3. Those lines are still in the audit log. `--allow-needs-review` is required because `execmem` is still in the kept lines. `--skip-export` stops the script from putting the `bin_t` lines back.
 
 ```bash
-sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
+sudo bash scripts/dev_generate_policy.sh --app-name shopapi --app-root "$(pwd)" --allow-needs-review || true
+grep -v 'denied  { entrypoint } for .* path="/opt/shopapi/bin/java".*object_r:bin_t' policy_out/avc.log > /tmp/shopapi-avc.log
+sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --skip-export --avc-log /tmp/shopapi-avc.log --app-name shopapi --app-root "$(pwd)"
 ```
+
+The first command may exit 1 at the compiler on the `bin_t` line. `|| true` keeps the shell going so the export it already wrote can be filtered. Before `semodule -i`, look at the rule book:
+
+```bash
+grep -n execmem selinux/shopapi/shopapi.te
+grep -n 'shopapi_log_t:file open' selinux/shopapi/shopapi.te
+```
+
+One match for each is the lab 3 line. A second match means the generator appended a copy of a one-permission allow it did not recognize. The new spool lines are the ones this lab adds. A repeated `execmem` or `/log` allow is the same recognition gap as lab 4.
 
 Then compile, load, relabel, and retry. One at a time, or as this block. `restorecon` now includes `/var/spool/shopapi`, the path lab 5 wrote. `curl -sf` should print the page and exit 0. `echo` prints a blank line after it.
 
@@ -604,8 +658,8 @@ echo
 **Good sign**
 
 - `/feature-spool` returns **200** under enforcing (`shopapi_t` still **not** permissive).
-- New `.te` / `.fc` rows mention the spool path or its type — not a second copy of the lab 2 log allow.
-- Optional third generate: still no duplicate of those rules.
+- The new `.te` / `.fc` rows mention the spool path or its type.
+- `execmem` and `shopapi_log_t:file open` each appear once. A second copy is the lab 4 recognition gap, not a new spool rule.
 
 **Checkpoint:** What is the difference between “there were AVCs in the log” and “net-new access the `.te` does not already allow”?
 
