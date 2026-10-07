@@ -13,11 +13,11 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 | **This guide (202)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
 | **[203](../admin/203-RHEL_TWO_HOST.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
-`--help` on each script names the other. Changing the customer narrative lives in `demo_present.sh`; changing the three-host ship path lives in `demo_e2e_*.sh`. `make check` dry-runs both.
+Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
-`--profile customer` is Acts **0–3**. `--profile technical` adds 4 (PR) and 5 (handoff to `demo_e2e_mac.sh` — not a second copy of that talk).
+Use `--profile customer`. That is Acts 0, 1, 2, and 3, about 20 minutes. `--profile technical` adds Act 4 (open a pull request) and Act 5 (a pointer at the 203 talk). Act 5 does not run the 203 talk.
 
-Present **nothing to do → tune it → build it**. Demo apps are **Tomcat App A**, **Tomcat App B**, and **Spring Boot shopapi**. Offline `make check` uses deterministic fixtures (`selinux/myapp.te`), not a live Flask app.
+`make check` on a laptop rehearses both talks from saved sample files. The sample module is `selinux/myapp.te`. It does not start an application.
 
 ```mermaid
 flowchart LR
@@ -30,30 +30,34 @@ flowchart LR
   act3 -.-> later
 ```
 
-| Act | What the audience sees | What you do not do |
-|-----|------------------------|--------------------|
-| **0** | Tomcat: `situation=loaded`. Shopapi: `situation=none`. | Write a `.te` for Tomcat. |
-| **1** | `/standard/` works. `forbidden.jsp` is `UNEXPECTED_READ` on distro `tomcat_t`, or `DENIED` on JWS. | Change the host. |
-| **2** | Port 8090, `/opt/appdata`, outbound call. One-line fixes, or a spoken skip when there is no denial. `git status` of `selinux/` is empty. | Author a module. |
-| **3** | Private Java, `SELinuxContext=shopapi_t`, curl `/health` `/state` `/log`, then generate from those denials. | Curl `/feature-spool`. That outage is the next meeting. |
+| Act | What you show | Where you stop |
+|-----|----------------|----------------|
+| **0** | Tomcat already has a Red Hat module. Shopapi does not. | You do not write a policy file for Tomcat. |
+| **1** | The normal page on port 8080 works. The forbidden page is the proof. | You do not change anything. |
+| **2** | A second Tomcat on port 8090, files in `/opt/appdata`, and a call out to a payment service. | You do not write a policy file. `git status` of `selinux/` stays empty. |
+| **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool`. That failure is the next meeting. |
 
-**Follow also:** [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md) after this talk if the audience needs Ansible, RPMs, and soak gates.
+The next meeting, when they want Ansible, RPMs, and the soak gate, is [203-RHEL_TWO_HOST.md](../admin/203-RHEL_TWO_HOST.md).
 
-## The three situations
+If you run `--help` on either talk script, the help text names the other script. The customer story is edited in `scripts/demo_present.sh`. The two-VM story is edited in `scripts/demo_e2e_mac.sh`, `demo_e2e_rhel_qa.sh`, and `demo_e2e_rhel_prod.sh`.
 
-Red Hat customers mostly run JWS (Tomcat), EAP, Python, Node, and Spring Boot. Only some of those have vendor policy. The talk uses three apps so people can place their own estate:
+## The three apps
 
-| App | What it is | What we do |
-|-----|------------|------------|
-| **App A** | Tomcat, **greenfield**, standard paths, port **8080** | Already deployed, confined, **enforcing**. Evidence, not a live step. |
-| **App B** | Tomcat, **inherited**: `/opt/appdata`, port **8090**, outbound gateway | Real denials. One-line `semanage` / `setsebool`. **Zero `.te`.** |
-| **shopapi** | Spring Boot JVM under systemd | **No vendor module.** Only this one hits the generator. |
+Customers run Tomcat, JBoss, Python, Node, and Spring Boot. Red Hat already ships policy for some of those. This talk uses three apps so a listener can point at their own:
 
-App A is a standard deploy. App B is the one you inherited — something else had 8080, content landed in `/opt/appdata`, it talks to a payment gateway. That is what most estates look like.
+| App | The story you tell | What you do on screen |
+|-----|--------------------|------------------------|
+| **App A** | Tomcat installed the normal way, on port **8080**. | Show that it is already running. Change nothing. |
+| **App B** | A second Tomcat. Port 8080 was taken, so it listens on **8090**. Its files were dropped in `/opt/appdata`. It calls a payment service. | Fix the host with one command per problem, or say there was no denial. Write no policy file. |
+| **shopapi** | A Spring Boot service started by systemd. Red Hat does not ship a module for it. | This is the only app that gets a new `.te`. |
 
-**Same Tomcat domain:** App A and App B run as `jws6_tomcat_t` or `tomcat_t`. SELinux is **not** isolating them from each other. If you need that isolation, use separate instances or containers.
+App A and App B share one process type, `tomcat_t` or `jws6_tomcat_t`. SELinux treats them as the same kind of program. To keep them apart, run them as separate Tomcat instances or in containers.
 
-**JWS vs Tomcat:** JWS needs a Red Hat subscription and the JWS repo. If bootstrap cannot see that repo, it installs **upstream Tomcat** from the distro. The process domain is **`tomcat_t`**, not `jws6_tomcat_t`. Distro `tomcat_t` is `files_unconfined_type` / `unconfined_domain_type` even with module `tomcat` loaded — Act 1 `forbidden.jsp` returns `UNEXPECTED_READ` and Act 2 probes produce no AVC. That is the beat on that host, not a failed talk. **JWS `jws6_tomcat_t` is confined** and is what makes the denial / `semanage` / `setsebool` story real. Act 3 (generate for shopapi) is the confined path on either variant. Bootstrap prints which it chose.
+**What this RHEL host will show.** Bootstrap installs the Tomcat that comes with RHEL. Its type is `tomcat_t`. A module named `tomcat` is loaded, and that type still does not confine the process. In Act 1 the forbidden page is readable (`UNEXPECTED_READ`) and there is no denial. In Act 2 the three probes produce no denial, so you skip the fixes and say so. Say that out loud. It is the honest result on this host.
+
+JBoss Web Server (JWS) is the paid Tomcat. Its type is `jws6_tomcat_t`, and that type does confine. On a JWS host Act 1 shows a real denial, and Act 2 shows the one-line port, label, and boolean fixes. Bootstrap prints which Tomcat it installed.
+
+Shopapi is confined on either kind of host. Act 3 is the same story both ways.
 
 ## Commands
 
