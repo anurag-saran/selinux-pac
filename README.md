@@ -9,7 +9,7 @@ The **customer talk** is **202** — three applications (vendor Tomcat already e
 | **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
-| **Application developer** | [Developers](#developers) and **[206](docs/developers/201-CODE_WALKTHROUGH.md#add-an-application)** |
+| **Application developer** | [Developers](#developers) and **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)** |
 | **Offline check (any laptop)** | `make check` (**205**) |
 
 ---
@@ -115,7 +115,7 @@ bash scripts/setup_rhel_hosts.sh doctor
 # bootstrap — print (do not run) SSH steps for rhel-qa only
 bash scripts/setup_rhel_hosts.sh bootstrap
 # next app after the shopapi demo
-bash scripts/selinux_pac_adopt.sh init payments     # see docs/developers/201-CODE_WALKTHROUGH.md#add-an-application
+bash scripts/selinux_pac_adopt.sh init payments     # see docs/demo/201-CODE_WALKTHROUGH.md#add-an-application
 
 # Package + publish (see packaging/internal.env.example)
 bash packaging/build_rpms.sh                        # selinux-policy-ops + shopapi-selinux (demo) + myapp-selinux (test fixture)
@@ -209,7 +209,7 @@ The generator classifies the denial: **file** → `.fc` + `restorecon`; **port**
 
 CI must pass `forbidden-patterns` and `version-consistency` (the generator already ran the same forbidden-pattern check). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`.
 
-New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[206](docs/developers/201-CODE_WALKTHROUGH.md#add-an-application)**.
+New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)**.
 
 Ports stay in the committed manifest (`selinux_ports`). Probe host/IP is per inventory (`http_probe_host`).
 
@@ -224,9 +224,8 @@ ansible/      selinux_pac role + aap/ Controller workflows
 packaging/    selinux-policy-ops + <app>-selinux; publish_internal.sh
 scripts/      setup_rhel_hosts.sh (admins), demo_e2e_*.sh (three-window lab talk track)
 docs/training/    101 labs, 102 basics
-docs/demo/        202 customer talk, 203 three-host ship talk
+docs/demo/        202 customer talk, 203 ship talk, 201 how the tool works, 205 tests
 docs/admin/       301 ship
-docs/developers/  201 how the tool works, 205 tests
 ```
 
 ---

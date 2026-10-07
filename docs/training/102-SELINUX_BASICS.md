@@ -643,7 +643,7 @@ Each shopapi type is explained in [section 3](#3-the-context-string--four-parts)
 
 ## 12. How this maps onto the tool
 
-After the labs, the same pieces are what the tool runs for you. **[201](../developers/201-CODE_WALKTHROUGH.md)** names the scripts. The sequence is:
+After the labs, the same pieces are what the tool runs for you. **[201](../demo/201-CODE_WALKTHROUGH.md)** names the scripts. The sequence is:
 
 ```text
 1. Run shopapi_t on the log-only list     denials are written, the app still answers
@@ -807,7 +807,7 @@ Numbered catalog: [docs/README.md](../README.md).
 |---|--------|------------------|
 | **101** | [SELinux 101](101-SELINUX.md) | Type the shopapi labs. Read sections 1–7 of this page first. |
 | **This file (102)** | | What the words and commands mean |
-| **201** | [How the tool works](../developers/201-CODE_WALKTHROUGH.md) | Which script implements the steps in section 12 |
+| **201** | [How the tool works](../demo/201-CODE_WALKTHROUGH.md) | Which script implements the steps in section 12 |
 | **202** | [Customer talk](../demo/202-DEMO_GUIDE.md) | After 101 |
 | **203** | [Two Linux VMs](../demo/203-RHEL_TWO_HOST.md) | The ship talk |
 | **301** | [Ship the module](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |

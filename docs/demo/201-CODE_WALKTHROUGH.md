@@ -7,11 +7,11 @@ You do **not** need to know every script on day one. Read this in order, pause w
 | Your goal | Start here |
 |-----------|------------|
 | Understand SELinux words (domain, AVC, `.te`) | **[102](../training/102-SELINUX_BASICS.md)** §1–7 |
-| **Practice commands on a SELinux host** | **[101](../training/101-SELINUX.md)**, then the talk in **[202](../demo/202-DEMO_GUIDE.md)** |
+| **Practice commands on a SELinux host** | **[101](../training/101-SELINUX.md)**, then the talk in **[202](202-DEMO_GUIDE.md)** |
 | See how this tool fits together | [What SELinux PaC does](#what-selinux-pac-does-in-plain-english) → [Story of one policy change](#story-of-one-policy-change) |
 | Find a folder or file | [Directory map](#directory-map-what-each-folder-is-for) |
-| Three-app customer talk | **[202](../demo/202-DEMO_GUIDE.md)** — finish **101** first |
-| Deploy to real servers | **[203](../demo/203-RHEL_TWO_HOST.md)** then **[301](../admin/301-ANSIBLE_OPERATIONS.md)** |
+| Three-app customer talk | **[202](202-DEMO_GUIDE.md)** — finish **101** first |
+| Deploy to real servers | **[203](203-RHEL_TWO_HOST.md)** then **[301](../admin/301-ANSIBLE_OPERATIONS.md)** |
 
 **Time:** about 30–45 minutes if you read the basics doc first; 60+ minutes if you read both cover to cover.
 
@@ -24,11 +24,11 @@ You do **not** need to know every script on day one. Read this in order, pause w
 | Environment | When to use it | Typical commands from this guide |
 |-------------|----------------|----------------------------------|
 | **Repo root on any OS** | Offline tests, Python CLI, reading git | `make check`, `python3 cli/deterministic_gen.py --explain …` |
-| **RHEL two-host lab** | Default: QA + prod boxes | `bash scripts/setup_rhel_hosts.sh write …` — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) |
+| **RHEL two-host lab** | Default: QA + prod boxes | `bash scripts/setup_rhel_hosts.sh write …` — [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md) |
 | **Native Linux with SELinux** (RHEL **QA**) | Staging, demo, soak, `semanage` | `sudo bash scripts/demo_bootstrap.sh --shopapi-only`, `curl 127.0.0.1:8091/health` |
 | **RHEL prod** | Ansible deploy lifecycle | Playbooks with `-i ansible/inventory.production.yml` |
 
-macOS has no SELinux — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) then SSH to **rhel-qa**.
+macOS has no SELinux — [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md) then SSH to **rhel-qa**.
 
 **Repo root** = directory containing `scripts/` and `docs/` (after `git clone`).
 
@@ -117,7 +117,7 @@ Think of the repo in **layers**: app → policy source → generators → automa
 | [`scripts/lib/`](../../scripts/lib/) | Shared code **sourced** by other scripts (not usually run alone). |
 | [`ansible/`](../../ansible/) | Playbooks that install `.pp`, soak monitor, enforce, rollback (role **`selinux_pac`**). |
 | [`packaging/`](../../packaging/) | RPM specs (`selinux-policy-ops`, `<app>-selinux`) and compile container. |
-| [`docs/`](../) | Guides: `training/` (learn), `demo/` (the two talks), `admin/` (ship), `developers/` (this page and tests). |
+| [`docs/`](../) | Guides: `training/` (learn), `demo/` (talks, this page, and tests), `admin/` (ship). |
 | [`policy_out/`](../../policy_out/) | Generated output on your machine (gitignored). |
 | [`.github/workflows/`](../../.github/workflows/) | PR CI: `forbidden-patterns` + `version-consistency`. Ship is AAP / Mac ansible-playbook. |
 | [`tests/fixtures/`](../../tests/fixtures/) | Small policy snippets used to test the blast-radius classifier in CI. |
@@ -270,7 +270,7 @@ Most scripts expect your shell’s **current directory** to be the **repo root**
 |--------|------|
 | **`demo_present.sh`** | Customer talk, one host (~20 min). |
 | **`demo_bootstrap.sh`** | Idempotent App A/B + shopapi estate (`make demo-bootstrap`). |
-| **`demo_e2e_mac.sh`**, **`demo_e2e_rhel_qa.sh`**, **`demo_e2e_rhel_prod.sh`** | Three-host pipeline of [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md) (~45 min). |
+| **`demo_e2e_mac.sh`**, **`demo_e2e_rhel_qa.sh`**, **`demo_e2e_rhel_prod.sh`** | Three-host pipeline of [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md) (~45 min). |
 | **`reset_demo_vms.sh`** | Wipe leftover shopapi policy and untune App B (Mac). JVM stays. |
 | **`demo_open_generated_pr.sh`** | Live generate → GitHub PR (needs `gh`). |
 
@@ -293,7 +293,7 @@ Playbooks are short; behavior lives in the **`selinux_pac`** role (manifest-driv
 
 **Enforce (simplified):** `collect_soak_facts` (prefer **net-new**) → remove permissive → rebuild policy store → smoke again.
 
-Inventory examples: **`inventory.dev.example.yml`** (RHEL dev), **`inventory.production.example.yml`** (RHEL prod). Generate with **`scripts/setup_rhel_hosts.sh`**. AAP objects: [`ansible/aap/`](../../ansible/aap/) and [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md). Denial after ship: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). Two-host walkthrough: [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md).
+Inventory examples: **`inventory.dev.example.yml`** (RHEL dev), **`inventory.production.example.yml`** (RHEL prod). Generate with **`scripts/setup_rhel_hosts.sh`**. AAP objects: [`ansible/aap/`](../../ansible/aap/) and [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md). Denial after ship: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). Two-host walkthrough: [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md).
 
 ---
 
@@ -326,7 +326,7 @@ PR checklist template: [`.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md`
 ## Suggested path for new contributors
 
 1. Type **[101](../training/101-SELINUX.md)** on a SELinux VM (**[102](../training/102-SELINUX_BASICS.md)** §1–4 if labels are fuzzy).
-2. Watch **[202](../demo/202-DEMO_GUIDE.md)**.
+2. Watch **[202](202-DEMO_GUIDE.md)**.
 3. Skim [README.md](../../README.md) architecture diagram.
 4. Open **`config/shopapi.manifest.yml`** and **`demo/shopapi/`** — match each first-ship path to a permission story. Generator goldens live in **`selinux/myapp.te`**.
 5. Trace one AVC through **`cli/avc_preprocess.py`**, then try **`bash scripts/dev_generate_policy.sh --skip-export`** with a saved **`policy_out/avc.log`**.
@@ -450,8 +450,8 @@ Review checklist for a policy PR:
 |-------|-----|
 | [101](../training/101-SELINUX.md) | Type the shopapi labs |
 | [102](../training/102-SELINUX_BASICS.md) | Read the words |
-| [202](../demo/202-DEMO_GUIDE.md) | The 20-minute customer talk |
-| [203](../demo/203-RHEL_TWO_HOST.md) | The three-host ship talk |
+| [202](202-DEMO_GUIDE.md) | The 20-minute customer talk |
+| [203](203-RHEL_TWO_HOST.md) | The three-host ship talk |
 | [205](205-TESTING.md) | `make check` |
 | [301](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce |
 

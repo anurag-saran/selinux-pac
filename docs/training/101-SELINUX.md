@@ -749,7 +749,7 @@ python3 cli/deterministic_gen.py --explain \
   --existing-fc selinux/myapp.fc
 ```
 
-Expect **`fc_fix`**. Full golden suite: `make test-fixtures`. Concepts: [201 — Generate a module](../developers/201-CODE_WALKTHROUGH.md#generate-a-module). `selinux/myapp.te` is the **offline golden**, not a live app.
+Expect **`fc_fix`**. Full golden suite: `make test-fixtures`. Concepts: [201 — Generate a module](../demo/201-CODE_WALKTHROUGH.md#generate-a-module). `selinux/myapp.te` is the **offline golden**, not a live app.
 
 ---
 

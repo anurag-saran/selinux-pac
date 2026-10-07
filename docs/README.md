@@ -1,13 +1,12 @@
 # SELinux PaC documentation
 
-Four folders. **training** is the lab. **demo** is the two talks. **admin** is how you ship. **developers** is the tool and the tests.
+Three folders. **training** is the lab. **demo** is the talks and how the tool works. **admin** is how you ship.
 
 | Folder | Start |
 |--------|--------|
 | [training/](training/101-SELINUX.md) | **[101](training/101-SELINUX.md)** on one RHEL box, **[102](training/102-SELINUX_BASICS.md)** when a word is new |
-| [demo/](demo/202-DEMO_GUIDE.md) | **[202](demo/202-DEMO_GUIDE.md)** (20 min, one host) then **[203](demo/203-RHEL_TWO_HOST.md)** (45 min, three windows) |
+| [demo/](demo/202-DEMO_GUIDE.md) | **[202](demo/202-DEMO_GUIDE.md)** (20 min) then **[203](demo/203-RHEL_TWO_HOST.md)** (45 min). **[201](demo/201-CODE_WALKTHROUGH.md)** is the code map. **[205](demo/205-TESTING.md)** is `make check`. |
 | [admin/](admin/301-ANSIBLE_OPERATIONS.md) | **[301](admin/301-ANSIBLE_OPERATIONS.md)** canary, soak, enforce |
-| [developers/](developers/201-CODE_WALKTHROUGH.md) | **[201](developers/201-CODE_WALKTHROUGH.md)** how the tool works, **[205](developers/205-TESTING.md)** `make check` |
 
 | Pattern | Meaning |
 |---------|---------|
@@ -34,12 +33,12 @@ Four folders. **training** is the lab. **demo** is the two talks. **admin** is h
 | **102** | [SELinux basics](training/102-SELINUX_BASICS.md) | What the words mean (lab 0 is §1–4) |
 | **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
 | **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
-| **201** | [How the tool works](developers/201-CODE_WALKTHROUGH.md) | Folders, generate, a second app, what a PR must not contain |
-| **205** | [Testing](developers/205-TESTING.md) | `make check`, CI, endpoints |
+| **201** | [How the tool works](demo/201-CODE_WALKTHROUGH.md) | Folders, generate, a second app, what a PR must not contain |
+| **205** | [Testing](demo/205-TESTING.md) | `make check`, CI, endpoints |
 | **301** | [Ship the module](admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |
 
 `make training-lab` prints the 202 talk and runs nothing. It is not a third lab.
 
 **Contributors (no SELinux on laptop):** from repo root run `make check` — **205**.
 
-Samples (not numbered): [examples/README.md](examples/README.md). App manifest schema: [../config/README.md](../config/README.md). Ansible playbooks: [../ansible/README.md](../ansible/README.md). New app: `bash scripts/selinux_pac_adopt.sh init <app>` ([201 — Add an application](developers/201-CODE_WALKTHROUGH.md#add-an-application)). Repo entry: [../README.md](../README.md).
+Samples (not numbered): [examples/README.md](examples/README.md). App manifest schema: [../config/README.md](../config/README.md). Ansible playbooks: [../ansible/README.md](../ansible/README.md). New app: `bash scripts/selinux_pac_adopt.sh init <app>` ([201 — Add an application](demo/201-CODE_WALKTHROUGH.md#add-an-application)). Repo entry: [../README.md](../README.md).
