@@ -23,7 +23,7 @@ CI compares generator output to `expected.json` (`make test-fixtures` / `bash sc
 | `07-toolchain-required` | **`toolchain_required`** — base-type allow blocked without sepolgen (exit 1) |
 | `08-interface-match` | **`interface`** — mocked refpolicy macro (`sepolgen_mock.json`) |
 | `09-direct-no-interface` | **`direct`** — sepolgen ran but no macro matched (`no_match` mock) |
-| `10-boolean-hint` | **`boolean`** — curated override in `config/boolean_hints.yml` (offline; no live policy) |
+| `10-boolean-hint` | **`boolean`** — `httpd_t` name_connect, curated override in `config/boolean_hints.yml` (offline; no live policy) |
 | `12-execmem-review` | **`needs_review`** — `self:process execmem` is a security decision (exit 1 without `--allow-needs-review`) |
 | `13-cgroup-omit` | **`baseline`** — JVM `cgroup_t` filesystem getattr is omitted (no allow; type often undeclared) |
 | `14-stale-entrypoint` | **`fc_drift`** — `entrypoint` on `bin_t` / `java_exec_t` / `usr_t` at a path the `.fc` already covers; fix is `restorecon`, never an allow |

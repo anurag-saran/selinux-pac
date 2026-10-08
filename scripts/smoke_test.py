@@ -1956,12 +1956,15 @@ def test_needs_review_hits() -> None:
 def test_deterministic_fixture_classify() -> None:
     """Golden verdict checks for deterministic_gen --explain and full generation."""
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
-    manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
+    default_manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
     te = PROJECT_ROOT / "selinux" / "myapp.te"
     fc = PROJECT_ROOT / "selinux" / "myapp.fc"
 
     for case_dir in _deterministic_fixture_dirs(root):
         case = case_dir.name
+        manifest = case_dir / "manifest.yml"
+        if not manifest.is_file():
+            manifest = default_manifest
         meta = _deterministic_case_meta(case_dir)
         mock = _deterministic_sepolgen_mock(case_dir)
         boolean_mock = _deterministic_boolean_mock(case_dir)
@@ -2134,6 +2137,9 @@ def test_deterministic_fixture_classify() -> None:
         if case == "10-boolean-hint":
             row10 = next(r for r in rows if r.get("verdict") == "boolean")
             assert row10.get("engine") == "curated_override", row10
+            avc10 = (case_dir / "avc.log").read_text(encoding="utf-8")
+            assert "httpd_t" in avc10
+            assert "myapp_t" not in avc10
 
 
 def test_payments_onboarding_module() -> None:
