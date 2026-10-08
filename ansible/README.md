@@ -1,6 +1,6 @@
 # Ansible Playbooks
 
-Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on real RHEL/FCOS hosts. It does **not** install the application for the first time — use [`scripts/demo_bootstrap.sh`](../scripts/demo_bootstrap.sh) for the shopapi demo.
+Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9 hosts. It does **not** install the application for the first time — use [`scripts/demo_bootstrap.sh`](../scripts/demo_bootstrap.sh) for the shopapi demo.
 
 **AAP job templates and soak workflow:** [`ansible/aap/`](aap/README.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Denied file/port after ship: [`docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship`](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
 
@@ -34,7 +34,7 @@ Playbooks delegate to role [`roles/selinux_pac/`](roles/selinux_pac/). The old `
 
 ### Host requirements
 
-- **RHEL 9** (recommended for Red Hat demos), CentOS Stream 9, or FCOS with **SELinux enforcing**
+- **RHEL 9** with **SELinux enforcing**
 - Application already installed (`/opt/myapp`, systemd units, `myapp` user)
 - `auditd` running (for AVC gates)
 - `policycoreutils`, `policycoreutils-python-utils` (`semanage`, `restorecon`, `ausearch`)

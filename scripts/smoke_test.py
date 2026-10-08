@@ -1735,7 +1735,7 @@ def test_classify_fail_closed_json() -> None:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "CLASSIFY_SKIP_PODMAN": "1"},
+            env={**os.environ, "CLASSIFY_SKIP_SELINUX": "1"},
         )
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -1786,7 +1786,7 @@ def test_check_soak_auto_tier_fail_closed() -> None:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "CLASSIFY_SKIP_PODMAN": "1"},
+            env={**os.environ, "CLASSIFY_SKIP_SELINUX": "1"},
         )
     combined = result.stdout + result.stderr
     assert "Blast-radius classifier fail-closed" in combined, combined
@@ -2326,6 +2326,39 @@ AVC
     assert 'name="passwd"' in out
     assert 'path="/etc/passwd"' in out
     assert "var_spool_t" in out
+
+
+def test_init_uses_daemon_domain() -> None:
+    """systemd start uses init_daemon_domain, and the FCOS overlay files are gone."""
+    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    assert te.count("init_daemon_domain(myapp_t, myapp_exec_t)") == 1
+    assert te.count("init_daemon_domain(myapp_backend_t, myapp_backend_exec_t)") == 1
+    assert "dyntransition" not in te
+    assert "type_transition" not in te
+    assert "allow init_t" not in te
+    for path in (
+        PROJECT_ROOT / "selinux" / "myapp_canary.te",
+        PROJECT_ROOT / "selinux" / "myapp_canary.fc",
+        PROJECT_ROOT / "selinux" / "myapp_ports.cil",
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "templates" / "ports_from_manifest.cil.j2",
+    ):
+        assert not path.exists(), path
+    forbidden = (PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh").read_text(encoding="utf-8")
+    assert "myapp_canary" not in forbidden
+    enforce = (PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "enforce.yml").read_text(encoding="utf-8")
+    defaults = (PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "defaults" / "main.yml").read_text(encoding="utf-8")
+    assert "stub_policy" not in enforce and "stub_policy" not in defaults
+    assert "FCOS" not in enforce and "FCOS" not in defaults
+    classify = (PROJECT_ROOT / "scripts" / "classify_policy_blast_radius.sh").read_text(encoding="utf-8")
+    assert "CLASSIFY_SKIP_SELINUX" in classify
+    assert "CLASSIFY_SKIP_PODMAN" not in classify
+    assert "DEMO_PODMAN_IMAGE" not in (PROJECT_ROOT / "scripts" / "lib" / "demo_estate.sh").read_text(encoding="utf-8")
+    assert "container_build" not in (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+    readme = (PROJECT_ROOT / "ansible" / "README.md").read_text(encoding="utf-8")
+    assert "RHEL 9" in readme
+    assert "FCOS" not in readme
+    generated = (PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te").read_text(encoding="utf-8")
+    assert generated == te
 
 
 def test_vm_check_reports_each_result() -> None:
@@ -3635,6 +3668,7 @@ def main() -> int:
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),
         ("payments_onboarding_module", test_payments_onboarding_module),
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
+        ("init_uses_daemon_domain", test_init_uses_daemon_domain),
         ("vm_check_reports_each_result", test_vm_check_reports_each_result),
         ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
         ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),

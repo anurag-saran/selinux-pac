@@ -117,13 +117,6 @@
         permissive: false
       when: semanage_bin.stat.exists
 
-    - name: Remove FCOS permissive overlay before enforce
-      ansible.builtin.command: "semodule -r {{ stub_module_name }}"
-      register: overlay_remove
-      failed_when: overlay_remove.rc not in [0, 1]
-      changed_when: overlay_remove.rc == 0
-      when: not semanage_bin.stat.exists
-
     - name: Verify SELinux enforcing mode
       ansible.builtin.command: getenforce
       register: selinux_mode

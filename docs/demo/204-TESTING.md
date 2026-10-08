@@ -168,7 +168,7 @@ The generator already ran the same forbidden-pattern check, so these jobs are ex
 
 Those four names are stable so branch protection can require them. `make check` on a laptop is `make test` plus linters. The Stream 9 job is the compile. A laptop without `selinux-policy-devel` does not compile.
 
-Repo variable `RUNNER` defaults to unset, which is `ubuntu-latest` plus the Stream 9 container for the SELinux jobs (`compiled-policy`, `app-compiled-policy`, `bypass-rejected`, and `shopapi-policy-compile`). Set `RUNNER` to `rhel9-utm` to run those jobs on that runner with no container.
+Repo variable `RUNNER` defaults to unset, which is `ubuntu-latest` plus the Stream 9 image for the SELinux jobs (`compiled-policy`, `app-compiled-policy`, `bypass-rejected`, and `shopapi-policy-compile`). Set `RUNNER` to `rhel9-utm` to run those jobs directly on that runner.
 
 Register the runner on a dedicated **rhel-ci** VM. Do not register it on rhel-qa or rhel-prod. On that VM, install the GitHub Actions runner, and give it the label `rhel9-utm`. The runner user needs passwordless `dnf` so the job can install `selinux-policy-devel` and `setools-console`. Then set the repository variable `RUNNER` to `rhel9-utm`.
 

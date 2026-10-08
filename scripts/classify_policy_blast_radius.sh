@@ -118,7 +118,7 @@ if ! resolve_pp "${CANDIDATE_INPUT}" "${work_dir}/candidate.pp" >>"${compile_log
     exit 0
 fi
 
-if [[ "${CLASSIFY_SKIP_SELINUX:-${CLASSIFY_SKIP_PODMAN:-0}}" == "1" ]]; then
+if [[ "${CLASSIFY_SKIP_SELINUX:-0}" == "1" ]]; then
     fail_closed_json "Classification skipped — conservative soak"
     exit 0
 fi

@@ -32,26 +32,6 @@ init_daemon_run_dir(myapp_var_run_t, "myapp")
 
 logging_log_file(myapp_log_t)
 
-require {
-    type init_t;
-    class process { transition dyntransition siginh rlimitinh };
-    class file entrypoint;
-}
-
-# systemd (init_t) starts user units on FCOS — transition on labeled entrypoints
-allow init_t myapp_exec_t:file { execute read open getattr map ioctl execute_no_trans entrypoint };
-allow init_t myapp_t:process { transition dyntransition siginh rlimitinh };
-allow myapp_t myapp_exec_t:file entrypoint;
-type_transition init_t myapp_exec_t:process myapp_t;
-
-allow init_t myapp_lib_t:dir { search getattr open read };
-allow init_t myapp_lib_t:file { read open getattr map ioctl };
-
-allow init_t myapp_backend_exec_t:file { execute read open getattr map ioctl execute_no_trans entrypoint };
-allow init_t myapp_backend_t:process { transition dyntransition siginh rlimitinh };
-allow myapp_backend_t myapp_backend_exec_t:file entrypoint;
-type_transition init_t myapp_backend_exec_t:process myapp_backend_t;
-
 ########################################
 #
 # Daemon baseline — explicit allows every Python service needs under enforce.

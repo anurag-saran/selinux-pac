@@ -9,7 +9,6 @@ selinux/*.mod
 selinux/**/*.mod
 policy_out/avc.log
 policy_out/avc_summary.txt
-policy_out/container_build/
 docs/examples/fixtures/deterministic/**/_out/
 docs/examples/fixtures/deterministic/**/_out2/
 packaging/rpmbuild/

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# policy_module_diff_side.sh — Install one .pp and dump sorted sesearch allows (container).
+# policy_module_diff_side.sh — Install one .pp and dump sorted sesearch allows.
 #
 # sediff(1) does not accept standalone module .pp files on EL9; we use semodule -i
 # into an isolated copy of the targeted store, then sesearch --allow per app domain.

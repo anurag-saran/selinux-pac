@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run_e2e_tests.sh — Local end-to-end checks (macOS/Linux; container compile optional).
+# run_e2e_tests.sh — Local end-to-end checks (macOS/Linux; compile needs selinux-policy-devel).
 #
 set -euo pipefail
 
@@ -38,7 +38,7 @@ fi
 if [[ -f policy_out/myapp.pp ]]; then
     log_ok "policy_out/myapp.pp built"
 else
-    log_fail "compile did not produce policy_out/myapp.pp (needs selinux-policy-devel or a compile container)"
+    log_fail "compile did not produce policy_out/myapp.pp (needs selinux-policy-devel on RHEL 9)"
 fi
 
 if bash scripts/validate_forbidden_patterns.sh selinux; then
