@@ -27,7 +27,7 @@ bash scripts/wait_for_endpoints.sh --manifest "$APP_MANIFEST"
 bash scripts/validate_app_manifest.sh config/payments.manifest.yml
 ```
 
-Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.yml` (offline generator golden). Demo JVM: [`shopapi.manifest.yml`](shopapi.manifest.yml) (`--app shopapi`).
+Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.yml` (offline generator golden). Demo JVM: [`shopapi.manifest.yml`](shopapi.manifest.yml) (`--app-name shopapi`).
 
 ## Schema
 
@@ -47,8 +47,7 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 | `http.endpoints` | yes | Path list (GET, expect HTTP 200) |
 | `http.backend.port` | if backend | Backend health port |
 | `http.backend.health_path` | if backend | Default `/health` |
-| `selinux_ports` | recommended | Port → type for canary `seport` / RPM (stable across env) |
-| `integration_tests.command` | no | Documented soak/discovery test command (demo: shopapi curls) |
+| `selinux_ports` | recommended | Port → type for canary `semanage port -a` (stable across env) |
 | `policy.module_dir` | no | Default `selinux` |
 | `deploy.soak_marker_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_canary_deployed_at` |
 | `deploy.deploy_report_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_deploy_report.json` |
@@ -69,9 +68,7 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 ## Designing probes for a new app
 
 1. List SELinux surfaces the app touches (files, ports, IPC, scripts).
-2. Map each surface to either:
-   - an entry in `http.endpoints` (synthetic probe), or
-   - `integration_tests.command` (real test suite under permissive).
+2. Map each surface to an entry in `http.endpoints` (the probe canary curls).
 3. Always include `services.primary` and real health path(s).
 4. Run staging permissive → export AVCs → generate policy (`bash scripts/dev_generate_policy.sh`; default **`deterministic_gen.py`**, optional `--engine llm`).
 

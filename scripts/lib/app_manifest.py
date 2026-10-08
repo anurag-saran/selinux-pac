@@ -149,7 +149,6 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
             "backend": backend_http,
         },
         "selinux_ports": raw.get("selinux_ports") or [],
-        "integration_tests": raw.get("integration_tests"),
         "policy": {"module_dir": str(module_dir), "service_name": str(primary_unit)},
         "deploy": {
             "soak_marker_file": str(soak_marker),

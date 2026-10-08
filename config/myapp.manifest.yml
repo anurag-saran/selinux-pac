@@ -39,12 +39,6 @@ selinux_ports:
     proto: tcp
     type: myapp_backend_port_t
 
-# Documented soak/discovery command for this fixture module (not a live app).
-integration_tests:
-  description: Offline myapp generator fixture — live probes are shopapi /health /state /log
-  command: echo "myapp is an offline generator fixture; use config/shopapi.manifest.yml for live probes"
-  notes: Use real app test suite in production; see config/README.md
-
 policy:
   module_dir: selinux
   service_name: myapp.service

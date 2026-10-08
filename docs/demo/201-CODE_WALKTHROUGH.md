@@ -93,7 +93,7 @@ flowchart TD
 
 1. **Staging** — `scripts/demo_bootstrap.sh --shopapi-only` installs Spring Boot and puts `shopapi_t` in permissive mode so you can collect denials safely.
 2. **Trigger the app** — curl first-ship `/health` `/state` `/log` on :8091. See [102-SELINUX_BASICS.md §9](../training/102-SELINUX_BASICS.md) for the mapping.
-3. **Export AVCs** — `scripts/dev_generate_policy.sh --app shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
+3. **Export AVCs** — `scripts/dev_generate_policy.sh --app-name shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
 4. **Generate policy** — **`cli/deterministic_gen.py`** classifies each denial and writes the `.te` / `.fc` updates. It runs offline, from rules in the repo.
 5. **Review** — Output lands in **`policy_out/`** (`.te`, `.fc`, `pr_summary.md`, `findings.json`). You compare to **`selinux/`** and open a PR.
 6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `forbidden-patterns` and `version-consistency`. The generator already ran the same forbidden-pattern check, so these jobs should pass.
@@ -116,10 +116,10 @@ Think of the repo in **layers**: app → policy source → generators → automa
 | [`scripts/`](../../scripts/) | Bash entry points: two-host setup, compile, demo, soak checks. |
 | [`scripts/lib/`](../../scripts/lib/) | Shared code **sourced** by other scripts (not usually run alone). |
 | [`ansible/`](../../ansible/) | Playbooks that install `.pp`, soak monitor, enforce, rollback (role **`selinux_pac`**). |
-| [`packaging/`](../../packaging/) | RPM specs (`selinux-policy-ops`, `<app>-selinux`) and compile container. |
+| [`packaging/`](../../packaging/) | RPM specs (`selinux-policy-ops`, `<app>-selinux`) and the internal publish script. |
 | [`docs/`](../) | Guides: `training/` (learn), `demo/` (talks, this page, and tests), `admin/` (ship). |
 | [`policy_out/`](../../policy_out/) | Generated output on your machine (gitignored). |
-| [`.github/workflows/`](../../.github/workflows/) | PR CI: `forbidden-patterns` + `version-consistency`. Ship is AAP / Mac ansible-playbook. |
+| [`.github/workflows/`](../../.github/workflows/) | PR CI: `offline-tests`, `forbidden-patterns`, `compiled-policy`, `version-consistency`. Ship is AAP / Mac ansible-playbook. |
 | [`tests/fixtures/`](../../tests/fixtures/) | Small policy snippets used to test the blast-radius classifier in CI. |
 
 ---

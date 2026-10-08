@@ -29,10 +29,6 @@ selinux_ports:
     proto: tcp
     type: payments_port_t
 
-integration_tests:
-  description: Payments service integration suite
-  command: pytest /opt/payments/tests/integration -q
-
 policy:
   module_dir: selinux/payments
   service_name: payments.service

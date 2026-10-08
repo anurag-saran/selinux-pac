@@ -1,5 +1,7 @@
 # 204 — Testing
 
+This is the testing guide. Older notes called the same page 205.
+
 This document is the **single reference** for how this repository tests SELinux policy — from developer laptop checks through production enforce gates.
 
 | You are… | Start here | Then |
@@ -46,7 +48,7 @@ for path in /health /state /log; do
 done
 
 # On rhel-qa: the generator exports AVCs from audit.log
-# bash scripts/dev_generate_policy.sh --apply --app shopapi
+# bash scripts/dev_generate_policy.sh --apply --app-name shopapi
 ```
 
 ---
@@ -64,7 +66,7 @@ python3 scripts/lib/app_manifest.py shell-export config/myapp.manifest.yml
 
 **Consumers:** `wait_for_endpoints.sh`, `post_deploy_report.sh`, and `check_soak_ready.sh` accept `--manifest PATH` (or `APP_MANIFEST`). Ansible passes `app_manifest_path` from inventory. When no manifest file is present, `wait_for_endpoints.sh` falls back to shopapi first-ship paths (`/health` `/state` `/log` on :8091).
 
-**Production model:** keep real integration tests under permissive (`integration_tests.command` in the manifest); use manifest HTTP probes for deploy/canary smoke only — do not auto-generate business-logic tests from policy.
+**Production model:** canary smoke is `http.endpoints` in the manifest, curled by `wait_for_endpoints.sh`. There is no `integration_tests.command`. Do not auto-generate business-logic tests from policy.
 
 ---
 
@@ -73,23 +75,21 @@ python3 scripts/lib/app_manifest.py shell-export config/myapp.manifest.yml
 | | |
 |--|--|
 | **Where** | **Repo root** on your laptop or CI — macOS is fine |
-| **Why** | Same golden fixtures and static validators CI uses, without a SELinux host |
+| **Why** | Same offline suite the `offline-tests` job runs, plus linters |
 
-From the repo root (Python 3.9+; no SELinux host required):
+`make deps` creates `.venv` and installs into it, so a host that blocks system pip still works. `make test` depends on that venv, then runs deterministic fixtures, blast-radius fixtures, tune-report fixtures, the static validators (forbidden patterns for `myapp`, `shopapi`, and `payments`, version, RPM parity, manifests), and `scripts/smoke_test.py`. `make check` is `make test` plus `make lint` (linters skip when they are not installed). No SELinux host is required.
 
 ```bash
-make check    # offline tests + linters (linters SKIP if not installed)
-make test     # offline only
+make check
+make test
 make help
 ```
-
-This runs the same fixture and validator scripts documented below (`make test-fixtures`, `make test-static`, `make test-smoke`).
 
 ---
 
 ## 2. `scripts/smoke_test.py` (`make test-smoke`)
 
-Runs offline — **no SELinux required** for most tests. Not a GitHub Actions job; PR CI is `forbidden-patterns` + `version-consistency`.
+Runs offline — **no SELinux required** for most tests. The `offline-tests` job runs this file as part of `make test` on every pull request.
 
 ```bash
 make test-smoke
@@ -117,7 +117,7 @@ python3 scripts/smoke_test.py
 | `check_soak_ready_gate` | Soak script fails on missing/recent marker, passes on 8-day-old marker |
 | `monitor_avc_skip` | `monitor_avc.sh --skip-if-unavailable` exits 0 |
 | `vendor_policy_check` | Mocked `semodule`/`rpm`/`dnf`: loaded module refuses, available-not-installed refuses, custom app proceeds; `--force "reason"` required; missing-tools skip |
-| `tune_report` | Tomcat fixture: `--tune-report` emits fcontext / setsebool / semanage port commands and no `.te` |
+| `tune_report` | Tomcat fixture: `--tune-report` emits fcontext and semanage port commands and no `.te` |
 | `tune_report_skip_no_selinux` | `--tune-report` with no SELinux tools prints a skip notice and exits 0 |
 | `force_reason_recorded` | `--force` reason appears in `findings.json`, `pr_summary.md`, and the PR body banner |
 | `demo_present_dry_run` | `--dry-run --profile customer` prints the three-app narration; `--help` names `demo_e2e_mac.sh`; Act 2 proof commands (`git status --short selinux/`, `semodule -l`) |
@@ -141,8 +141,8 @@ python3 scripts/smoke_test.py
 | Compile | `bash scripts/compile_and_validate.sh selinux` | Yes — `selinux-policy-devel` on **rhel-qa** |
 | Semantic assertions | `bash scripts/validate_policy_semantics.sh selinux` | Yes — rhel-qa |
 | Staging + AVC export | `make demo-bootstrap` + curl shopapi `/health` `/state` `/log` | Yes (RHEL **qa**) |
-| AI / deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app shopapi` | Yes (RHEL **qa**) |
-| **Enforce-check** | `bash scripts/dev_generate_policy.sh --apply --enforce-check --app shopapi` | Yes (root on RHEL **qa**) |
+| AI / deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
+| **Enforce-check** | `bash scripts/dev_generate_policy.sh --apply --enforce-check --app-name shopapi` | Yes (root on RHEL **qa**) |
 
 **`--enforce-check`** compiles the candidate `.pp`, removes permissive on `shopapi_t`, runs `wait_for_endpoints.sh` (including domain-context verification), and prints recent AVCs on failure.
 
@@ -156,12 +156,14 @@ Workflow: [`.github/workflows/selinux-policy-ci.yml`](../../.github/workflows/se
 
 The generator already ran the same forbidden-pattern check, so these jobs are expected to **pass**. They are the admin review gate, not a fail-on-purpose demo step.
 
-| Job | Script | Pass criteria |
-|-----|--------|----------------|
-| `forbidden-patterns` | `scripts/validate_forbidden_patterns.sh selinux` | No wildcards, `shadow_t`, `bin_t` execute, etc. |
+| Job name | What it runs | Pass criteria |
+|-----------|----------------|----------------|
+| `offline-tests` | `make test` | Deterministic fixtures, blast-radius fixtures, tune-report fixtures, smoke tests, and the static validators |
+| `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments`, then `cli/policy_audit.py` | No wildcards, forbidden target types, or `bin_t` execute |
+| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` in a CentOS Stream 9 container | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
 | `version-consistency` | `scripts/validate_version_consistency.sh` | `policy_version.txt` matches `policy_module()` |
 
-Compile and semantics stay on **rhel-qa** (`compile_and_validate.sh`). Full offline suite: `make check`.
+Those four names are stable so branch protection can require them. `make check` on a laptop is `make test` plus linters. The Stream 9 job is the compile. A laptop without `selinux-policy-devel` does not compile.
 
 Compiled `selinux/myapp.pp` is **not** committed to Git.
 
@@ -209,8 +211,8 @@ Admin runbook with pass/fail examples: [`301-ANSIBLE_OPERATIONS.md`](../admin/30
 ## 7. Test layer summary
 
 ```text
-Layer 1  forbidden-patterns + version-consistency     GHA PR (generator already ran forbidden-patterns)
-Layer 2  compile + policy-semantics + make check      rhel-qa / laptop
+Layer 1  offline-tests + forbidden-patterns + compiled-policy + version-consistency    every PR
+Layer 2  make check on a laptop (make test plus linters)
 Layer 3  integration probes + policy_out/avc.log      staging discovery (permissive)
 Layer 4  deploy_canary + wait_for_endpoints           staging/prod canary host
 Layer 5  soak_monitor + soak_status                   soak period (net-new; talk shows clean first-ship)

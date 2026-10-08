@@ -33,10 +33,6 @@ selinux_ports:
     proto: tcp
     type: shopapi_port_t
 
-integration_tests:
-  description: shopapi health + state + log probes
-  command: bash -lc 'curl -sf http://127.0.0.1:8091/health && curl -sf http://127.0.0.1:8091/state && curl -sf http://127.0.0.1:8091/log'
-
 policy:
   module_dir: selinux/shopapi
   service_name: shopapi.service
