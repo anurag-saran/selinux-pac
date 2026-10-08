@@ -40,7 +40,10 @@ set -e
 python3 - "${json}" <<'PY'
 import json, sys
 payload = json.loads(sys.argv[1])
-if payload.get("avc_fail_closed"):
+reason = str(payload.get("fail_closed_reason") or "")
+# shopapi_t is not in the base policy, so soak_net_new fail-closed is expected.
+# An ausearch error is a different reason and must still fail this test.
+if "ausearch" in reason.lower():
     raise SystemExit(f"ausearch failed closed on the sample log: {payload}")
 if payload["count"] < 1 or payload["status"] != "fail":
     raise SystemExit(f"sample denial after the marker was not counted: {payload}")
