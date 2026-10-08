@@ -60,18 +60,88 @@ trap 'isolated_store_destroy "${store_prefix}"' EXIT
 kern="$(isolated_store_kern "${store_prefix}")"
 
 semodule -r "${MODULE_NAME}" -s targeted -p "${store_prefix}" 2>/dev/null || true
-semodule -s targeted -p "${store_prefix}" -i "${pp}"
+
+control_dir="$(mktemp -d)"
+cat >"${control_dir}/pac_control.te" <<'EOF'
+policy_module(pac_control, 1.0.0)
+
+type pac_control_t;
+type pac_control_exec_t;
+
+domain_type(pac_control_t)
+files_type(pac_control_exec_t)
+EOF
+printf '%s\n' '/opt/pac_control -- gen_context(system_u:object_r:pac_control_exec_t,s0)' \
+    >"${control_dir}/pac_control.fc"
+compile_policy_module "${control_dir}" pac_control "${control_dir}/pac_control.pp"
+semodule -s targeted -p "${store_prefix}" -i "${control_dir}/pac_control.pp"
+rm -rf "${control_dir}"
+
+if ! semodule -s targeted -p "${store_prefix}" -i "${pp}"; then
+    log_error "semodule rejected ${MODULE_NAME}"
+    exit 1
+fi
 [[ -f "${kern}" ]] || {
     log_error "missing ${kern} after semodule -i"
     exit 1
 }
 
+# sesearch without --direct so an attribute grant is visible. A permission
+# the control domain also has is a base rule, not this module.
+grant_beyond_control() {
+    local target="$1" class="$2" perm="$3" message="$4"
+    local cand ctrl extra
+    local -a query=(--allow -c "${class}" -p "${perm}" "${kern}")
+    if [[ -n "${target}" ]]; then
+        query=(-t "${target}" "${query[@]}")
+    fi
+    cand="$(sesearch -s "${DOMAIN}" "${query[@]}" 2>/dev/null | sed -n '/^[[:space:]]*allow /p' || true)"
+    ctrl="$(sesearch -s pac_control_t "${query[@]}" 2>/dev/null | sed -n '/^[[:space:]]*allow /p' || true)"
+    extra="$(comm -13 <(printf '%s\n' "${ctrl}" | sed '/^$/d' | sort -u) <(printf '%s\n' "${cand}" | sed '/^$/d' | sort -u) || true)"
+    if [[ -n "${extra}" ]]; then
+        log_error "${message}"
+        fail=1
+    fi
+}
+
 fail=0
-if sesearch --direct --allow -s "${DOMAIN}" -t shadow_t -p read "${kern}" 2>/dev/null | grep -q .; then
+grant_beyond_control security_t security setenforce "attribute grant beyond control: setenforce on security"
+grant_beyond_control security_t security load_policy "attribute grant beyond control: load_policy on security"
+grant_beyond_control shadow_t file read "attribute grant beyond control: read on shadow_t"
+grant_beyond_control shadow_t file write "attribute grant beyond control: write on shadow_t"
+grant_beyond_control "" capability sys_admin "attribute grant beyond control: capability sys_admin"
+grant_beyond_control "" capability sys_module "attribute grant beyond control: capability sys_module"
+
+# Attributes the control domain also has (domain, file_type, …) are base
+# policy. Membership in an attribute that exempts a neverallow is a grant
+# even when that attribute has no allow rule of its own.
+type_attr_list() {
+    local type="$1"
+    seinfo -x -t "${type}" "${kern}" 2>/dev/null \
+        | sed -n "s/.*type[[:space:]]\\+${type}//p" \
+        | tr ',' '\n' \
+        | sed 's/[ ;]//g' \
+        | sed '/^$/d' \
+        | sort -u
+}
+while IFS= read -r attr; do
+    [[ -n "${attr}" ]] || continue
+    case "${attr}" in
+        can_setenforce|can_load_policy|can_read_shadow_passwords|can_write_shadow_passwords)
+            log_error "attribute grant beyond control: ${attr}"
+            fail=1
+            ;;
+    esac
+done < <(comm -13 <(type_attr_list pac_control_t) <(type_attr_list "${DOMAIN}") || true)
+
+# -ds is this setools' direct-source match. Inherited attribute rules
+# (every domain can map file_type, dontaudit domain security_t, …) are
+# base policy. A rule whose source is the domain itself is this module.
+if sesearch --allow -s "${DOMAIN}" -ds -t shadow_t -c file -p read "${kern}" 2>/dev/null | grep -q '^[[:space:]]*allow '; then
     log_error "unexpected allow ${DOMAIN} -> shadow_t:read"
     fail=1
 fi
-if sesearch --direct --allow -s "${DOMAIN}" -t unlabeled_t "${kern}" 2>/dev/null | grep -q .; then
+if sesearch --allow -s "${DOMAIN}" -ds -t unlabeled_t "${kern}" 2>/dev/null | grep -q '^[[:space:]]*allow '; then
     log_error "unexpected allow ${DOMAIN} -> unlabeled_t"
     fail=1
 fi
@@ -81,9 +151,24 @@ seinfo_file="$(mktemp)"
 perm_file="$(mktemp)"
 dontaudit_file="$(mktemp)"
 sesearch --allow -s "${DOMAIN}" "${kern}" >"${allows_file}" 2>/dev/null || true
-sesearch --dontaudit --direct -s "${DOMAIN}" "${kern}" >"${dontaudit_file}" 2>/dev/null || true
+sesearch --dontaudit -s "${DOMAIN}" -ds "${kern}" >"${dontaudit_file}" 2>/dev/null || true
 seinfo -x -t "${DOMAIN}" "${kern}" >"${seinfo_file}" 2>/dev/null || true
 seinfo --permissive "${kern}" >"${perm_file}" 2>/dev/null || true
+# Stream 9 links (typepermissive DOMAIN) into the module CIL and then omits
+# it from policy.kern, so seinfo --permissive stays empty. The CIL is the
+# compiled module.
+cil_path="${store_prefix}/var/lib/selinux/targeted/active/modules/400/${MODULE_NAME}/cil"
+if [[ -f "${cil_path}" ]]; then
+    python3 - "${cil_path}" "${DOMAIN}" >>"${perm_file}" <<'PY'
+import bz2
+import sys
+
+path, domain = sys.argv[1], sys.argv[2]
+text = bz2.decompress(open(path, "rb").read()).decode("utf-8", "replace")
+if f"(typepermissive {domain})" in text:
+    print(domain)
+PY
+fi
 module_declared_types "${POLICY_DIR}/${MODULE_NAME}.te" >"${declared_file}"
 if ! python3 "${PROJECT_ROOT}/cli/policy_audit.py" \
     --allows-file "${allows_file}" \

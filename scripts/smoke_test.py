@@ -2757,19 +2757,32 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         "fc-relabel-shadow",
         "foreign-entrypoint",
         "dontaudit-forbidden",
+        "can-setenforce",
+        "can-load-policy",
+        "can-read-shadow-passwords",
+        "can-write-shadow-passwords",
     ]
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-bypasses"
     script = (PROJECT_ROOT / "scripts" / "reject_compiled_bypasses.sh").read_text(encoding="utf-8")
     semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(encoding="utf-8")
     assert "was accepted" in script
+    assert "accepted clean" in script
+    assert "expected message" in script
+    assert "pac_control_t" in semantics
+    assert "attribute grant beyond control" in semantics
     assert "--dontaudit" in semantics
     assert "/etc/shadow" in semantics
+    clean = root / "clean" / "bypass.te"
+    assert "typeattribute" not in clean.read_text(encoding="utf-8")
+    assert "allow " not in clean.read_text(encoding="utf-8")
     for name in names:
         assert name in script
         te = (root / name / "bypass.te").read_text(encoding="utf-8")
         fc = (root / name / "bypass.fc").read_text(encoding="utf-8")
         assert te.startswith("policy_module(bypass, 1.0.0)\n")
         assert "bypass_exec_t" in fc
+        expected = (root / name / "expected.txt").read_text(encoding="utf-8").strip()
+        assert expected, name
     interface_te = (root / "interface-macro" / "bypass.te").read_text(encoding="utf-8")
     interface_if = (root / "interface-macro" / "bypass.if").read_text(encoding="utf-8")
     assert "allow " not in interface_te
@@ -2796,6 +2809,32 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
     assert "dontaudit bypass_t shadow_t:file read;" in (
         root / "dontaudit-forbidden" / "bypass.te"
     ).read_text(encoding="utf-8")
+    for attr in (
+        "can_setenforce",
+        "can_load_policy",
+        "can_read_shadow_passwords",
+        "can_write_shadow_passwords",
+    ):
+        matched = list(root.glob(f"*/bypass.te"))
+        assert any(
+            f"typeattribute bypass_t {attr};" in path.read_text(encoding="utf-8")
+            for path in matched
+        ), attr
+        assert attr in semantics
+    assert "sesearch --direct" not in semantics
+    assert "typepermissive" in semantics
+    assert (root / "can-setenforce" / "expected.txt").read_text(encoding="utf-8").strip() == (
+        "attribute grant beyond control: setenforce on security"
+    )
+    assert (root / "can-load-policy" / "expected.txt").read_text(encoding="utf-8").strip() == (
+        "attribute grant beyond control: load_policy on security"
+    )
+    assert (root / "can-read-shadow-passwords" / "expected.txt").read_text(
+        encoding="utf-8"
+    ).strip() == "attribute grant beyond control: can_read_shadow_passwords"
+    assert (root / "can-write-shadow-passwords" / "expected.txt").read_text(
+        encoding="utf-8"
+    ).strip() == "attribute grant beyond control: can_write_shadow_passwords"
 
     workflow = yaml.safe_load(
         (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(encoding="utf-8")
