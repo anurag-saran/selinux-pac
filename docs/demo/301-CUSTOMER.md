@@ -1,6 +1,6 @@
-# 202 — Three-app customer talk
+# 301 — Three-app customer talk
 
-**Finish [101](../training/101-SELINUX.md) before Acts 0, 1, 2, 3, and 6.** That guide is the typed shopapi loop (one AVC, generate, same URL adds no rule, new URL fails under enforcing). This talk assumes those commands.
+**Finish [104](../training/104-HAND-BUILT-MODULE.md) and [202](../tool/202-TOOL-LAB.md) before Acts 0, 1, 2, 3, and 6.** Those guides are the typed shopapi loop and the same loop with the scripts. This talk assumes those commands. Each act links to the command that was taught in [102](../training/102-COMMANDS.md).
 
 **LAST_VERIFIED:** 2026-09-18 — live on RHEL with distro Tomcat (`tomcat_t`) + JDK 17. JWS 6 + `jws6-tomcat-selinux` is still the confined App A/B path.
 
@@ -10,7 +10,7 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 
 | | Audience | Setup | Length | Command |
 |---|----------|--------|--------|---------|
-| **This guide (202)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
+| **This guide (301)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
 | **[203](203-RHEL_TWO_HOST.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
@@ -124,6 +124,8 @@ The three-host generate/canary/soak talk is **[203](203-RHEL_TWO_HOST.md)** (`de
 
 ### Act 0 — Triage (~2 min)
 
+Taught in [102 — semodule -l](../training/102-COMMANDS.md#semodule--l) and [101 — unconfined](../training/101-CONCEPTS.md#enforcing-and-permissive). `getenforce` is [102](../training/102-COMMANDS.md#getenforce).
+
 Say: three apps. We do not write a policy module until the third.
 
 ```mermaid
@@ -145,6 +147,8 @@ variant=tomcat domain=tomcat_t
 On this host the Tomcat line is `situation=loaded_unconfined` and `action=confine`. The module is loaded and the domain is not confined. The next step is the vendor's confining package (`jws6-tomcat-selinux`), or `--force "reason"` if you truly mean to generate. It is not Act 2's tune. `situation=loaded` and `action=tune` is the JWS host, where `jws6_tomcat_t` is confined. `situation=none` and `action=generate` means shopapi has no Red Hat module. Then `ps` lists the SELinux label and the program name. You want `tomcat_t` on the distro Tomcat process. Shopapi may already show `shopapi_t` if the seed is loaded.
 
 ### Act 1 — App A (~1 min)
+
+Taught in [101 — tomcat_t](../training/101-CONCEPTS.md#the-four-fields). No new module. Distro `tomcat_t` is unconfined, so the probes do not produce a denial.
 
 Say: triage found an unconfined app. It was installed the normal way, on port 8080, and the host is Enforcing, but `tomcat_t` does not confine. We change nothing.
 
@@ -193,6 +197,8 @@ sudo ausearch -m avc -ts recent | grep -E 'out-of-scope|user_home_t|forbidden' |
 On a JWS host the same curl returns `DENIED`, and `ausearch` shows `denied { read }` for `jws6_tomcat_t`. Closing sentence there: the vendor domain is confined, and we authored nothing. Distro Tomcat's sentence is the one above: triage found an unconfined app.
 
 ### Act 2 — App B (~5 min)
+
+Taught in [104 appendix A](../training/104-HAND-BUILT-MODULE.md#appendix-a--three-host-commands-that-are-not-a-te): [semanage fcontext](../training/102-COMMANDS.md#semanage-fcontext), [restorecon](../training/102-COMMANDS.md#restorecon--rvn), [semanage port](../training/102-COMMANDS.md#semanage-port), [getsebool](../training/102-COMMANDS.md#getsebool--a). File contexts are files on disk, not part of the kernel.
 
 Say: someone else already had port 8080, so this instance listens on 8090. The files landed in `/opt/appdata`. It calls a payment service. If a probe produces no denial, we say so and skip the fix. We do not invent a policy file.
 
@@ -278,6 +284,8 @@ sudo semodule -l | wc -l
 
 ### Act 3 — shopapi (the rest of the 20 minutes)
 
+Taught in [104 labs 2–4](../training/104-HAND-BUILT-MODULE.md#lab-2--one-avc) and [tool lab — first generate](../tool/202-TOOL-LAB.md#first-generate). The load on this QA host is [semodule -i](../training/102-COMMANDS.md#semodule--i), then [restorecon](../training/102-COMMANDS.md#restorecon--rvn) and [semanage port](../training/102-COMMANDS.md#semanage-port). Production does not `semodule -i`.
+
 Say: this is the first time we author a module. We declined twice. Spring Boot has no Red Hat module. ExecStart is `/opt/shopapi/bin/shopapi`, labeled `shopapi_exec_t`. That wrapper execs the system Java. There is no `SELinuxContext=` line. `init_daemon_domain` puts the process in `shopapi_t`.
 
 ```mermaid
@@ -346,6 +354,8 @@ curl -sf http://127.0.0.1:8091/health && curl -sf http://127.0.0.1:8091/state &&
 `/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](203-RHEL_TWO_HOST.md).
 
 ### Act 6 — Enforcing payoff
+
+Taught in [104 labs 5–6](../training/104-HAND-BUILT-MODULE.md#lab-5--a-new-url-fails) and [tool lab — the spool URL](../tool/202-TOOL-LAB.md#the-spool-url). [semanage permissive -d](../training/102-COMMANDS.md#semanage-permissive) takes `shopapi_t` off the log-only list. `getenforce` stays Enforcing.
 
 This is labs 5 and 6 of **101**, on the same host.
 

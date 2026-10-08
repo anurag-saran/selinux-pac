@@ -1,6 +1,6 @@
 # 101 — SELinux 101 (commands before the demo)
 
-Finish this guide **before** the three-app talk (**[202](../demo/202-DEMO_GUIDE.md)**). Words and labels are **[102](102-SELINUX_BASICS.md)** (skim §1–4 in lab 0). The talk is short because it assumes you can already: read a label, decode one AVC, generate a module from that log, load it, see that the **same** denial is not added again, then watch a **new** URL fail under enforcing and fix only the net-new rule.
+Finish this guide **before** the three-app talk (**[202](../demo/301-CUSTOMER.md)**). Words and labels are **[102](102-SELINUX_BASICS.md)** (skim §1–4 in lab 0). The talk is short because it assumes you can already: read a label, decode one AVC, generate a module from that log, load it, see that the **same** denial is not added again, then watch a **new** URL fail under enforcing and fix only the net-new rule.
 
 This page is that practice. One app (**shopapi**), one RHEL box, typed commands. It is not the customer talk and not the two-host AAP pipeline.
 
@@ -663,7 +663,7 @@ sudo semanage permissive -a shopapi_t
 
 ## Lab 7 — Map to the talk
 
-You now have the skills the demo assumes. **Do not** run the full talk yet — read the table, then open **[202](../demo/202-DEMO_GUIDE.md)**.
+You now have the skills the demo assumes. **Do not** run the full talk yet — read the table, then open **[202](../demo/301-CUSTOMER.md)**.
 
 | Talk act | What they will show | What you already practiced |
 |----------|---------------------|----------------------------|
@@ -673,7 +673,7 @@ You now have the skills the demo assumes. **Do not** run the full talk yet — r
 | **3 shopapi** | Types-only seed, first-ship `/health` `/state` `/log`, generate from **observed** AVCs | Labs 1–4 (the talk curls three first-ship URLs at once; you split `/log` so one AVC was readable). |
 | **4–5** (technical) | PR, canary, soak, `/feature-spool` on **prod**, rollback, recanary | Labs 5–6 on **one** QA host. Prod does **not** `semodule -i`. |
 
-Next: **[202](../demo/202-DEMO_GUIDE.md)** (`demo_present.sh`). Two-host ship path: **[203](../demo/203-RHEL_TWO_HOST.md)**.
+Next: **[202](../demo/301-CUSTOMER.md)** (`demo_present.sh`). Two-host ship path: **[203](../demo/203-RHEL_TWO_HOST.md)**.
 
 ---
 

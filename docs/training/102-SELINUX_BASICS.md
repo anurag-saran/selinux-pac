@@ -6,7 +6,7 @@ Two names show up over and over. They are the same idea, on different files:
 
 | Name | What it is |
 |------|------------|
-| **shopapi** | The small Java app you run on the practice machine (**rhel-qa**). Its process label is `shopapi_t`. The labs in **101** and the customer talk in **[202](../demo/202-DEMO_GUIDE.md)** use this app. |
+| **shopapi** | The small Java app you run on the practice machine (**rhel-qa**). Its process label is `shopapi_t`. The labs in **101** and the customer talk in **[202](../demo/301-CUSTOMER.md)** use this app. |
 | **myapp** | A sample policy stored in the git repo so tests can run on a laptop (`make check`). No service named myapp is running on rhel-qa. When a snippet says `myapp_t`, read it as "the same kind of label as `shopapi_t`, written against the sample." |
 
 **How to read this**
@@ -655,7 +655,7 @@ After the labs, the same pieces are what the tool runs for you. **[201](../tool/
 
 Steps 5–8 are the production path in **[301](../admin/301-ANSIBLE_OPERATIONS.md)**. On the practice host, labs 3 and 6 load the module with `semodule -i` so you can see it work. Production installs a signed package through Ansible instead of typing `semodule -i` on the server.
 
-The customer talk (**[202](../demo/202-DEMO_GUIDE.md)**) uses the same ideas on three apps: a Tomcat that is already confined, a Tomcat you only relabel, and shopapi, which is the one you generate.
+The customer talk (**[202](../demo/301-CUSTOMER.md)**) uses the same ideas on three apps: a Tomcat that is already confined, a Tomcat you only relabel, and shopapi, which is the one you generate.
 
 ---
 
@@ -806,6 +806,6 @@ Numbered catalog: [docs/README.md](../README.md).
 | **101** | [SELinux 101](101-SELINUX.md) | Type the shopapi labs. Read sections 1–7 of this page first. |
 | **This file (102)** | | What the words and commands mean |
 | **201** | [How the tool works](../tool/201-TOOL-COMMANDS.md) | Which script implements the steps in section 12 |
-| **202** | [Customer talk](../demo/202-DEMO_GUIDE.md) | After 101 |
+| **202** | [Customer talk](../demo/301-CUSTOMER.md) | After 101 |
 | **203** | [Two Linux VMs](../demo/203-RHEL_TWO_HOST.md) | The ship talk |
 | **301** | [Ship the module](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |

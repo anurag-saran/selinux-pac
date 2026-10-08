@@ -10,7 +10,7 @@ This document is the **single reference** for how this repository tests SELinux 
 | **Policy author opening a PR** | §4 CI on pull requests | §5 Shell gate scripts |
 | **Admin / SRE** | §6 Staging and production gates | [`203-RHEL_TWO_HOST.md`](203-RHEL_TWO_HOST.md), [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) |
 
-Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](202-DEMO_GUIDE.md)**; **file-by-file code tour** in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md).
+Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](301-CUSTOMER.md)**; **file-by-file code tour** in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md).
 
 **Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)).
 
@@ -203,7 +203,7 @@ These run on **SELinux hosts** (Ansible playbooks call them; admins can run manu
 
 ## 6. Staging and production gates
 
-Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)). The three-app customer talk is [202-DEMO_GUIDE.md](202-DEMO_GUIDE.md); the two-host pipeline ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)) runs the same playbooks from the Mac.
+Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)). The three-app customer talk is [301-CUSTOMER.md](301-CUSTOMER.md); the two-host pipeline ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)) runs the same playbooks from the Mac.
 
 | Phase | Playbook | Key tests embedded |
 |-------|----------|-------------------|

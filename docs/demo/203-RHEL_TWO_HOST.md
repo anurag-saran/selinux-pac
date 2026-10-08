@@ -1,6 +1,6 @@
 # 203 — Two Linux VMs (generate / canary / soak)
 
-This is the meeting after [202](202-DEMO_GUIDE.md). 202 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 202.
+This is the meeting after [202](301-CUSTOMER.md). 202 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 202.
 
 **LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`$QA_HOST`) + rhel-prod (`$PROD_HOST`). The host stayed Enforcing the whole way.
 
@@ -244,6 +244,6 @@ The port is `http.port` in `config/shopapi.manifest.yml`.
 ## Related
 
 - Practice the commands first: [101-SELINUX.md](../training/101-SELINUX.md)
-- The 20-minute customer talk: [202-DEMO_GUIDE.md](202-DEMO_GUIDE.md)
+- The 20-minute customer talk: [301-CUSTOMER.md](301-CUSTOMER.md)
 - Ansible jobs after this talk: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)
 - What to do when a denial shows up after ship: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)

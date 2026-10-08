@@ -6,7 +6,7 @@ The **customer talk** is **202** — three applications (distro Tomcat loaded bu
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
+| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[202](docs/demo/301-CUSTOMER.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
 | **Application developer** | [Developers](#developers) and **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)** |
@@ -176,7 +176,7 @@ bash scripts/demo_present.sh --preflight
 bash scripts/demo_present.sh --profile customer
 ```
 
-See **[202](docs/demo/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
+See **[202](docs/demo/301-CUSTOMER.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
 
 **203 three-host pipeline:** three Terminal windows. The Mac script is the conductor; press Enter between steps.
 
