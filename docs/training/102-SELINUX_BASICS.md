@@ -723,10 +723,11 @@ sudo semanage port -a -t http_port_t -p tcp 8090
 **Boolean.** An on/off switch that vendor policy already compiled in.
 
 ```bash
-sudo setsebool -P tomcat_can_network_connect on
+getsebool <the-name-audit2why-printed>
+sudo setsebool -P <the-name-audit2why-printed> on
 ```
 
-`setsebool` sets it. `-P` stores it so a reboot keeps it. `on` is the value. Use a boolean when `audit2why` names one. Shopapi's missing allows are not booleans. They are new lines in `shopapi.te`, because no vendor module ships `shopapi_t`.
+`setsebool` sets it. `-P` stores it so a reboot keeps it. `on` is the value. Set it only when `audit2why` names it and `getsebool` lists it. RHEL's `tomcat` module has no `tomcat_can_network_connect` ([`tomcat.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te)). Never set `httpd_can_network_connect` for Tomcat. If there is no such boolean, say so and skip. Shopapi's missing allows are not booleans. They are new lines in `shopapi.te`, because no vendor module ships `shopapi_t`.
 
 ---
 

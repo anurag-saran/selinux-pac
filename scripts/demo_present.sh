@@ -30,16 +30,19 @@ SKIP_AI=1
 OPEN_PR=0
 LLM_SUMMARY=0
 PREFLIGHT_FAIL=0
+DEMO_DRY_VARIANT="distro"
+DEMO_DRY_UNCONFINED=1
 
-CUSTOMER_ACTS="0,1,2,3"
+CUSTOMER_ACTS="0,1,2,3,6"
 TECHNICAL_ACTS="0,1,2,3,4,5"
 
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 
-Single-host customer talk (~20 min): vendor Tomcat already enforcing (App A) →
-tune inherited Tomcat (App B, no .te) → generate for Spring Boot (shopapi).
+Single-host customer talk (~20 min): triage finds distro Tomcat unconfined (App A) →
+tune inherited Tomcat only when a denial is real (App B, no .te) → generate for
+Spring Boot (shopapi) → show the enforcing payoff.
 
   One RHEL box. Do not run this as the three-host production walkthrough.
   Multi-host (~45 min, Mac + rhel-qa + rhel-prod):  bash scripts/demo_e2e_mac.sh
@@ -51,6 +54,9 @@ Options:
   --acts LIST                    Comma-separated act numbers (overrides --profile)
   --preflight                    Check the host and exit (pass/fail table)
   --dry-run                      Print narration + commands; execute nothing
+  --variant distro|jws           Dry-run host (default distro). Prints what that
+                                 host shows: distro tomcat_t is unconfined;
+                                 jws is jws6_tomcat_t and confined.
   --skip-ai                      Do not require OPENAI_API_KEY (default)
   --open-pr                      Preflight requires gh auth
   --auto                         No Enter pauses
@@ -75,6 +81,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --preflight) PREFLIGHT=1; shift ;;
         --dry-run|--say-only) E2E_DRY=1; shift ;;
+        --variant)
+            case "$2" in
+                distro|jws) DEMO_DRY_VARIANT="$2"; shift 2 ;;
+                *) echo "Unknown --variant ${2} (use distro|jws)" >&2; exit 2 ;;
+            esac
+            ;;
         --skip-ai) SKIP_AI=1; shift ;;
         --open-pr) OPEN_PR=1; shift ;;
         --llm-summary) LLM_SUMMARY=1; SKIP_AI=0; shift ;;
@@ -87,6 +99,16 @@ done
 
 if [[ "${DEMO_APP}" != "shopapi" ]]; then
     DEMO_APP="shopapi"
+fi
+
+if [[ "${E2E_DRY}" -eq 1 ]]; then
+    if [[ "${DEMO_DRY_VARIANT}" == "jws" ]]; then
+        DEMO_TOMCAT_VARIANT="jws"
+        DEMO_DRY_UNCONFINED=0
+    else
+        DEMO_TOMCAT_VARIANT="tomcat"
+        DEMO_DRY_UNCONFINED=1
+    fi
 fi
 
 if [[ -z "${ACTS}" ]]; then
@@ -161,11 +183,11 @@ app_b_fcontext_custom() {
     return 1
 }
 
-# Prints the first connect boolean that is on; return 1 if none are on.
+# Prints the first JWS connect boolean that is on. Distro Tomcat has no
+# tomcat_can_network_connect. Never treat httpd_can_network_connect as Tomcat's.
 app_b_connect_boolean_on() {
     local b
-    for b in tomcat_can_network_connect jws6_can_network_connect \
-        jws_can_network_connect httpd_can_network_connect; do
+    for b in jws6_can_network_connect jws_can_network_connect; do
         if getsebool "${b}" 2>/dev/null | grep -Fq -- '--> on'; then
             printf '%s' "${b}"
             return 0
@@ -191,7 +213,7 @@ run_preflight() {
         pf_row "WOULD" "shopapi unit" "shopapi.service"
         pf_row "WOULD" "App B port ${APP_B_PORT}" "must not be labelled (fix: semanage port -d -p tcp ${APP_B_PORT})"
         pf_row "WOULD" "App B fcontext" "must not exist for ${APP_B_DATA} (fix: semanage fcontext -d '${APP_B_DATA}(/.*)?')"
-        pf_row "WOULD" "App B boolean" "tomcat_can_network_connect off (fix: setsebool -P … off)"
+        pf_row "WOULD" "App B boolean" "set one only if audit2why names it and getsebool lists it"
         echo
         echo "On a missing or unconfined App A: run make demo-bootstrap"
         echo "On an already-tuned App B: $(app_b_reset_hint)"
@@ -318,10 +340,14 @@ act0_triage() {
     demo_expect "vendor check names a loaded tomcat/jws module for App A, and situation=none for shopapi"
 
     if [[ "${E2E_DRY}" -eq 1 ]]; then
-        echo "[INFO] TRIAGE situation=loaded app=tomcat module=jws6_tomcat (or tomcat) class=tomcat action=tune"
+        if [[ "${DEMO_DRY_UNCONFINED}" -eq 1 ]]; then
+            echo "[INFO] TRIAGE situation=loaded_unconfined app=tomcat module=tomcat class=tomcat action=confine"
+            echo "(distro: install the vendor confining package, or generate with --force \"reason\")"
+        else
+            echo "[INFO] TRIAGE situation=loaded app=tomcat module=jws6_tomcat class=tomcat action=tune"
+        fi
         echo "[INFO] TRIAGE situation=none app=shopapi action=generate"
-        echo "[INFO] variant would be jws (jws6_tomcat_t) or tomcat (tomcat_t) — bootstrap prints which"
-        echo "(live distro Tomcat: module tomcat is loaded, but seinfo may show files_unconfined_type — Act 1/2 denials will not fire)"
+        echo "variant=${DEMO_DRY_VARIANT} domain=$(demo_tomcat_domain)"
     else
         vendor_policy_preflight --report --app-name tomcat --unit "$(demo_tomcat_service)" || true
         vendor_policy_preflight --report --app-name shopapi --unit shopapi.service || true
@@ -340,12 +366,15 @@ act1_app_a() {
     local domain unconfined=0
     domain="$(demo_tomcat_domain)"
     e2e_banner "Act 1 — App A standard Tomcat (~1 min, no changes)"
-    tlab_explain "Greenfield deploy on standard paths and port ${APP_A_PORT}. Already enforcing. Zero work from us. Both Tomcat apps share one domain — SELinux is not isolating A from B; that would be separate instances or containers."
-    if [[ "${E2E_DRY}" -eq 1 ]]; then
-        tlab_explain "If live seinfo shows files_unconfined_type on ${domain} (RHEL distro tomcat_t), forbidden.jsp returns UNEXPECTED_READ and there is no AVC. That is the distro-Tomcat beat. JWS jws6_tomcat_t is confined and returns DENIED."
-    elif demo_selinux_type_unconfined "${domain}"; then
+    if [[ "${E2E_DRY}" -eq 1 && "${DEMO_DRY_UNCONFINED}" -eq 1 ]]; then
         unconfined=1
-        tlab_explain "Distro ${domain} is files_unconfined_type. The forbidden-file read will succeed. JWS jws6_tomcat_t would deny. We still authored nothing."
+    elif [[ "${E2E_DRY}" -eq 0 ]] && demo_selinux_type_unconfined "${domain}"; then
+        unconfined=1
+    fi
+    if [[ "${unconfined}" -eq 1 ]]; then
+        tlab_explain "Triage found an unconfined app. Module tomcat is loaded, and ${domain} is unconfined_domain_type. The forbidden page will be readable. We authored nothing. App A and App B share this one domain."
+    else
+        tlab_explain "Triage found a confined vendor domain on port ${APP_A_PORT}. The forbidden page is denied. We authored nothing. App A and App B still share one domain."
     fi
     e2e_run "getenforce"
     demo_expect "Enforcing"
@@ -365,7 +394,7 @@ act1_app_a() {
         demo_expect "DENIED ... (not UNEXPECTED_READ)"
         e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | grep -E 'out-of-scope|user_home_t|forbidden' | tail -n 5 || true"
         demo_expect "scontext=...:${domain}:s0  tclass=file  denied { read }"
-        tlab_checkpoint "Vendor policy, already enforcing, a real denial on demand. We authored nothing."
+        tlab_checkpoint "Vendor policy confined this domain. A real denial on demand. We authored nothing."
     fi
     tlab_pause
 }
@@ -435,21 +464,23 @@ act2_app_b() {
     e2e_run "curl -sS http://127.0.0.1:${APP_B_PORT}/inherited/gateway.jsp || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | grep -E 'name_connect|network_connect' | tail -n 10 || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | audit2why | tail -n 30 || true"
-    demo_expect "Was caused by a boolean (tomcat_can_network_connect or jws equivalent) → setsebool -P … on"
-    if [[ "${E2E_DRY}" -eq 1 ]]; then
-        e2e_run "sudo setsebool -P tomcat_can_network_connect on"
-        echo "(dry-run — live: use the boolean audit2why names, often jws6_can_network_connect)"
+    if [[ "${E2E_DRY}" -eq 1 && "${DEMO_DRY_UNCONFINED}" -eq 1 ]]; then
+        demo_expect "no name_connect denial on distro tomcat_t — say so and skip. Do not set a boolean."
+        echo "No AVC matching name_connect for outbound boolean — skipping that one-line fix. Do not invent a .te."
+    elif [[ "${E2E_DRY}" -eq 1 ]]; then
+        demo_expect "only if audit2why names a boolean and getsebool lists it. Never httpd_can_network_connect."
+        echo "audit2why names the boolean. getsebool must list it. If neither is true, say so and skip."
     elif act2_has_avc "name_connect|network_connect"; then
-        local b enabled=0
-        for b in tomcat_can_network_connect jws6_can_network_connect jws_can_network_connect httpd_can_network_connect; do
-            if getsebool "${b}" >/dev/null 2>&1; then
-                e2e_run "sudo setsebool -P ${b} on"
-                enabled=1
-                break
-            fi
-        done
-        if [[ "${enabled}" -eq 0 ]]; then
-            echo "No known connect boolean on this host — skipping. Do not invent a .te."
+        local b
+        b="$(sudo ausearch -m avc -ts recent 2>/dev/null | audit2why 2>/dev/null | grep -oE 'setsebool -P [^ ]+' | awk '{print $3}' | head -n 1 || true)"
+        if [[ -z "${b}" ]]; then
+            echo "audit2why named no boolean for this denial — skipping. Do not invent a .te."
+        elif [[ "${b}" == "httpd_can_network_connect" ]]; then
+            echo "audit2why named httpd_can_network_connect. That boolean is for httpd, not Tomcat. Skipping."
+        elif getsebool "${b}" >/dev/null 2>&1; then
+            e2e_run "sudo setsebool -P ${b} on"
+        else
+            echo "audit2why named ${b}, and getsebool does not list it — skipping."
         fi
     else
         echo "No AVC matching name_connect for outbound boolean — skipping that one-line fix. Do not invent a .te."
@@ -461,7 +492,7 @@ act2_app_b() {
     if [[ "${E2E_DRY}" -eq 1 ]]; then
         echo "bash scripts/dev_generate_policy.sh --tune-report --app-name tomcat --unit $(demo_tomcat_service)"
         echo "semanage fcontext -a -t ${fctx} \"${APP_B_DATA}(/.*)?\"  &&  restorecon -Rv ${APP_B_DATA}"
-        echo "setsebool -P tomcat_can_network_connect on"
+        echo "(no setsebool unless audit2why names a boolean that getsebool lists)"
         echo "semanage port -a -t http_port_t -p tcp ${APP_B_PORT}"
         echo "(dry-run — live: policy_out/tune_report.md; still no .te)"
     else
@@ -497,9 +528,32 @@ act3_generate() {
     e2e_run "curl -sS http://127.0.0.1:${shop_port}/state || true"
     e2e_run "curl -sS http://127.0.0.1:${shop_port}/log || true"
     e2e_run "sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 20 || true"
+    e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root ${PROJECT_ROOT}"
+    demo_expect "GENERATION BLOCKED — execmem needs review; shopapi.te unchanged"
+    tlab_explain "execmem is memory that is both writable and executable. The generator recorded the denial and refused to write the allow. The log showed it, so the next command opts in."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
-    demo_expect "generator runs; vendor preflight lets shopapi through; findings.json lists observed verdicts"
+    demo_expect "second run writes the reviewed execmem allow; findings.json lists observed verdicts"
     tlab_checkpoint "This is the first time we authored policy. We declined twice first."
+    tlab_pause
+}
+
+act6_enforce_payoff() {
+    local shop_port
+    shop_port="$(demo_manifest_http_port "${PROJECT_ROOT}/config/shopapi.manifest.yml")"
+    e2e_banner "Act 6 — Enforcing payoff (customer)"
+    tlab_explain "Take shopapi_t off the permissive list. /log still works. /feature-spool fails. getenforce still prints Enforcing. Generate adds only the spool rule."
+    e2e_run "sudo semanage permissive -d shopapi_t"
+    e2e_run "getenforce"
+    demo_expect "Enforcing"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/log || true"
+    demo_expect "LOG line, exit 0 — the /log allow is already loaded"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/feature-spool || true"
+    demo_expect "non-zero — /var/spool/shopapi was not in the first module"
+    e2e_run "sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15 || true"
+    demo_expect "permissive=0 on the spool denial"
+    tlab_explain "Generate again. execmem and the /log allow are baseline. The new lines are the spool rule only."
+    e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
+    demo_expect "spool rule is new; execmem appears once"
     tlab_pause
 }
 
@@ -531,6 +585,7 @@ run_act() {
         1) act1_app_a ;;
         2) act2_app_b ;;
         3) act3_generate ;;
+        6) act6_enforce_payoff ;;
         4) act4_pr ;;
         5) act5_pipeline ;;
         *) echo "Unknown act ${n}" >&2; exit 2 ;;

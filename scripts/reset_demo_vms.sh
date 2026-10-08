@@ -147,10 +147,6 @@ if command -v semanage >/dev/null 2>&1; then
     done < <(semanage fcontext -l -C 2>/dev/null | awk 'index($1, "/opt/appdata") { print $1 }')
     semanage fcontext -d '/opt/appdata(/.*)?' 2>/dev/null || true
     semanage fcontext -d '/opt/appdata' 2>/dev/null || true
-    for b in tomcat_can_network_connect jws6_can_network_connect \
-        jws_can_network_connect httpd_can_network_connect; do
-        getsebool "${b}" >/dev/null 2>&1 && setsebool -P "${b}" off || true
-    done
 fi
 
 if [[ -d /opt/appdata ]]; then
@@ -174,16 +170,10 @@ fi
 
 semodule -B 2>/dev/null || true
 
-# Lab only: drop leftover AVCs (including rotated logs — ausearch --input-logs
-# reads them) so a second 203 first-generate does not include /feature-spool
-# from a prior 101/202 run on the same VM.
-if command -v service >/dev/null 2>&1; then
-    service auditd stop >/dev/null 2>&1 || true
-    # Glob must run as root (this remote body already does).
-    rm -f /var/log/audit/audit.log.* 2>/dev/null || true
-    : > /var/log/audit/audit.log 2>/dev/null || true
-    service auditd start >/dev/null 2>&1 || true
-fi
+# Do not stop auditd or rewrite /var/log/audit. Later ausearch -ts starts here.
+mkdir -p /var/lib/selinux-pac-demo
+date '+%m/%d/%Y %H:%M:%S' >/var/lib/selinux-pac-demo/ausearch-since
+chmod 0644 /var/lib/selinux-pac-demo/ausearch-since
 
 rm -rf /var/lib/selinux-policy-ops/shopapi \
        /var/lib/selinux-policy-ops/myapp
@@ -220,7 +210,7 @@ ssh_sudo() {
     echo "-> ${SSH_USER}@${host} (${role})"
     if [[ "${DRY}" -eq 1 ]]; then
         echo "(dry-run — not executing)"
-        echo "  would also untune App B: semanage port -d -p tcp 8090; fcontext -d /opt/appdata; setsebool connect off; chcon user_home_t"
+        echo "  would also untune App B: semanage port -d -p tcp 8090; fcontext -d /opt/appdata; chcon user_home_t; write ausearch-since"
         return 0
     fi
     # shellcheck disable=SC2029

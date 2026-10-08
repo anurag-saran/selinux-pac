@@ -209,6 +209,9 @@ run_tune_report() {
             package_installed|package_available|unconfined)
                 log_info "situation=${situation} — install or enable the vendor RPM first. --tune-report is for loaded/base_policy."
                 ;;
+            loaded_unconfined)
+                log_info "situation=loaded_unconfined — the loaded domain is unconfined. Install the vendor's confining package, or generate with --force \"reason\". No module written."
+                ;;
             *)
                 log_info "situation=${situation:-unknown} — not a tune case. No module written."
                 ;;

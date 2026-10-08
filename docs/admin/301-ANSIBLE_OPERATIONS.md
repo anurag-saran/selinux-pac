@@ -51,6 +51,7 @@ ps -eZ | grep -E 'unconfined_java_t|unconfined_service_t'
 |---------------|-------------|
 | The vendor module is already loaded (`jws6_tomcat`, `jboss`, `httpd`, `named`, `postgresql`) | `dev_generate_policy.sh --tune-report`. Run the printed `semanage` and `setsebool` commands. Do not generate. |
 | Module `tomcat` is loaded and `seinfo -t tomcat_t -x` shows `unconfined_domain_type` | This is the Tomcat that comes with RHEL. The type name exists and the rules do not deny. Do not generate a second module. Do not expect a denial to tune. The confined package is `jws6-tomcat-selinux`. |
+| Loaded vendor module whose domain is unconfined (`situation=loaded_unconfined`, `action=confine`) | Install the vendor's confining package, or generate with `--force "reason"`. Do not tune denials this domain will not produce. |
 | The vendor SELinux RPM is installed and the module is not loaded | Enable that package. Do not generate. |
 | The RPM is available and not installed | `dnf install` it (`jws6-tomcat-selinux`, `eap7-selinux`, or `eap8-selinux`). Do not generate. |
 | Tomcat or JBoss is `unconfined_java_t` | The vendor package was never enabled. Install it. Do not generate. |

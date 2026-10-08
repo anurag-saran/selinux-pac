@@ -340,6 +340,15 @@ _vpc_refuse_loaded() {
     return 1
 }
 
+_vpc_refuse_loaded_unconfined() {
+    local module="$1"
+    local domain="$2"
+    _vpc_error "vendor module '${module}' is loaded, but ${domain} is unconfined (situation=loaded_unconfined, action=confine)."
+    _vpc_error "Next step: install the vendor's confining package, or generate with --force \"reason\"."
+    _vpc_error "Do not tune file or port denials this domain will not produce."
+    return 1
+}
+
 _vpc_refuse_package() {
     local pkg="$1"
     local detail="$2"
@@ -428,9 +437,15 @@ vendor_policy_preflight() {
         loaded="$(vendor_match_loaded_modules "${class}" "${listing}")"
         if [[ -n "${loaded}" ]]; then
             loaded="$(printf '%s\n' "${loaded}" | head -n 1)"
-            situation="loaded"
-            action="tune"
             module="${loaded}"
+            domain="$(_vpc_domain "${class}" "${module}")"
+            if [[ "$(vendor_domain_confined_flag "${domain}")" == "no" ]]; then
+                situation="loaded_unconfined"
+                action="confine"
+            else
+                situation="loaded"
+                action="tune"
+            fi
         else
             rpm_qa="$(vendor_check_rpm_qa)"
             while IFS= read -r pkg; do
@@ -512,6 +527,10 @@ vendor_policy_preflight() {
             ;;
         loaded)
             _vpc_refuse_loaded "${module}" "${class}"
+            return 1
+            ;;
+        loaded_unconfined)
+            _vpc_refuse_loaded_unconfined "${module}" "${domain}"
             return 1
             ;;
         package_installed)

@@ -63,15 +63,16 @@ Shopapi is confined on either kind of host. Act 3 is the same story both ways.
 
 You narrate. The script types the act commands and pauses. Press Enter when it says `Press Enter for the next step`. Do not type the act commands yourself while it is running.
 
-On a laptop, with no RHEL, this prints the narration and the commands and runs nothing:
+On a laptop, with no RHEL, this prints the narration and the commands and runs nothing. The default variant is distro Tomcat (`tomcat_t`, unconfined). `--variant jws` prints the confined `jws6_tomcat_t` host instead.
 
 ```bash
 bash scripts/demo_present.sh --dry-run --profile customer
+bash scripts/demo_present.sh --dry-run --profile customer --variant jws
 ```
 
 ### Order for the meeting
 
-**1. On the Mac**, only when this VM already ran **101**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, clears the audit log (so Act 3 does not compile-fail on an old `java_exec_t` entrypoint denial), and removes the three App B tunings so Act 2 still has something to show.
+**1. On the Mac**, only when this VM already ran **101**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, writes `/var/lib/selinux-pac-demo/ausearch-since`, and removes the App B port and file-label tunings so Act 2 still has something to show. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp.
 
 ```bash
 bash scripts/reset_demo_vms.sh --dev-only
@@ -125,7 +126,7 @@ Say: three apps. We do not write a policy module until the third.
 
 ```mermaid
 flowchart TD
-  tomcat["Check Tomcat"] --> loaded["situation=loaded, action=tune<br/>Red Hat already ships this module"]
+  tomcat["Check Tomcat"] --> loaded["situation=loaded_unconfined, action=confine<br/>Module loaded, domain unconfined"]
   shop["Check shopapi"] --> none["situation=none, action=generate<br/>This is the only module we will write"]
   loaded --> ps["ps shows tomcat_t on this host"]
   none --> ps
@@ -134,16 +135,16 @@ flowchart TD
 You do not type these. The script prints two lines. Read them aloud:
 
 ```text
-[INFO] TRIAGE situation=loaded ... app=tomcat ... action=tune
+[INFO] TRIAGE situation=loaded_unconfined ... app=tomcat ... action=confine
 [INFO] TRIAGE situation=none ... app=shopapi ... action=generate
 variant=tomcat domain=tomcat_t
 ```
 
-`situation=loaded` and `action=tune` means we will adjust the host later, in Act 2. `situation=none` and `action=generate` means shopapi has no Red Hat module. Then `ps` lists the SELinux label and the program name. You want `tomcat_t` on the Tomcat process. Shopapi may already show `shopapi_t` if the seed is loaded.
+On this host the Tomcat line is `situation=loaded_unconfined` and `action=confine`. The module is loaded and the domain is not confined. The next step is the vendor's confining package (`jws6-tomcat-selinux`), or `--force "reason"` if you truly mean to generate. It is not Act 2's tune. `situation=loaded` and `action=tune` is the JWS host, where `jws6_tomcat_t` is confined. `situation=none` and `action=generate` means shopapi has no Red Hat module. Then `ps` lists the SELinux label and the program name. You want `tomcat_t` on the distro Tomcat process. Shopapi may already show `shopapi_t` if the seed is loaded.
 
 ### Act 1 — App A (~1 min)
 
-Say: this one was installed the normal way, on port 8080. It is already enforcing. We change nothing.
+Say: triage found an unconfined app. It was installed the normal way, on port 8080, and the host is Enforcing, but `tomcat_t` does not confine. We change nothing.
 
 ```mermaid
 flowchart TD
@@ -187,7 +188,7 @@ sudo ausearch -m avc -ts recent | grep -E 'out-of-scope|user_home_t|forbidden' |
 
 `seinfo -t tomcat_t -x` prints the attributes of that type. `tr` puts each attribute on its own line. `grep unconfined` keeps `unconfined_domain_type` or `files_unconfined_type`. The `ausearch` line is empty. That pair is the proof. We still authored nothing.
 
-On a JWS host the same curl returns `DENIED`, and `ausearch` shows `denied { read }` for `jws6_tomcat_t`. Same closing sentence: vendor policy, already enforcing, we authored nothing.
+On a JWS host the same curl returns `DENIED`, and `ausearch` shows `denied { read }` for `jws6_tomcat_t`. Closing sentence there: the vendor domain is confined, and we authored nothing. Distro Tomcat's sentence is the one above: triage found an unconfined app.
 
 ### Act 2 — App B (~5 min)
 
@@ -256,13 +257,7 @@ sudo restorecon -Rv /opt/appdata
 curl -sS http://127.0.0.1:8090/inherited/gateway.jsp || true
 ```
 
-A confined web server cannot open outbound connections until a boolean is on. `audit2why` names the switch. The script turns on the first one that exists:
-
-```bash
-sudo setsebool -P tomcat_can_network_connect on
-```
-
-`setsebool` flips a switch the vendor module already contains. `-P` keeps it across reboot. `on` is the value. JWS may name it `jws6_can_network_connect`. If there is no denial, the script prints `skipping` and does not invent a module.
+A confined web server may be unable to open outbound connections until a boolean is on. RHEL's `tomcat` module does not define `tomcat_can_network_connect` ([`policy/modules/contrib/tomcat.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te) defines `tomcat_can_network_connect_db`, `tomcat_use_execmem`, and `tomcat_read_rpm_db`). Do not set `httpd_can_network_connect` for Tomcat. The script sets a boolean only when `audit2why` names one for this denial and `getsebool` lists it. If there is no such boolean, it says so and skips. On this distro host there is no `name_connect` denial, so the spoken line is the skip.
 
 **Proof, both variants.**
 
@@ -319,22 +314,52 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 20
 `grep shopapi_t` keeps this app. Without it, leftover denials from other labs fill the screen.
 
 ```bash
+sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
+```
+
+The first command does not pass `--allow-needs-review`. It stops:
+
+```text
+*** GENERATION BLOCKED — domain-weakening permission requires --allow-needs-review ***
+```
+
+`execmem` is memory that is both writable and executable. The generator recorded it and did not write it. `shopapi.te` is still the seed. Say that, then rerun with the flag because the log showed the denial:
+
+```bash
 sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
 ```
 
-This is the Lab 3 command. `--allow-needs-review` is already on the flag list because a JVM log usually contains `execmem` (memory that is both writable and executable). The generator records it and writes it only because the flag is present. `--apply` copies the result onto `selinux/shopapi/`. The module name stays `shopapi`.
+`--apply` copies the result onto `selinux/shopapi/`. The module name stays `shopapi`. If `execmem` had not been in the log, we would not add the flag.
 
-Say: the allows came from the denials we just produced, not from a list of Java permissions. If `execmem` had not been in the log, we would not add it.
+The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](203-RHEL_TWO_HOST.md).
 
-Then stop. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. Acts 4 and 5 are the technical profile. They are not this meeting. The ship path is [203](203-RHEL_TWO_HOST.md).
+### Act 6 — Enforcing payoff
+
+This is labs 5 and 6 of **101**, on the same host.
+
+```bash
+sudo semanage permissive -d shopapi_t
+getenforce
+curl -sf http://127.0.0.1:8091/log || true
+curl -sf http://127.0.0.1:8091/feature-spool || true
+sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
+```
+
+`semanage permissive -d` takes only `shopapi_t` off the log-only list. `getenforce` still prints `Enforcing`. `/log` still works. `/feature-spool` fails, and the denial says `permissive=0`.
+
+```bash
+sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
+```
+
+`execmem` and the `/log` allow are already in the `.te`, so their verdict is `baseline`. The new lines are the spool rule only.
 
 ## Remember while you talk
 
 - App A and App B come before the generator. That order is the point.
 - Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
 - Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
-- Shopapi allows come from the denials just produced. `execmem` is written only because it was in the log and `--allow-needs-review` is on the command. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)) and cannot be the program that enters `shopapi_t`. The private copy, after `restorecon`, can.
-- Do not open `/feature-spool` in this meeting.
+- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)) and cannot be the program that enters `shopapi_t`. The private copy, after `restorecon`, can.
+- Act 6 opens `/feature-spool` after `shopapi_t` leaves the permissive list. `getenforce` still prints `Enforcing`.
 
 ## Self-service
 

@@ -853,9 +853,22 @@ def test_vendor_policy_check() -> None:
     )
     unconfined_loaded_out = unconfined_loaded.stdout + unconfined_loaded.stderr
     assert unconfined_loaded.returncode == 0, unconfined_loaded_out
-    assert "TRIAGE situation=loaded" in unconfined_loaded_out
+    assert "TRIAGE situation=loaded_unconfined" in unconfined_loaded_out
+    assert "action=confine" in unconfined_loaded_out
     assert "domain_confined=no" in unconfined_loaded_out
     assert "does not mean file or port denials will fire" in unconfined_loaded_out
+    refused = run(
+        ["--app-name", "tomcat"],
+        {
+            "VENDOR_CHECK_SEMODULE_L": "tomcat",
+            "VENDOR_CHECK_DOMAIN_UNCONFINED": "1",
+        },
+    )
+    refused_out = refused.stdout + refused.stderr
+    assert refused.returncode != 0, refused_out
+    assert "loaded_unconfined" in refused_out
+    assert "confining package" in refused_out
+    assert '--force "reason"' in refused_out or "--force" in refused_out
 
 
 def test_demo_present_dry_run() -> None:
@@ -887,7 +900,37 @@ def test_demo_present_dry_run() -> None:
     assert_mentions(out, "shopapi", "tomcat")
     assert "status --short selinux" in out
     assert "semodule -l" in out
-    assert "files_unconfined_type" in out
+    assert "files_unconfined_type" in out or "unconfined app" in out
+    assert "loaded_unconfined" in out
+    assert "action=confine" in out
+    assert "GENERATION BLOCKED" in out
+    assert "/feature-spool" in out
+    assert "permissive=0" in out
+    assert "tomcat_can_network_connect" not in out
+    assert "Already enforcing" not in out
+    assert "httpd_can_network_connect" not in out
+    jws = subprocess.run(
+        [
+            BASH,
+            str(script),
+            "--dry-run",
+            "--no-type",
+            "--auto",
+            "--profile",
+            "customer",
+            "--variant",
+            "jws",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    jws_out = jws.stdout + jws.stderr
+    assert jws.returncode == 0, jws_out
+    assert "action=tune" in jws_out
+    assert "jws6_tomcat" in jws_out
+    assert "DENIED" in jws_out
+    assert "loaded_unconfined" not in jws_out
     help_run = subprocess.run(
         [BASH, str(script), "--help"],
         cwd=PROJECT_ROOT,
@@ -974,6 +1017,10 @@ def test_demo_e2e_scripts_dry_run() -> None:
     mac_help_out = mac_help.stdout + mac_help.stderr
     assert mac_help.returncode == 0, mac_help_out
     assert "demo_present.sh" in mac_help_out
+    reset_text = reset.read_text(encoding="utf-8")
+    assert "ausearch-since" in reset_text
+    assert "auditd stop" not in reset_text
+    assert "/var/log/audit/audit.log" not in reset_text
 
     qa_run = subprocess.run(
         [BASH, str(qa), "--dry-run", "--no-type", "--auto", "--part", "app"],

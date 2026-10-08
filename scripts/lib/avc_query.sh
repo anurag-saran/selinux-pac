@@ -100,6 +100,22 @@ avc_filter_lines_by_paths() {
     done
 }
 
+# Demo reset writes this instead of truncating /var/log/audit.
+demo_ausearch_since_file() {
+    printf '%s\n' "${DEMO_STATE_DIR:-/var/lib/selinux-pac-demo}/ausearch-since"
+}
+
+resolve_ausearch_since() {
+    local since_ts="$1"
+    local marker
+    marker="$(demo_ausearch_since_file)"
+    if [[ "${since_ts}" == "boot" && -f "${marker}" ]]; then
+        tr -d '\n' <"${marker}"
+        return 0
+    fi
+    printf '%s' "${since_ts}"
+}
+
 fetch_domain_avc_raw() {
     local domain="$1"
     local since_ts="$2"
@@ -123,6 +139,7 @@ export_app_avcs_to_file() {
     local outfile="$1"
     local since_ts="${2:-boot}"
     local primary_domain="$3"
+    local marker_bounds=0
     local backend_domain="${4:-}"
     local paths_csv="$5"
 
@@ -133,6 +150,11 @@ export_app_avcs_to_file() {
     if [[ -z "${paths_csv}" ]]; then
         echo "[ERROR] export_app_avcs_to_file: paths_csv required (manifest PATHS_CSV via app_manifest.py)" >&2
         return 1
+    fi
+
+    since_ts="$(resolve_ausearch_since "${since_ts}")"
+    if [[ -f "$(demo_ausearch_since_file)" ]]; then
+        marker_bounds=1
     fi
 
     mkdir -p "$(dirname "${outfile}")"
@@ -151,10 +173,12 @@ export_app_avcs_to_file() {
         printf '%s\n' "${raw}" | avc_filter_lines_by_paths "${paths_csv}" "${primary_domain}" >> "${tmp}" || true
     fi
 
-    # Always also read audit.log. UTM clock skew makes ausearch -ts boot empty
-    # or partial even when the file already has denials. Generate-only — soak
-    # counts still go through monitor_avc.sh + ausearch.
-    if [[ -f /var/log/audit/audit.log ]]; then
+    # Always also read audit.log when no demo marker is set. UTM clock skew
+    # makes ausearch -ts boot empty even when the file already has denials.
+    # A reset marker means ausearch -ts already bounded the window; do not
+    # pull older lines back out of audit.log. Soak counts still go through
+    # monitor_avc.sh + ausearch.
+    if [[ "${marker_bounds}" -eq 0 && -f /var/log/audit/audit.log ]]; then
         grep -E '^(type=AVC|type=SELINUX_ERR|type=USER_AVC|type=USER_SELINUX_ERR)' /var/log/audit/audit.log \
             | grep "${primary_domain}" \
             | avc_filter_lines_by_paths "${paths_csv}" "${primary_domain}" >> "${tmp}" || true
@@ -173,6 +197,7 @@ export_vendor_domain_avcs_to_file() {
     local outfile="$1"
     local domain="$2"
     local since_ts="${3:-boot}"
+    since_ts="$(resolve_ausearch_since "${since_ts}")"
 
     if [[ -z "${domain}" ]]; then
         echo "[ERROR] export_vendor_domain_avcs_to_file: domain required" >&2
@@ -185,7 +210,7 @@ export_vendor_domain_avcs_to_file() {
     local tmp
     tmp="$(mktemp)"
     fetch_domain_avc_raw "${domain}" "${since_ts}" >> "${tmp}" || true
-    if [[ -f /var/log/audit/audit.log ]]; then
+    if [[ ! -f "$(demo_ausearch_since_file)" && -f /var/log/audit/audit.log ]]; then
         grep -E '^(type=AVC|type=SELINUX_ERR|type=USER_AVC|type=USER_SELINUX_ERR)' /var/log/audit/audit.log \
             | grep "${domain}" >> "${tmp}" || true
     fi

@@ -145,14 +145,6 @@ configure_app_b() {
     xml="$(demo_tomcat_server_xml)"
     APP_B_PORT="${APP_B_PORT}" python3 "${PROJECT_ROOT}/demo/tomcat/insert_connector.py" "${xml}"
     demo_write_tomcat_dropin "${PROJECT_ROOT}"
-    local b
-    for b in tomcat_can_network_connect jws6_can_network_connect jws_can_network_connect \
-        httpd_can_network_connect; do
-        if getsebool "${b}" >/dev/null 2>&1; then
-            setsebool -P "${b}" off || true
-            log "setsebool -P ${b} off"
-        fi
-    done
     log "App B data ${APP_B_DATA} connector :${APP_B_PORT} (labels unrestored)"
 }
 

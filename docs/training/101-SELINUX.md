@@ -675,7 +675,7 @@ You now have the skills the demo assumes. **Do not** run the full talk yet — r
 | Talk act | What they will show | What you already practiced |
 |----------|---------------------|----------------------------|
 | **0 Triage** | Vendor-policy check: covered vs unconfined vs generate | Lab 3: shopapi is **none** → generator runs. App A/B are not this path. |
-| **1 App A** | Greenfield Tomcat, already enforcing. `getenforce`, domain, `/standard/` works, `/standard/forbidden.jsp` + `ausearch`. **No generate.** | Labs 0–2: evidence + a denial you **do not** turn into a custom `.te` when vendor policy already applies. |
+| **1 App A** | Distro Tomcat: triage found an unconfined app. `getenforce`, `tomcat_t`, `/standard/` works, `/standard/forbidden.jsp` returns `UNEXPECTED_READ`, `ausearch` is empty. **No generate.** JWS shows a real denial. | Labs 0–2: evidence you **do not** turn into a custom `.te` when a vendor module is loaded. |
 | **2 App B** | Inherited Tomcat: wrong path, odd port, outbound gateway. **Zero `.te`.** | [Appendix A](#appendix-a-app-b-three-host-commands-not-a-te). |
 | **3 shopapi** | Types-only seed, first-ship `/health` `/state` `/log`, generate from **observed** AVCs | Labs 1–4 (the talk curls three first-ship URLs at once; you split `/log` so one AVC was readable). |
 | **4–5** (technical) | PR, canary, soak, `/feature-spool` on **prod**, rollback, recanary | Labs 5–6 on **one** QA host. Prod does **not** `semodule -i`. |
@@ -692,7 +692,7 @@ Act 2 will type **host** commands against **vendor** Tomcat (`tomcat_t` or `jws6
 |---------|----------------|-----------|
 | Files under `/opt/appdata` have the wrong type | `sudo semanage fcontext -a -t tomcat_var_lib_t '/opt/appdata(/.*)?'` then `sudo restorecon -Rv /opt/appdata` | `fcontext -a` adds an address-book line. `-t` is the type. `(/.*)?` means the directory and everything under it. `restorecon` paints the files. Type the two commands separately. |
 | Bind on a high port (talk: **8090**) | `sudo semanage port -a -t http_port_t -p tcp 8090` | `-a` adds the port. `-t http_port_t` is the type vendor policy already allows a web server to bind. `-p tcp` is the protocol. |
-| Outbound connect denied, `audit2why` names a boolean | `sudo setsebool -P tomcat_can_network_connect on` | `setsebool` flips a switch the vendor module already contains. `-P` keeps it across reboot. `on` is the value. JWS may name the switch `jws6_can_network_connect`. |
+| Outbound connect denied, `audit2why` names a boolean that `getsebool` lists | `sudo setsebool -P <that-boolean> on` | Set only that boolean. RHEL's `tomcat` module has no `tomcat_can_network_connect`. Never set `httpd_can_network_connect` for Tomcat. If `audit2why` names nothing that `getsebool` lists, say so and skip. |
 
 `--tune-report` on a vendor-covered app prints those same three kinds of lines into `policy_out/tune_report.md`. Still **no** `.te`.
 
