@@ -36,6 +36,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
 | **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
 | **201** | [Tool commands](tool/201-TOOL-COMMANDS.md) | Each script and playbook, the commands it runs, and which **104** steps it replaces |
+| **202** | [Tool lab](tool/202-TOOL-LAB.md) | The **104** outcome using the scripts |
 | **204** | [Testing](demo/204-TESTING.md) | `make check`, CI, endpoints |
 | **301** | [Ship the module](admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |
 
