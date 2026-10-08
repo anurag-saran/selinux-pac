@@ -349,6 +349,12 @@ def test_prompts() -> None:
     assert "myapp_t" in prompt
     assert "Existing Type Enforcement" in prompt
     assert len(SYSTEM_PROMPT) > 100
+    import policy_rules
+
+    forbidden = ", ".join(sorted(policy_rules.FORBIDDEN_TARGET_TYPES))
+    assert forbidden in SYSTEM_PROMPT
+    for name in policy_rules.FORBIDDEN_TARGET_TYPES:
+        assert name in SYSTEM_PROMPT
 
 
 def test_avc_parsing() -> None:
@@ -2545,8 +2551,10 @@ def test_policy_rules_are_the_single_source() -> None:
     import deterministic_gen
     import policy_audit
     import policy_rules
+    import prompt_templates
     import selinux_gen
 
+    assert prompt_templates.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert selinux_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert selinux_gen.FORBIDDEN_PRIVILEGED_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert deterministic_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES

@@ -4,6 +4,10 @@ Prompt templates for AI-driven SELinux Policy-as-Code generation.
 
 from __future__ import annotations
 
+from policy_rules import FORBIDDEN_TARGET_TYPES
+
+_FORBIDDEN_TYPE_LIST = ", ".join(sorted(FORBIDDEN_TARGET_TYPES))
+
 POLICY_JSON_SCHEMA = {
     "module_name": "myapp",
     "te_content": "raw .te policy source",
@@ -71,7 +75,7 @@ PR_SUMMARY FORMAT (pr_summary field — required headings):
 - init_daemon_domain transitions; backup.sh via execute_no_trans on myapp_script_exec_t
 
 ### Explicit Denials Maintained
-- no shadow_t, unconfined_t, sysadm_t, wildcard allows, bin_t execute, unreserved_port_t bind
+- no """ + _FORBIDDEN_TYPE_LIST + """, wildcard allows, bin_t execute, unreserved_port_t bind
 
 FILE CONTEXTS (fc_content) — FHS paths, NO `--` file-type suffix on directories:
 - Prefer ONE directory regex per tree (e.g. /var/lib/myapp(/.*)? for all state files). Do NOT add a separate line per file when the directory pattern already assigns the correct type — mislabeled files need restorecon, not new .fc lines.
