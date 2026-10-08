@@ -1045,6 +1045,18 @@ def test_demo_present_dry_run() -> None:
     assert_mentions(tech_out, "shopapi")
 
 
+def _install_healthy_audit(bindir: Path) -> None:
+    systemctl = bindir / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\nif [ \"$1\" = is-active ]; then exit 0; fi\nexit 1\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    auditctl = bindir / "auditctl"
+    auditctl.write_text("#!/bin/sh\nprintf '%s\\n' 'enabled 1' 'lost 0'\n", encoding="utf-8")
+    auditctl.chmod(0o755)
+
+
 def _lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy() if base is None else dict(base)
     env["QA_HOST"] = "qa.example.com"
@@ -2635,6 +2647,16 @@ def test_vm_check_reports_each_result() -> None:
             "  *integration-compile*)\n"
             "    if [ \"$VM_MODE\" = compile-fail ]; then echo 'SKIP integration-compile' >&2; exit 1; fi\n"
             "    ;;\n"
+            "  *sha256sum*)\n"
+            "    n=0\n"
+            "    if [ -f \"$VM_HASH_LOG\" ]; then n=$(wc -l < \"$VM_HASH_LOG\"); fi\n"
+            "    echo x >> \"$VM_HASH_LOG\"\n"
+            "    if [ \"$VM_MODE\" = policy-changed ] && [ \"$n\" -gt 0 ]; then\n"
+            "      printf '%s\\n' 'bbbb  /sys/fs/selinux/policy'\n"
+            "    else\n"
+            "      printf '%s\\n' 'aaaa  /sys/fs/selinux/policy'\n"
+            "    fi\n"
+            "    ;;\n"
             "esac\n"
             "exit 0\n",
             encoding="utf-8",
@@ -2649,6 +2671,7 @@ def test_vm_check_reports_each_result() -> None:
         env["PROD_HOST"] = "prod.example"
         env["SSH_USER"] = "ansible"
         env["VM_LOG"] = str(log)
+        env["VM_HASH_LOG"] = str(root / "hashes")
         env["VM_MODE"] = "ok"
         ok = subprocess.run(
             [BASH, str(script)],
@@ -2688,6 +2711,104 @@ def test_vm_check_reports_each_result() -> None:
         )
         assert broken.returncode != 0
         assert "FAIL integration-compile" in broken.stdout
+        env["VM_MODE"] = "policy-changed"
+        (root / "hashes").write_text("", encoding="utf-8")
+        changed = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert changed.returncode != 0
+        assert "FAIL host-unchanged" in changed.stdout
+        assert "sha256sum /sys/fs/selinux/policy" in text
+
+
+def test_audit_health_fails_closed() -> None:
+    """Monitor and the health script refuse unless auditd is enabled and lost did not grow."""
+    health = PROJECT_ROOT / "scripts" / "check_audit_health.sh"
+    enforce = (
+        PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/enforce.yml"
+    ).read_text(encoding="utf-8")
+    assert "check_audit_health.sh" in enforce
+    assert "not (force_enforce" in enforce
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("100\n", encoding="utf-8")
+        (marker.parent / "marker.audit_lost").write_text("1\n", encoding="utf-8")
+
+        def write_tools(active: str, enabled: str, lost: str) -> None:
+            (bindir / "systemctl").write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = is-active ]; then\n"
+                f"  [ {active!r} = active ] && exit 0\n"
+                "  exit 3\n"
+                "fi\nexit 1\n",
+                encoding="utf-8",
+            )
+            (bindir / "systemctl").chmod(0o755)
+            (bindir / "auditctl").write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' 'enabled {enabled}' 'lost {lost}'\n",
+                encoding="utf-8",
+            )
+            (bindir / "auditctl").chmod(0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}/usr/bin:/bin"
+        write_tools("inactive", "1", "1")
+        down = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert down.returncode != 0
+        assert "auditd is not active" in down.stderr
+        write_tools("active", "0", "1")
+        disabled = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert disabled.returncode != 0
+        assert "enabled" in disabled.stderr
+        write_tools("active", "1", "4")
+        grew = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert grew.returncode != 0
+        assert "lost records since the marker" in grew.stderr
+        write_tools("active", "1", "1")
+        ok = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ok.returncode == 0, ok.stderr
+
+        for rel in (
+            "scripts/validate_policy_semantics.sh",
+            "scripts/lib/policy_module_diff_side.sh",
+            "scripts/lib/blast_radius_collect.sh",
+        ):
+            text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if "semodule " in line and "-p " in line:
+                    assert " -n " in f" {line} ", line
 
 
 def test_runner_var_selects_rhel_host() -> None:
@@ -2787,6 +2908,7 @@ def test_soak_counts_every_domain_denial() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + " ".join(repr(line) for line in lines) + "\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("AUDIT_LOG", None)
@@ -2861,6 +2983,7 @@ def test_soak_ignore_is_explicit() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + repr(line) + "\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("AUDIT_LOG", None)
@@ -3155,6 +3278,7 @@ def test_tune_report_skip_no_selinux() -> None:
             if key.startswith("VENDOR_CHECK_"):
                 del env[key]
         env["PATH"] = str(bindir)
+        env["AUDIT_LOG"] = str(Path(tmp) / "no-such-audit.log")
         result = subprocess.run(
             [
                 BASH,
@@ -3914,6 +4038,7 @@ def test_new_canary_ignores_older_soak_files() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("APP_MANIFEST", None)
@@ -4197,6 +4322,7 @@ def main() -> int:
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
         ("init_uses_daemon_domain", test_init_uses_daemon_domain),
         ("vm_check_reports_each_result", test_vm_check_reports_each_result),
+        ("audit_health_fails_closed", test_audit_health_fails_closed),
         ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
         ("runner_container_expression_both_cases", test_runner_container_expression_both_cases),
         ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),

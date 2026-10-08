@@ -26,6 +26,12 @@
     - "'production' in group_names"
     - (soak_min_days | default(7) | int) < 7
 
+- name: Fail closed unless auditd is recording since the marker
+  ansible.builtin.command: >
+    {{ selinux_ops_dir }}/check_audit_health.sh {{ soak_marker_file }}
+  changed_when: false
+  when: not (force_enforce | default(false) | bool)
+
 - name: Collect soak gate facts on target
   ansible.builtin.command: >
     {{ selinux_ops_dir }}/collect_soak_facts.sh

@@ -100,11 +100,19 @@ if [[ -z "${PATHS}" ]]; then
     exit 1
 fi
 
+audit_unhealthy=0
 if [[ -n "${MARKER_FILE}" && -f "${MARKER_FILE}" ]]; then
     deploy_epoch="$(tr -d '[:space:]' < "${MARKER_FILE}")"
     if [[ "${deploy_epoch}" =~ ^[0-9]+$ ]]; then
         SINCE="${deploy_epoch}"
     fi
+    audit_err="$(mktemp)"
+    if ! bash "${SCRIPT_DIR}/check_audit_health.sh" "${MARKER_FILE}" >"${audit_err}" 2>&1; then
+        audit_unhealthy=1
+        fail_closed_reason="$(tr '\n' ' ' <"${audit_err}")"
+        fail_closed_reason="${fail_closed_reason:-auditd is not recording}"
+    fi
+    rm -f "${audit_err}"
 fi
 
 DOMAINS_CSV="${DOMAIN}"
@@ -114,7 +122,9 @@ fi
 
 raw=""
 avc_fail_closed=0
-fail_closed_reason=""
+if [[ "${audit_unhealthy}" -eq 0 ]]; then
+    fail_closed_reason=""
+fi
 fetch_err="$(mktemp)"
 IFS=',' read -r -a domain_list <<< "${DOMAINS_CSV}"
 for d in "${domain_list[@]}"; do
@@ -202,6 +212,10 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         fi
         rm -f "${soak_err}"
     fi
+fi
+
+if [[ "${audit_unhealthy}" -eq 1 ]]; then
+    avc_fail_closed=1
 fi
 
 fail=0

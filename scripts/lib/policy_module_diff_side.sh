@@ -21,8 +21,8 @@ source "${LIB_DIR}/policy_isolated_store.sh"
 store_root="$(isolated_store_create)"
 kern="$(isolated_store_kern "${store_root}")"
 
-semodule -r "${APP}" -s targeted -p "${store_root}" 2>/dev/null || true
-if ! semodule -s targeted -p "${store_root}" -i "${PP}"; then
+semodule -n -r "${APP}" -s targeted -p "${store_root}" 2>/dev/null || true
+if ! semodule -n -s targeted -p "${store_root}" -i "${PP}"; then
     echo "policy_module_diff_side: semodule -i failed for ${PP}" >&2
     isolated_store_destroy "${store_root}"
     exit 1

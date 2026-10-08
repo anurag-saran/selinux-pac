@@ -58,6 +58,7 @@ cp "${ROOT}/scripts/verify_file_contexts.sh" \
    "${ROOT}/scripts/collect_soak_facts.sh" \
    "${ROOT}/scripts/check_soak_ready.sh" \
    "${ROOT}/scripts/check_soak_gate.sh" \
+   "${ROOT}/scripts/check_audit_health.sh" \
    "${ROOT}/scripts/check_soak_days.sh" \
    "${ROOT}/scripts/record_soak_day.sh" \
    "${ROOT}/scripts/semodule_restore_dontaudit.sh" "${OPS_SRC}/"

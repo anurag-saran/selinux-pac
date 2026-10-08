@@ -60,8 +60,8 @@ collect_side() {
     store_prefix="$(isolated_store_create)"
     kern="$(isolated_store_kern "${store_prefix}")"
 
-    semodule -r "${MODULE}" -s targeted -p "${store_prefix}" 2>/dev/null || true
-    if ! semodule -s targeted -p "${store_prefix}" -i "${pp}"; then
+    semodule -n -r "${MODULE}" -s targeted -p "${store_prefix}" 2>/dev/null || true
+    if ! semodule -n -s targeted -p "${store_prefix}" -i "${pp}"; then
         echo "blast_radius_collect: semodule -i failed for ${pp}" >&2
         isolated_store_destroy "${store_prefix}"
         return 1
