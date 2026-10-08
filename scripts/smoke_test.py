@@ -1357,14 +1357,32 @@ def test_selinux_booleans_and_app_ci() -> None:
         encoding="utf-8"
     )
     assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
-    assert "uses: OWNER/selinux-pac/.github/workflows/selinux-policy-ci.yml@REF" in guide
+    assert "uses: OWNER/selinux-pac/.github/workflows/selinux-policy-app.yml@REF" in guide
+    assert "does not work" in guide
     assert "module `jboss`" not in guide
-    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml").read_text(
         encoding="utf-8"
     )
     assert "workflow_call:" in workflow
     assert "app-forbidden-patterns:" in workflow
     assert "app-compiled-policy:" in workflow
+    assert "tools_repo:" in workflow
+    assert "tools_ref:" in workflow
+    assert "anurag-saran/selinux-pac" in workflow
+    assert "github.event_name" not in workflow
+    assert "github.workflow_ref" not in workflow
+    own = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_call:" not in own
+    assert "github.event_name" not in own
+    proof = (
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml"
+    ).read_text(encoding="utf-8")
+    assert "uses: ./.github/workflows/selinux-policy-app.yml" in proof
+    assert "selinux/shopapi" in proof
+    assert "can-setenforce" in proof
+    assert "bypass module was accepted" in proof
     canary = (
         PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "canary.yml"
     ).read_text(encoding="utf-8")

@@ -8,25 +8,10 @@ on:
   push:
     branches:
       - main
-  workflow_call:
-    inputs:
-      policy_dir:
-        description: Directory in the calling repo that contains MODULE.te
-        type: string
-        required: true
-      module:
-        description: Policy module name (the .te stem)
-        type: string
-        required: true
-      domain:
-        description: Process domain for that module (shopapi_t)
-        type: string
-        required: true
 
 jobs:
   offline-tests:
     name: offline-tests
-    if: github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +22,6 @@ jobs:
 
   forbidden-patterns:
     name: forbidden-patterns
-    if: github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +37,6 @@ jobs:
 
   compiled-policy:
     name: compiled-policy
-    if: github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     container: quay.io/centos/centos:stream9
     steps:
@@ -76,97 +59,8 @@ jobs:
 
   version-consistency:
     name: version-consistency
-    if: github.event_name != 'workflow_call'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Verify policy version single source of truth
         run: bash scripts/validate_version_consistency.sh
-
-  # An app repo calls this workflow. These jobs check out that repo and this
-  # one, then run the same gates against the caller's module. Copying this
-  # file into the app repo does not work: make and the validators live here.
-  app-forbidden-patterns:
-    name: app-forbidden-patterns
-    if: github.event_name == 'workflow_call'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: app
-      - name: Resolve the policy-tools repository
-        id: tools
-        run: |
-          set -euo pipefail
-          wf="${{ github.workflow_ref }}"
-          repo="${wf%%/.github/workflows/*}"
-          ref="${wf##*@}"
-          if [[ "${repo}" == "${wf}" || "${ref}" == "${wf}" || "${repo}" != */* ]]; then
-            echo "github.workflow_ref is not owner/repo/.github/workflows/file.yml@ref: ${wf}" >&2
-            exit 1
-          fi
-          echo "repo=${repo}" >> "${GITHUB_OUTPUT}"
-          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ steps.tools.outputs.repo }}
-          ref: ${{ steps.tools.outputs.ref }}
-          path: tools
-      - name: Forbidden patterns, source audit, and version
-        env:
-          POLICY_DIR: ${{ inputs.policy_dir }}
-          MODULE: ${{ inputs.module }}
-          DOMAIN: ${{ inputs.domain }}
-        run: |
-          set -euo pipefail
-          src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
-          [[ -d "${src}" ]]
-          [[ -n "${MODULE}" && -n "${DOMAIN}" ]]
-          POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
-            bash "${GITHUB_WORKSPACE}/tools/scripts/validate_forbidden_patterns.sh" "${src}"
-          PYTHONPATH="${GITHUB_WORKSPACE}/tools/cli" \
-            python3 "${GITHUB_WORKSPACE}/tools/cli/policy_audit.py" --selinux-dir "${src}"
-          SELINUX_ROOT="${src}" POLICY_APP="${MODULE}" \
-            bash "${GITHUB_WORKSPACE}/tools/scripts/validate_version_consistency.sh"
-
-  app-compiled-policy:
-    name: app-compiled-policy
-    if: github.event_name == 'workflow_call'
-    runs-on: ubuntu-latest
-    container: quay.io/centos/centos:stream9
-    steps:
-      - name: Install git for checkout
-        run: dnf install -y git
-      - uses: actions/checkout@v4
-        with:
-          path: app
-      - name: Resolve the policy-tools repository
-        id: tools
-        run: |
-          set -euo pipefail
-          wf="${{ github.workflow_ref }}"
-          repo="${wf%%/.github/workflows/*}"
-          ref="${wf##*@}"
-          if [[ "${repo}" == "${wf}" || "${ref}" == "${wf}" || "${repo}" != */* ]]; then
-            echo "github.workflow_ref is not owner/repo/.github/workflows/file.yml@ref: ${wf}" >&2
-            exit 1
-          fi
-          echo "repo=${repo}" >> "${GITHUB_OUTPUT}"
-          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ steps.tools.outputs.repo }}
-          ref: ${{ steps.tools.outputs.ref }}
-          path: tools
-      - name: Install policy toolchain
-        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml
-      - name: Compiled policy semantics
-        env:
-          POLICY_DIR: ${{ inputs.policy_dir }}
-          MODULE: ${{ inputs.module }}
-          DOMAIN: ${{ inputs.domain }}
-        run: |
-          set -euo pipefail
-          src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
-          POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
-            bash "${GITHUB_WORKSPACE}/tools/scripts/validate_policy_semantics.sh" "${src}"
