@@ -124,6 +124,8 @@ python3 scripts/smoke_test.py
 | `e2e_quiet_ssh_wrap_skips_when_ssh_missing` | `e2e_install_quiet_ssh` no-ops when `ssh`/`scp` are missing or `E2E_DRY=1` |
 | `app_manifest` | Validates demo + example manifests; `shell-export` emits expected keys |
 | `rpm_ops_parity` | Ops RPM file list matches repo scripts |
+| `ops_rpm_soak_cli_imports_alone` | `pac_cli.list` copied alone runs `soak_net_new.py --help` |
+| `monitor_records_soak_stderr` | A failed soak check records that command's stderr |
 | `offline_fixture_sync` | Offline demo `offline/generated/` matches committed `selinux/` |
 | `tracked_tree_has_no_model_client` | Tracked files do not name a removed model client |
 | `deterministic_verdict_fixture_coverage` | Every classification verdict has ≥1 golden row under `docs/examples/fixtures/deterministic/` |

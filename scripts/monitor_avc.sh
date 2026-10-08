@@ -169,7 +169,8 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
             soak_cmd+=(--manifest "${MANIFEST}")
         fi
-        if printf '%s\n' "${matches[@]}" | "${soak_cmd[@]}" >/dev/null 2>&1; then
+        soak_err="$(mktemp)"
+        if printf '%s\n' "${matches[@]}" | "${soak_cmd[@]}" >/dev/null 2>"${soak_err}"; then
             net_new_count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("net_new_count",-1))' "${net_new_json}")"
             if [[ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("fail_closed") else 0)' "${net_new_json}")" -eq 1 ]]; then
                 avc_fail_closed=1
@@ -178,8 +179,10 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         else
             net_new_count=-1
             avc_fail_closed=1
-            fail_closed_reason="soak_net_new.py failed (sesearch / policy.kern)"
+            fail_closed_reason="$(tr '\n' ' ' <"${soak_err}")"
+            fail_closed_reason="${fail_closed_reason:-soak_net_new.py failed}"
         fi
+        rm -f "${soak_err}"
     fi
 fi
 

@@ -66,9 +66,10 @@ cp "${ROOT}/scripts/lib/avc_query.sh" \
    "${ROOT}/scripts/lib/manifest_shell.sh" \
    "${ROOT}/scripts/lib/soak_net_new.py" "${OPS_SRC}/lib/"
 mkdir -p "${OPS_SRC}/lib/pac_cli"
-cp "${ROOT}/cli/soak_net_new.py" \
-   "${ROOT}/cli/avc_preprocess.py" \
-   "${ROOT}/cli/avc_parse.py" "${OPS_SRC}/lib/pac_cli/"
+while IFS= read -r rel || [[ -n "${rel}" ]]; do
+    [[ -z "${rel}" || "${rel}" == \#* ]] && continue
+    cp "${ROOT}/cli/${rel}" "${OPS_SRC}/lib/pac_cli/"
+done < "${ROOT}/packaging/pac_cli.list"
 
 bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
 bash "${ROOT}/scripts/compile_and_validate.sh" selinux

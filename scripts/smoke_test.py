@@ -1517,6 +1517,79 @@ def test_rpm_ops_parity() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_ops_rpm_soak_cli_imports_alone() -> None:
+    """The ops RPM pac_cli set must run soak_net_new --help with no other repo modules."""
+    names = [
+        line.strip()
+        for line in (PROJECT_ROOT / "packaging" / "pac_cli.list").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert "soak_net_new.py" in names
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp)
+        for name in names:
+            shutil.copy(PROJECT_ROOT / "cli" / name, dest / name)
+        help_run = subprocess.run(
+            [sys.executable, "-I", "soak_net_new.py", "--help"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
+        )
+        assert help_run.returncode == 0, help_run.stderr or help_run.stdout
+        assert "Net-new" in help_run.stdout
+    parity = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts" / "validate_rpm_ops_parity.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert parity.returncode == 0, parity.stderr or parity.stdout
+
+
+def test_monitor_records_soak_stderr() -> None:
+    """A failing soak_net_new.py puts its stderr in fail_closed_reason."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        ausearch = bindir / "ausearch"
+        ausearch.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'type=AVC msg=audit(1.1:1): avc: denied { read } for pid=1 "
+            "path=\"/opt/shopapi/x\" scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1'\n",
+            encoding="utf-8",
+        )
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("APP_MANIFEST", None)
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--domain",
+                "shopapi_t",
+                "--paths",
+                "/opt/shopapi",
+                "--manifest",
+                str(root / "missing-manifest.yml"),
+                "--format",
+                "json",
+                "--max-avc",
+                "-1",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        blob = result.stdout + result.stderr
+        assert "Provide --manifest or --domains" in blob, blob
+        assert "sesearch / policy.kern" not in blob
+
+
 def test_version_consistency() -> None:
     script = PROJECT_ROOT / "scripts" / "validate_version_consistency.sh"
     result = subprocess.run(
@@ -3292,6 +3365,8 @@ def main() -> int:
         ("app_manifest", test_app_manifest),
         ("selinux_booleans_and_app_ci", test_selinux_booleans_and_app_ci),
         ("rpm_ops_parity", test_rpm_ops_parity),
+        ("ops_rpm_soak_cli_imports_alone", test_ops_rpm_soak_cli_imports_alone),
+        ("monitor_records_soak_stderr", test_monitor_records_soak_stderr),
         ("version_consistency", test_version_consistency),
         ("version_consistency_fails_on_drift", test_version_consistency_fails_on_drift),
         ("version_consistency_fails_on_payments_drift", test_version_consistency_fails_on_payments_drift),
