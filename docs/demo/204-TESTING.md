@@ -35,7 +35,7 @@ Do **not** curl `/feature-spool` during first-ship. That path is the outage beat
 **Design constraints:**
 
 - Dedicated port type (`shopapi_port_t`), not blanket `unreserved_port_t`.
-- systemd starts a private JRE at `/opt/shopapi/bin/java` with **`SELinuxContext=shopapi_t`**.
+- systemd starts `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). There is no `SELinuxContext=` line.
 - Offline generator tests use committed **`selinux/myapp.te`** / **`config/myapp.manifest.yml`** — that module is not a live app.
 
 **Manual run (RHEL host after `make demo-bootstrap`):**

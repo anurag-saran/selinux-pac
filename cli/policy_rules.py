@@ -35,6 +35,24 @@ GENERIC_FILE_TYPES = frozenset(
     }
 )
 
+# java_exec() is can_exec only. c9s policy/support/misc_macros.spt:
+#   define(`can_exec',`allow $1 $2:file { mmap_exec_file_perms ioctl lock execute_no_trans };')
+# mmap_exec_file_perms is { getattr open map read execute ioctl }.
+# policy/modules/contrib/java.if interface java_exec adds corecmd_search_bin.
+# There is no entrypoint on java_exec_t.
+JAVA_EXEC_FILE_PERMS = frozenset(
+    {
+        "getattr",
+        "open",
+        "map",
+        "read",
+        "execute",
+        "ioctl",
+        "lock",
+        "execute_no_trans",
+    }
+)
+
 # Shared executable types. An entrypoint denial on one of these, at a path
 # this module's .fc already covers, is a stale label (restorecon), not an allow.
 STALE_ENTRYPOINT_TYPES = frozenset(

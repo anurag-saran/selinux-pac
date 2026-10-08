@@ -171,35 +171,27 @@ demo_write_variant() {
     DEMO_TOMCAT_VARIANT="${variant}"
 }
 
-# Copy a private OpenJDK launcher + lib/conf under install_root so ExecStart is
-# shopapi_exec_t. /usr/bin/java is shared java_exec_t; enforcing shopapi_t cannot exec it.
-demo_install_shopapi_jre() {
+# Install the shopapi_exec_t wrapper. It execs the system java (java_exec_t).
+# Do not copy a JDK under install_root.
+demo_install_shopapi_wrapper() {
     local root="${1:?}"
-    local java_bin java_home
-    java_bin="$(readlink -f /usr/bin/java 2>/dev/null || true)"
-    if [[ -z "${java_bin}" || ! -x "${java_bin}" ]]; then
-        echo "demo_install_shopapi_jre: /usr/bin/java not found" >&2
+    local src="${PROJECT_ROOT}/demo/shopapi/bin/shopapi"
+    if [[ ! -f "${src}" ]]; then
+        echo "demo_install_shopapi_wrapper: missing ${src}" >&2
         return 1
     fi
-    java_home="$(cd "$(dirname "${java_bin}")/.." && pwd)"
-    mkdir -p "${root}/bin" "${root}/lib" "${root}/conf"
-    cp -f "${java_bin}" "${root}/bin/java"
-    chmod 0755 "${root}/bin/java"
-    if [[ ! -f "${root}/lib/libjli.so" ]]; then
-        cp -a "${java_home}/lib/." "${root}/lib/"
+    if [[ ! -x /usr/bin/java ]]; then
+        echo "demo_install_shopapi_wrapper: /usr/bin/java not found" >&2
+        return 1
     fi
-    if [[ ! -d "${root}/conf/security" ]]; then
-        cp -a "${java_home}/conf/." "${root}/conf/"
-    fi
-    if [[ -f "${java_home}/release" ]]; then
-        cp -f "${java_home}/release" "${root}/release"
-    fi
+    mkdir -p "${root}/bin"
+    rm -f "${root}/bin/java"
+    install -m 0755 "${src}" "${root}/bin/shopapi"
     if getent passwd shopapi >/dev/null 2>&1; then
-        chown -R shopapi:shopapi "${root}/bin" "${root}/lib" "${root}/conf" 2>/dev/null || true
-        [[ -f "${root}/release" ]] && chown shopapi:shopapi "${root}/release" || true
+        chown shopapi:shopapi "${root}/bin/shopapi" 2>/dev/null || true
     fi
-    restorecon -Rv "${root}/bin" "${root}/lib" "${root}/conf" 2>/dev/null || true
-    echo "shopapi JRE launcher ${root}/bin/java (JAVA_HOME=${root})" >&2
+    restorecon -Rv "${root}/bin/shopapi" 2>/dev/null || true
+    echo "shopapi wrapper ${root}/bin/shopapi execs /usr/bin/java" >&2
 }
 
 # After shopapi_port_t exists (seed or generated module). Canary seport also does this.
@@ -219,7 +211,6 @@ demo_write_shopapi_runtime_files() {
     local manifest="${project_root}/config/shopapi.manifest.yml"
     local parsed install_root
     parsed="$(python3 - "${manifest}" "${APP_B_PORT}" <<'PY'
-import os
 import pathlib
 import sys
 
@@ -237,13 +228,6 @@ install_root = paths["install_root"]
 state_name = pathlib.Path(paths["var_dir"]).name
 log_name = pathlib.Path(paths["log_dir"]).name
 run_name = pathlib.Path(paths["runtime_dir"]).name
-confined = os.environ.get("DEMO_SHOPAPI_CONFINED", "1") != "0"
-selinux_line = (
-    f"SELinuxContext=system_u:system_r:{domain}:s0\n"
-    if confined
-    else f"# SELinuxContext omitted until {domain} exists on this host\n"
-)
-
 env = pathlib.Path("/etc/shopapi.env")
 spool_dir = "/var/spool/shopapi"
 env.write_text(
@@ -269,11 +253,10 @@ User=shopapi
 Group=shopapi
 EnvironmentFile=-/etc/shopapi.env
 WorkingDirectory={install_root}
-Environment=JAVA_HOME={install_root}
-# Private copy of the JRE launcher at install_root/bin/java is labeled
-# shopapi_exec_t (see .fc). /usr/bin/java is shared java_exec_t and 203/EXEC under
-# enforcing shopapi_t. SELinuxContext= still sets the domain at exec.
-{selinux_line}ExecStart={install_root}/bin/java -jar {install_root}/shopapi.jar
+# Wrapper is shopapi_exec_t and execs /usr/bin/java (java_exec_t).
+# init_daemon_domain transitions from init_t. No SELinuxContext=.
+# NEEDS_LIVE_CHECK: ps -eZ -C java  (type is {domain}).
+ExecStart={install_root}/bin/shopapi -jar {install_root}/shopapi.jar
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=false
@@ -298,7 +281,7 @@ PY
     )"
     install_root="$(printf '%s\n' "${parsed}" | sed -n '1p')"
     if [[ -n "${install_root}" ]]; then
-        demo_install_shopapi_jre "${install_root}"
+        demo_install_shopapi_wrapper "${install_root}"
     fi
     printf '%s\n' "${parsed}"
 }

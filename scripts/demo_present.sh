@@ -516,11 +516,11 @@ act2_app_b() {
 
 act3_generate() {
     e2e_banner "Act 3 — Spring Boot shopapi: the generator is allowed"
-    tlab_explain "No vendor module for Spring Boot. ExecStart is a private copy of the JRE launcher at /opt/shopapi/bin/java (shopapi_exec_t). /usr/bin/java is shared java_exec_t and cannot be the entrypoint. SELinuxContext= still sets shopapi_t."
+    tlab_explain "No vendor module for Spring Boot. ExecStart is /opt/shopapi/bin/shopapi, labeled shopapi_exec_t. That wrapper execs /usr/bin/java, which stays java_exec_t. There is no SELinuxContext= line. init_daemon_domain transitions init_t to shopapi_t when the wrapper runs."
     e2e_run "systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'"
-    demo_expect "SELinuxContext=system_u:system_r:shopapi_t:s0"
+    demo_expect "ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar and no SELinuxContext= line"
     e2e_run "ps -o label=,comm= -C java | head"
-    demo_expect "shopapi_t  java   (after the types-only seed is loaded)"
+    demo_expect "shopapi_t java. NEEDS_LIVE_CHECK: ps -eZ -C java"
     local shop_port
     shop_port="$(demo_manifest_http_port "${PROJECT_ROOT}/config/shopapi.manifest.yml")"
     tlab_explain "Exercise endpoints under the permissive seed so the AVC log is real. Types-only seed is committed. Allows come from those AVCs — not a JVM cookbook. execmem is needs_review if and only if the AVC log shows it."

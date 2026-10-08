@@ -95,22 +95,17 @@ sudo chown -R shopapi:shopapi /opt/shopapi /var/lib/shopapi /var/log/shopapi /va
 cd ~/selinux-pac
 ```
 
-**5. Give shopapi its own `java`, and tell systemd the process label.** `/usr/bin/java` is a shared binary, type `java_exec_t`, not `bin_t`. RHEL 9 file contexts label it that way, and they label a copy at `/opt/*/bin/java*` the same way until this module's `.fc` overrides that path ([`policy/modules/contrib/java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc): `/usr/(.*/)?bin/java[^-]*`, `/usr/lib/jvm/java(.*/)bin(/.*)?`, `/opt/(.*/)?bin/java[^/]*`). Copying Java under `/opt/shopapi` lets `restorecon` label that copy `shopapi_exec_t`.
+**5. Install a wrapper and let systemd's domain transition set the process label.** `/usr/bin/java` is a shared binary, type `java_exec_t`, not `bin_t` ([`policy/modules/contrib/java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). Do not copy the JDK under `/opt/shopapi`. The file systemd executes is `/opt/shopapi/bin/shopapi`, labeled `shopapi_exec_t`. The jar and the config under `/opt/shopapi` are `shopapi_lib_t`, which is not an entrypoint. The wrapper execs `/usr/bin/java`.
 
 ```bash
-java_bin=$(readlink -f /usr/bin/java)
-java_home=$(cd "$(dirname "$java_bin")/.." && pwd)
-sudo mkdir -p /opt/shopapi/bin /opt/shopapi/lib /opt/shopapi/conf
-sudo cp -f "$java_bin" /opt/shopapi/bin/java
-sudo chmod 0755 /opt/shopapi/bin/java
-sudo cp -a "$java_home/lib/." /opt/shopapi/lib/
-sudo cp -a "$java_home/conf/." /opt/shopapi/conf/
-sudo chown -R shopapi:shopapi /opt/shopapi
+sudo mkdir -p /opt/shopapi/bin
+sudo install -m 0755 demo/shopapi/bin/shopapi /opt/shopapi/bin/shopapi
+sudo chown shopapi:shopapi /opt/shopapi/bin/shopapi
 ```
 
 `/etc/shopapi.env` is the port and the directories the Java process reads (`SHOPAPI_PORT`, `SHOPAPI_LOG_DIR`, and the rest). `/etc/systemd/system/shopapi.service` is how the machine starts shopapi after a reboot.
 
-`SELinuxContext=system_u:system_r:shopapi_t:s0` is the whole label pinned on the process at start. systemd requires all four fields. `system_u` means a system object. `system_r` means a process (`object_r` would mean a file). `shopapi_t` is the type `allow` rules use. `s0` is the default level. The letters after `_` are part of the name (`_u` user, `_r` role, `_t` type). They are not a switch you can replace with another letter. The line is required because `java` is a shared binary. Without it the process comes up as `unconfined_service_t`, and the denials do not name shopapi.
+The unit has no `SELinuxContext=` line. [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) does `type_transition initrc_domain shopapi_exec_t:process shopapi_t`, and [`init.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.te) puts `init_t` in `initrc_domain`. systemd runs as `init_t`, so starting the wrapper enters `shopapi_t`. The entrypoint permission is on `shopapi_exec_t` only. `java_exec()` is execute on `java_exec_t` and is not in the seed; the generator writes it when the log shows that execute. NEEDS_LIVE_CHECK: `systemctl cat shopapi.service | grep SELinuxContext || echo 'no SELinuxContext'; ps -eZ -C java` — no `SELinuxContext` line, and the java process type is `shopapi_t`.
 
 `WantedBy=multi-user.target` is read by `systemctl enable`, not by writing the file. It hooks shopapi into a normal boot so a reboot starts it again. `systemctl start` alone would not do that.
 
@@ -134,9 +129,7 @@ User=shopapi
 Group=shopapi
 EnvironmentFile=-/etc/shopapi.env
 WorkingDirectory=/opt/shopapi
-Environment=JAVA_HOME=/opt/shopapi
-SELinuxContext=system_u:system_r:shopapi_t:s0
-ExecStart=/opt/shopapi/bin/java -jar /opt/shopapi/shopapi.jar
+ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar
 Restart=on-failure
 RestartSec=5
 StateDirectory=shopapi
@@ -167,13 +160,13 @@ ls -Z /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 matchpathcon /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 ```
 
-Before `restorecon`, the directory `/opt/shopapi` may still be `usr_t`. The copied `java` is `java_exec_t` (the shared JDK type above), `var_lib_t` under `/var/lib/shopapi`, and `var_log_t` under `/var/log/shopapi`. `cp` creates a new file, so the copy takes a label from its new location. `mv` renames the existing file and keeps the old label. NEEDS_LIVE_CHECK: `echo x > /tmp/label-src && sudo chcon -t etc_t /tmp/label-src && sudo cp /tmp/label-src /var/log/shopapi/from-cp && sudo mv /tmp/label-src /var/log/shopapi/from-mv && ls -Z /var/log/shopapi/from-cp /var/log/shopapi/from-mv` — `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. `matchpathcon` should already say `shopapi_exec_t`, `shopapi_var_lib_t`, and `shopapi_log_t`. `/run/shopapi` may not exist yet (`RuntimeDirectory` creates it when the service starts). `ls` then says "No such file or directory". `matchpathcon` still answers for a path that is not on disk. NEEDS_LIVE_CHECK: `sudo rm -rf /run/shopapi && matchpathcon /run/shopapi` should print `shopapi_var_run_t` after this module is loaded.
+Before `restorecon`, the directory `/opt/shopapi` may still be `usr_t`. The wrapper is a new file, so it does not inherit `java_exec_t`. `var_lib_t` is under `/var/lib/shopapi`, and `var_log_t` is under `/var/log/shopapi`. `cp` creates a new file, so the copy takes a label from its new location. `mv` renames the existing file and keeps the old label. NEEDS_LIVE_CHECK: `echo x > /tmp/label-src && sudo chcon -t etc_t /tmp/label-src && sudo cp /tmp/label-src /var/log/shopapi/from-cp && sudo mv /tmp/label-src /var/log/shopapi/from-mv && ls -Z /var/log/shopapi/from-cp /var/log/shopapi/from-mv` — `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. `matchpathcon /opt/shopapi/bin/shopapi` should say `shopapi_exec_t`. `matchpathcon /opt/shopapi/shopapi.jar` should say `shopapi_lib_t`. `matchpathcon` on `/var/lib/shopapi` and `/var/log/shopapi` should say `shopapi_var_lib_t` and `shopapi_log_t`. `/run/shopapi` may not exist yet (`RuntimeDirectory` creates it when the service starts). `ls` then says "No such file or directory". `matchpathcon` still answers for a path that is not on disk. NEEDS_LIVE_CHECK: `sudo rm -rf /run/shopapi && matchpathcon /run/shopapi` should print `shopapi_var_run_t` after this module is loaded.
 
 ```bash
 sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 ```
 
-`-R` walks directories. `-v` prints only paths whose label changed. A `Relabeled` line for `/opt/shopapi/bin/java` should go from `java_exec_t` to `shopapi_exec_t`. `restorecon` needs the directory to exist, so it cannot relabel `/run/shopapi` until systemd creates it. It does not touch `/var/spool/shopapi`. That path is lab 6.
+`-R` walks directories. `-v` prints only paths whose label changed. A `Relabeled` line for `/opt/shopapi/bin/shopapi` should land on `shopapi_exec_t`. The jar lands on `shopapi_lib_t`. `restorecon` needs the directory to exist, so it cannot relabel `/run/shopapi` until systemd creates it. It does not touch `/var/spool/shopapi`. That path is lab 6.
 
 **8. Label port 8091, and put only `shopapi_t` on the log-only list.** Loading `shopapi.pp` created the type `shopapi_port_t`. It did not attach that type to TCP 8091. `semanage port -a` writes that assignment. `-t` is the type, `-p tcp` is the protocol. Check first with `sudo semanage port -l | grep 8091`. If the port is already listed, skip `-a`.
 
@@ -245,7 +238,7 @@ ps -eZ | grep shopapi
 
 **Checkpoint:** What is the difference between the type on the **file** and the type on the **running process**?
 
-The file type and the process type are supposed to differ. On a good run, `ls -Z /opt/shopapi` shows `shopapi_exec_t` (the sign on the program files, including `bin/java` and `shopapi.jar`). `ps -eZ | grep shopapi` shows `shopapi_t` (the badge on the running Java process). An `allow` rule names both: may a process badged `shopapi_t` use a file signed `shopapi_exec_t`? Starting the program does not change the file's type into `shopapi_t`. `restorecon` labeled the files. `SELinuxContext` in the unit labeled the process. `getenforce` still prints `Enforcing`. The log-only list does not change either type.
+The file type and the process type are supposed to differ. On a good run, `ls -Z /opt/shopapi/bin/shopapi` shows `shopapi_exec_t`. `ls -Z /opt/shopapi/shopapi.jar` shows `shopapi_lib_t`. `ps -eZ | grep shopapi` shows `shopapi_t` on the running Java process. Starting the program does not change the file's type into `shopapi_t`. `restorecon` labeled the files. The domain transition labeled the process. `getenforce` still prints `Enforcing`. The log-only list does not change either type.
 
 ---
 
@@ -433,13 +426,13 @@ For this 101 only, run the same command with one more flag. `--allow-needs-revie
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)" --allow-needs-review
 ```
 
-An `entrypoint` denial for `/opt/shopapi/bin/java` names `java_exec_t` (or, on an older label, `bin_t`). That path is already in the `.fc` as `shopapi_exec_t`. The generator classifies it `fc_drift`: the label on disk is stale, and the fix is `restorecon`. It does not write an allow for `java_exec_t` or `bin_t`. Do not filter those lines out of the log.
+An `entrypoint` denial that names `java_exec_t` is the shared JDK, not the wrapper. The generator does not write an allow, and it does not write `entrypoint` on `java_exec_t`. An `execute` denial on `java_exec_t` becomes `java_exec(shopapi_t)`, which is `can_exec` only ([`java.if` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.if)). Do not filter those lines out of the log.
 
 ```bash
-ls -Z /opt/shopapi/bin/java
+ls -Z /opt/shopapi/bin/shopapi /usr/bin/java
 ```
 
-`shopapi_exec_t` means `restorecon` already ran. The audit lines are old. They stay in the log, and the verdict for them is `fc_drift`.
+`shopapi_exec_t` on the wrapper means `restorecon` already ran. `/usr/bin/java` stays `java_exec_t`.
 
 A good run prints `Built .../policy_out/shopapi.pp`, `AVC coverage OK`, and `Updated .../selinux/shopapi/shopapi.te`. The version in the diff goes from `1.0.0` to `1.0.1`. `allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission. `findings.json` has an `fc_drift` row for the stale entrypoint and no `allow` line for `java_exec_t`.
 
@@ -506,7 +499,7 @@ POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
 | No allow of `shadow_t`, `unconfined_t`, or `sysadm_t` | Those are high-privilege types. |
 | The file contains `policy_module(...)` | That is the module header. |
 | The file mentions `shopapi_t` | `SELINUX_DOMAIN` must appear in the `.te`. |
-| The `.fc` mentions `/opt/shopapi`, `/var/lib/shopapi`, `shopapi_exec_t`, and `shopapi_var_lib_t` | The address book has to cover the install path and the state path. |
+| The `.fc` mentions `/opt/shopapi/bin/shopapi` as `shopapi_exec_t`, the rest of `/opt/shopapi` as `shopapi_lib_t`, and `/var/lib/shopapi` as `shopapi_var_lib_t` | The address book has to cover the wrapper, the jar, and the state path. |
 
 A good last line is `Forbidden-pattern checks passed for shopapi`.
 
@@ -626,7 +619,7 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 
 **Why:** a second generate should add **`/var/spool/shopapi`** (label + allow), not replay lab 3.
 
-The lab 5 denials are new. Generate once. Allows this module already has (`execmem`, the `/log` write) are `baseline`. The spool path is the new surface. An old `entrypoint` denial on `java_exec_t` for `/opt/shopapi/bin/java` is `fc_drift`. It is not a new allow, and you do not filter it out of the log. `--allow-needs-review` is required because `execmem` is still in the log.
+The lab 5 denials are new. Generate once. Allows this module already has (`execmem`, the `/log` write, and `java_exec(shopapi_t)` once the log has shown that execute) are `baseline`. The spool path is the new surface. An `entrypoint` denial on `java_exec_t` is not a new allow, and you do not filter it out of the log. `--allow-needs-review` is required because `execmem` is still in the log.
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"

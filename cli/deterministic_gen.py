@@ -26,7 +26,8 @@ from boolean_hints import (  # noqa: E402
     render_boolean_finding,
     resolve_booleans_for_need,
 )
-from policy_rules import (  # noqa: E402
+from policy_rules import (
+    JAVA_EXEC_FILE_PERMS,  # noqa: E402
     FORBIDDEN_TARGET_TYPES,
     GENERIC_FILE_TYPES,
     GENERIC_PORT_TYPES,
@@ -225,6 +226,10 @@ def suggest_fc_type(path: str, manifest: dict) -> str | None:
             continue
         base = root.rstrip("/")
         if path == base or path.startswith(base + "/"):
+            # shopapi's .fc labels only bin/shopapi as the exec type. The jar
+            # and config under the same tree are shopapi_lib_t.
+            if suffix == "exec_t" and app == "shopapi" and path != f"{base}/bin/{app}":
+                return f"{app}_lib_t"
             return f"{app}_{suffix}"
     extras = paths.get("extra_fc_roots") or []
     if isinstance(extras, str):
@@ -621,6 +626,23 @@ def classify(
         )
     if triage.status == "unavailable":
         boolean_unavailable_detail = triage.detail
+
+    # java.if on c9s: java_exec is corecmd_search_bin + can_exec. Not entrypoint.
+    if (
+        tgt == "java_exec_t"
+        and tclass == "file"
+        and need.perms
+        and need.perms <= JAVA_EXEC_FILE_PERMS
+        and "entrypoint" not in need.perms
+    ):
+        return Finding(
+            need,
+            VERDICT_INTERFACE,
+            f"java_exec({src})",
+            "Matched java_exec() (can_exec on java_exec_t, no entrypoint).",
+            paths,
+            engine="house_rules",
+        )
 
     iface = try_sepolgen_interface(src, tgt, tclass, need.perms)
     if iface is SEPOLGEN_UNAVAILABLE:

@@ -288,7 +288,7 @@ main() {
     fi
     echo "App A:    http://127.0.0.1:${APP_A_PORT}/standard/   (already confined; do not retune)"
     echo "App B:    http://127.0.0.1:${APP_B_PORT}/inherited/  (wrong label/port/boolean on purpose)"
-    echo "shopapi:  see config/shopapi.manifest.yml http.port (SELinuxContext= shopapi_t, permissive seed)"
+    echo "shopapi:  see config/shopapi.manifest.yml http.port (wrapper shopapi_exec_t, permissive seed)"
     echo "Re-running this script skips completed steps and exits 0."
 }
 

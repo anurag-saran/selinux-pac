@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from policy_rules import JAVA_EXEC_FILE_PERMS
+
 if TYPE_CHECKING:
     from selinux_gen import AvcEntry
 
@@ -87,6 +89,9 @@ def parse_existing_allows(te_text: str) -> dict[tuple[str, str, str], frozenset[
         add(src_type, tgt_type, tclass, perms)
         if tgt_type == "self":
             add(src_type, src_type, tclass, perms)
+    # java_exec(domain) expands to can_exec on java_exec_t, not an entrypoint.
+    for match in re.finditer(r"\bjava_exec\(([A-Za-z_][A-Za-z0-9_]*)\)", te_text):
+        add(match.group(1), "java_exec_t", "file", JAVA_EXEC_FILE_PERMS)
     return {key: frozenset(perms) for key, perms in allows.items()}
 
 

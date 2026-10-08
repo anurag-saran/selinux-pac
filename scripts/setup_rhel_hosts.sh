@@ -188,7 +188,7 @@ sudo dnf install -y git java-17-openjdk-headless maven python3 python3-pyyaml \\
 # Clone this repo on the box (or rsync from your laptop):
 git clone https://github.com/anurag-saran/selinux-pac.git ~/selinux-pac
 cd ~/selinux-pac
-# Spring Boot shopapi + types-only seed (SELinuxContext=shopapi_t, permissive).
+# Spring Boot shopapi + types-only seed (wrapper shopapi_exec_t, permissive).
 # Do not curl /feature-spool yet.
 sudo bash scripts/demo_bootstrap.sh --shopapi-only
 sudo bash scripts/selinux_pac_adopt.sh doctor

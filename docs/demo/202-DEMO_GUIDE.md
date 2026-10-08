@@ -276,11 +276,11 @@ sudo semodule -l | wc -l
 
 ### Act 3 — shopapi (the rest of the 20 minutes)
 
-Say: this is the first time we author a module. We declined twice. Spring Boot has no Red Hat module. The unit runs a private copy of Java at `/opt/shopapi/bin/java`, labeled `shopapi_exec_t`. `SELinuxContext=` puts the process in `shopapi_t`.
+Say: this is the first time we author a module. We declined twice. Spring Boot has no Red Hat module. ExecStart is `/opt/shopapi/bin/shopapi`, labeled `shopapi_exec_t`. That wrapper execs the system Java. There is no `SELinuxContext=` line. `init_daemon_domain` puts the process in `shopapi_t`.
 
 ```mermaid
 flowchart LR
-  unit["Unit file<br/>private Java and shopapi_t"] --> ps["ps shows shopapi_t"]
+  unit["Unit file<br/>wrapper and shopapi_t"] --> ps["ps shows shopapi_t"]
   ps --> curls["/health, /state, /log"]
   curls --> log["ausearch keeps shopapi_t"]
   log --> gen["Generate and apply"]
@@ -291,7 +291,7 @@ flowchart LR
 systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'
 ```
 
-`systemctl cat` prints the unit file. `grep` keeps the two lines you want to read aloud. Expected: `ExecStart=/opt/shopapi/bin/java ...` and `SELinuxContext=system_u:system_r:shopapi_t:s0`.
+`systemctl cat` prints the unit file. `grep` keeps the start line. Expected: `ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar` and no `SELinuxContext=` line. NEEDS_LIVE_CHECK: `ps -eZ -C java` shows `shopapi_t`.
 
 ```bash
 ps -o label=,comm= -C java | head
@@ -358,7 +358,7 @@ sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name
 - App A and App B come before the generator. That order is the point.
 - Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
 - Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
-- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)) and cannot be the program that enters `shopapi_t`. The private copy, after `restorecon`, can.
+- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). The generator writes `java_exec(shopapi_t)` for that execute. It does not write an entrypoint on `java_exec_t`. The wrapper, after `restorecon`, is the entrypoint.
 - Act 6 opens `/feature-spool` after `shopapi_t` leaves the permissive list. `getenforce` still prints `Enforcing`.
 
 ## Self-service

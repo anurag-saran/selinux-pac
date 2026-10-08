@@ -126,12 +126,12 @@ Think of the repo in **layers**: app → policy source → generators → automa
 
 ## Application layer (`demo/shopapi/`)
 
-**Why `demo/shopapi/` exists:** that is the live generate target (Spring Boot, `SELinuxContext=shopapi_t`, first-ship `/health` `/state` `/log`, outage `/feature-spool`).
+**Why `demo/shopapi/` exists:** that is the live generate target (Spring Boot, wrapper `/opt/shopapi/bin/shopapi`, first-ship `/health` `/state` `/log`, outage `/feature-spool`).
 
 | File | What it does (simply) |
 |------|------------------------|
 | **`demo/shopapi/`** | JVM on port **8091** (from `config/shopapi.manifest.yml`). |
-| **`demo/shopapi/shopapi.service`** | systemd unit with `SELinuxContext=shopapi_t` and a private JRE launcher. |
+| **`demo/shopapi/shopapi.service`** | systemd unit. `ExecStart` is the `shopapi_exec_t` wrapper. No `SELinuxContext=` line. |
 
 **Why three first-ship HTTP paths?** `/health` (bind), `/state` (var_lib), `/log` (logs). When policy is incomplete, you get an AVC that points to the **missing allow rule**. **Deploy gates** use [`scripts/wait_for_endpoints.sh`](../../scripts/wait_for_endpoints.sh) to curl those paths and confirm the process still runs as the right **domain**.
 

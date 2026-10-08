@@ -82,7 +82,7 @@ flowchart LR
   curls --> avc["ausearch shows shopapi_t"]
 ```
 
-`--shopapi-only` installs the service, the private Java at `/opt/shopapi/bin/java`, and the types-only seed. `shopapi_t` is permissive: denials are logged and the requests still succeed. `getenforce` stays `Enforcing`.
+`--shopapi-only` installs the service, the wrapper at `/opt/shopapi/bin/shopapi`, and the types-only seed. It does not copy a JDK and it does not set `SELinuxContext=`. `shopapi_t` is permissive: denials are logged and the requests still succeed. `getenforce` stays `Enforcing`. NEEDS_LIVE_CHECK: `ps -eZ -C java` shows `shopapi_t`.
 
 Curl only `/health`, `/state`, and `/log`. Do not open `/feature-spool` here. That URL is the outage on prod, later.
 
@@ -103,7 +103,7 @@ flowchart LR
   pp --> load["semodule -i and label port 8091"]
 ```
 
-`restorecon` paints `shopapi_exec_t` onto the private Java before generate reads the log. `/usr/bin/java` is `java_exec_t`, not `bin_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. An `entrypoint` denial on `java_exec_t` for a path the `.fc` already covers is `fc_drift` (`restorecon`). The generator does not write that allow.
+`restorecon` paints `shopapi_exec_t` onto `/opt/shopapi/bin/shopapi` and `shopapi_lib_t` onto the jar before generate reads the log. `/usr/bin/java` is `java_exec_t`, not `bin_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. An execute of `java_exec_t` becomes `java_exec(shopapi_t)`. An `entrypoint` denial on `java_exec_t` is not an allow.
 
 Then the script compiles, loads the package with `semodule -i`, and labels TCP 8091 as `shopapi_port_t`. A good end is `Built …/shopapi.pp`. Go back to the Mac. Do not canary yet.
 

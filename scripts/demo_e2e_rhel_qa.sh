@@ -98,7 +98,7 @@ part_app() {
     e2e_run "cd ${HOME}/selinux-pac && pwd && ls demo/shopapi/pom.xml selinux/shopapi/shopapi.te"
     tlab_pause
 
-    tlab_explain "--shopapi-only installs the JVM, a shopapi_exec_t launcher at /opt/shopapi/bin/java, SELinuxContext=, and the types-only seed. Permissive shopapi_t logs denials without blocking. Do not curl /feature-spool yet."
+    tlab_explain "--shopapi-only installs the system JVM, the shopapi_exec_t wrapper at /opt/shopapi/bin/shopapi, and the types-only seed. No SELinuxContext= line: init_daemon_domain transitions from init_t. Permissive shopapi_t logs denials without blocking. Do not curl /feature-spool yet."
     e2e_run "sudo bash scripts/demo_bootstrap.sh --shopapi-only"
     tlab_pause
 

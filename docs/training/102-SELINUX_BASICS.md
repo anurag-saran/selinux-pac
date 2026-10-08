@@ -164,11 +164,11 @@ A few words that show up in the list below:
 
 **`shopapi_t`**
 
-The domain of the running shopapi process. After bootstrap, `ps -eZ | grep shopapi` shows this type in the third field. Labs 0–6 are about this domain: what it tried to do, and which allow lines it still needs. The systemd unit sets it directly with `SELinuxContext=system_u:system_r:shopapi_t:s0`, because the `java` binary is shared by every Java app on the machine. Labeling the binary alone would put every Java process in the same domain. Section 10 walks through that.
+The domain of the running shopapi process. After bootstrap, `ps -eZ | grep shopapi` shows this type in the third field. Labs 0–6 are about this domain: what it tried to do, and which allow lines it still needs. The unit does not set `SELinuxContext=`. `init_daemon_domain(shopapi_t, shopapi_exec_t)` transitions from `init_t` when systemd executes the wrapper. Labeling `/usr/bin/java` would put every Java process in the same domain, so that file stays `java_exec_t`. Section 10 walks through that.
 
 **`shopapi_exec_t`**
 
-The type on the program files under `/opt/shopapi`, including the launcher at `/opt/shopapi/bin/java`. "exec" means "this file is a program you can execute." `ls -Z /opt/shopapi` shows it. The file type and the process type are a pair: the file is `shopapi_exec_t`, the running process is `shopapi_t`.
+The type on the wrapper `/opt/shopapi/bin/shopapi`. "exec" means "this file is a program you can execute." The jar and config under `/opt/shopapi` are `shopapi_lib_t`, not this type. The file type and the process type are a pair: the wrapper is `shopapi_exec_t`, the running process is `shopapi_t`.
 
 **`shopapi_log_t`**
 
@@ -205,7 +205,7 @@ The type on your SSH shell. Together with `unconfined_u` and `unconfined_r`, the
 
 **`unconfined_service_t` and `unconfined_java_t`**
 
-Types you see on the Java process when shopapi was **not** confined. `unconfined_service_t` means systemd started a service and nobody assigned it a domain. `unconfined_java_t` means the Java program started without a domain transition. Either one means bootstrap did not take effect, or the unit is missing `SELinuxContext=shopapi_t`. Run bootstrap again:
+Types you see on the Java process when shopapi was **not** confined. `unconfined_service_t` means systemd started a service and nobody assigned it a domain. `unconfined_java_t` means the Java program started without a domain transition. Either one means bootstrap did not take effect, or the wrapper is not `shopapi_exec_t`, so the transition did not run. Run bootstrap again:
 
 ```bash
 sudo bash scripts/demo_bootstrap.sh --shopapi-only
@@ -255,8 +255,8 @@ Files and processes are labeled separately. The file's type and the process's ty
 ### What a good answer looks like
 
 ```bash
-$ ls -Z /opt/shopapi/bin/java
-system_u:object_r:shopapi_exec_t:s0    /opt/shopapi/bin/java
+$ ls -Z /opt/shopapi/bin/shopapi
+system_u:object_r:shopapi_exec_t:s0    /opt/shopapi/bin/shopapi
 #                      ^^^^^^^^^^^^^^
 #                      file type — the launcher on disk
 
@@ -587,13 +587,7 @@ The sample policy tells this same story with `GET /save-log` writing `/var/log/m
 
 A process does not pick its own label. The kernel assigns one from how the process was started.
 
-**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared, type `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). If every Java process inherited a label from that one file, every Java app would share a domain. The systemd unit therefore sets the process label itself:
-
-```text
-SELinuxContext=system_u:system_r:shopapi_t:s0
-```
-
-systemd is the program that starts services (`systemctl start shopapi`). It runs as `init_t`. It starts shopapi, and the unit tells the kernel the new process's label. The launcher file under `/opt/shopapi` is still labeled `shopapi_exec_t`, so `ls -Z` and the process label agree about which app this is.
+**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared, type `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). If every Java process inherited a label from that one file, every Java app would share a domain. systemd executes `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) transitions `initrc_domain` on that type to `shopapi_t`, and `init_t` is an `initrc_domain`. The unit does not set `SELinuxContext=`. The wrapper then execs `/usr/bin/java`. That execute is `java_exec(shopapi_t)`, not an entrypoint. NEEDS_LIVE_CHECK: `ps -eZ -C java` prints `shopapi_t`.
 
 **The sample app, the other pattern.** `myapp` is started from a program file labeled `myapp_exec_t`. The helper `init_daemon_domain(myapp_t, myapp_exec_t)` tells the kernel: "systemd is starting that file, so the new process is `myapp_t`." That is a **type transition**: the file type plus the parent process decide the child process type.
 
@@ -619,7 +613,8 @@ Each shopapi type is explained in [section 3](#3-the-context-string--four-parts)
 | Type | Used for |
 |------|----------|
 | `shopapi_t` | The running shopapi process |
-| `shopapi_exec_t` | Program files under `/opt/shopapi` |
+| `shopapi_exec_t` | The wrapper `/opt/shopapi/bin/shopapi` |
+| `shopapi_lib_t` | The jar and config under `/opt/shopapi` |
 | `shopapi_log_t` | Logs under `/var/log/shopapi` |
 | `shopapi_var_lib_t` | State under `/var/lib/shopapi` |
 | `shopapi_var_run_t` | Pid file and sockets under `/run/shopapi` |

@@ -915,7 +915,8 @@ def test_demo_present_dry_run() -> None:
     assert "App B" in out or "inherited" in out.lower()
     assert "shopapi" in out.lower() or "Spring Boot" in out
     assert "audit2why" in out
-    assert "SELinuxContext" in out
+    assert "/opt/shopapi/bin/shopapi" in out
+    assert "no SELinuxContext=" in out
     assert "make demo-bootstrap" in out or "demo-bootstrap" in out
     assert_mentions(out, "shopapi", "tomcat")
     assert "status --short selinux" in out
@@ -2126,6 +2127,49 @@ def test_fc_labeling_drift_detection() -> None:
     assert "/var/lib/myapp(/.*)?" in trimmed
 
 
+def test_java_exec_interface_not_entrypoint() -> None:
+    """execute on java_exec_t becomes java_exec(); entrypoint does not."""
+    from deterministic_gen import classify
+    from policy_rules import VERDICT_BASELINE, VERDICT_INTERFACE
+
+    manifest = {
+        "app_name": "shopapi",
+        "domain": "shopapi_t",
+        "paths": {"install_root": "/opt/shopapi"},
+    }
+    need = AccessNeed(
+        "shopapi_t",
+        "java_exec_t",
+        "file",
+        frozenset({"execute", "read", "open", "getattr", "map"}),
+    )
+    finding = classify(need, manifest, ("/usr/bin/java",), "", "", False, None, [])
+    assert finding.verdict == VERDICT_INTERFACE
+    assert finding.rendered == "java_exec(shopapi_t)"
+    assert not finding.rendered.startswith("allow ")
+
+    entry = AccessNeed("shopapi_t", "java_exec_t", "file", frozenset({"entrypoint"}))
+    blocked = classify(entry, manifest, ("/usr/bin/java",), "", "", False, None, [])
+    assert "java_exec(" not in blocked.rendered
+    assert not blocked.rendered.startswith("allow ")
+
+    again = classify(
+        need,
+        manifest,
+        ("/usr/bin/java",),
+        "java_exec(shopapi_t)\n",
+        "",
+        False,
+        None,
+        [],
+    )
+    assert again.verdict == VERDICT_BASELINE
+
+    seed = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
+    assert "java_exec(" not in seed
+    assert "type shopapi_lib_t;" in seed
+
+
 def test_rhel_runtime_file_contexts() -> None:
     myapp_fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
     assert "/run/myapp(/.*)?" in myapp_fc
@@ -2134,8 +2178,10 @@ def test_rhel_runtime_file_contexts() -> None:
     assert "/run/shopapi(/.*)?" in shopapi_fc
     unit = (PROJECT_ROOT / "demo" / "shopapi" / "shopapi.service").read_text(encoding="utf-8")
     assert "NoNewPrivileges=false" in unit
-    assert "SELinuxContext=" in unit
-    assert "ExecStart=/opt/shopapi/bin/java" in unit
+    assert not any(line.startswith("SELinuxContext=") for line in unit.splitlines())
+    assert "ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar" in unit
+    assert "/opt/shopapi/bin/shopapi            -- gen_context(system_u:object_r:shopapi_exec_t,s0)" in shopapi_fc
+    assert "shopapi_lib_t" in shopapi_fc
 
 
 def _tune_report_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -2778,6 +2824,7 @@ def main() -> int:
         ("boolean_curated_when_policy_unavailable", test_boolean_curated_when_policy_unavailable),
         ("boolean_hint_yaml_still_documents_patterns", test_boolean_hint_yaml_still_documents_patterns),
         ("fc_labeling_drift_detection", test_fc_labeling_drift_detection),
+        ("java_exec_interface_not_entrypoint", test_java_exec_interface_not_entrypoint),
         ("rhel_runtime_file_contexts", test_rhel_runtime_file_contexts),
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),

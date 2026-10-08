@@ -1,0 +1,4 @@
+#!/bin/sh
+# Entrypoint for shopapi_t. The file is shopapi_exec_t. The system java
+# stays java_exec_t and is executed, not used as an entrypoint.
+exec /usr/bin/java "$@"
