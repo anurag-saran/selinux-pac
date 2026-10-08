@@ -1007,7 +1007,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
     mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "LAST_VERIFIED:** 2026-09-18" in guide
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
     assert "/feature-spool" in gate
@@ -1084,7 +1084,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "/var/log/audit/audit.log" not in reset_text
     mac_text = mac.read_text(encoding="utf-8")
     prod_text = prod.read_text(encoding="utf-8")
-    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "git checkout main" in mac_text
     assert "gpgcheck=1" in mac_text
     assert "No signing key" in mac_text

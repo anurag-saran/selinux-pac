@@ -11,7 +11,7 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 | | Audience | Setup | Length | Command |
 |---|----------|--------|--------|---------|
 | **This guide (301)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
-| **[203](203-RHEL_TWO_HOST.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
+| **[203](302-TECHNICAL.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
@@ -39,7 +39,7 @@ flowchart LR
 | **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool` in this act. |
 | **6** | Take `shopapi_t` off the permissive list. `/log` still works. `/feature-spool` fails, and the denial says `permissive=0`. `getenforce` still prints Enforcing. | Generate adds only the spool rule. This is the last act of the customer profile. |
 
-The next meeting, when they want Ansible, RPMs, and the soak gate, is [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md).
+The next meeting, when they want Ansible, RPMs, and the soak gate, is [302-TECHNICAL.md](302-TECHNICAL.md).
 
 If you run `--help` on either talk script, the help text names the other script. The customer story is edited in `scripts/demo_present.sh`. The two-VM story is edited in `scripts/demo_e2e_mac.sh`, `demo_e2e_rhel_qa.sh`, and `demo_e2e_rhel_prod.sh`.
 
@@ -99,7 +99,7 @@ bash scripts/demo_present.sh --profile customer
 
 A second Act 2 on the same VM uses the same Mac reset as step 1, then `--preflight` again.
 
-The three-host generate/canary/soak talk is **[203](203-RHEL_TWO_HOST.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
+The three-host generate/canary/soak talk is **[203](302-TECHNICAL.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
 
 ## What you say, command by command
 
@@ -351,7 +351,7 @@ sudo semanage port -a -t shopapi_port_t -p tcp 8091
 curl -sf http://127.0.0.1:8091/health && curl -sf http://127.0.0.1:8091/state && curl -sf http://127.0.0.1:8091/log
 ```
 
-`/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](203-RHEL_TWO_HOST.md).
+`/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](302-TECHNICAL.md).
 
 ### Act 6 — Enforcing payoff
 
@@ -412,4 +412,4 @@ sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissiv
 - Generating a `.te` for Tomcat App A or App B.
 - `semodule -i` (or `audit2allow`) on prod.
 
-**Ship path after generate:** [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md) → [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
+**Ship path after generate:** [302-TECHNICAL.md](302-TECHNICAL.md) → [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).

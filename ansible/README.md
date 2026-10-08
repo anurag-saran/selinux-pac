@@ -26,7 +26,7 @@ Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9
 
 Playbooks delegate to role [`roles/selinux_pac/`](roles/selinux_pac/). The old `myapp_selinux` role is gone — do not restore it. Target scripts live in RPM **`selinux-policy-ops`** at **`/usr/libexec/selinux-policy-ops`** (inventory: `selinux_ops_dir`). Checkout (no ops RPM) sets `selinux_ops_from_package: false` and points `selinux_ops_dir` at the **target** checkout `scripts/` tree (not `playbook_dir` on a laptop).
 
-**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/203-RHEL_TWO_HOST.md`](../docs/demo/203-RHEL_TWO_HOST.md). Testing matrix: [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
+**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md). Testing matrix: [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
 
 ---
 
@@ -67,7 +67,7 @@ Build the module before deploy (`.pp` is not committed). RPM version is taken fr
 bash scripts/compile_and_validate.sh selinux
 ```
 
-**Two RHEL boxes (preferred):** [`docs/demo/203-RHEL_TWO_HOST.md`](../docs/demo/203-RHEL_TWO_HOST.md) — `bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …`.
+**Two RHEL boxes (preferred):** [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md) — `bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …`.
 
 **Laptop / AAP → rhel-qa:** `policy_artifact_dir` and `policy_pp_src` are the controller checkout (compiled `.pp` is copied over). `selinux_ops_dir` and `app_manifest_path` are paths **on rhel-qa** after you clone the repo (`/home/ansible/selinux-pac/...`). Do not set those two from `playbook_dir` — that expands to a Mac/AAP path the guest does not have.
 
@@ -238,7 +238,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.
 
 After an **interrupted canary** (host left on `semodule -DB` or permissive): `semodule -B` + clear permissive — **does not** change the installed policy module.
 
-To wipe leftover **demo** policy on both VMs and start [203-RHEL_TWO_HOST.md](../docs/demo/203-RHEL_TWO_HOST.md) over: `bash scripts/reset_demo_vms.sh` on the Mac (shopapi JVM stays).
+To wipe leftover **demo** policy on both VMs and start [302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md) over: `bash scripts/reset_demo_vms.sh` on the Mac (shopapi JVM stays).
 
 ---
 

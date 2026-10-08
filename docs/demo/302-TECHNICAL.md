@@ -1,6 +1,6 @@
-# 203 — Two Linux VMs (generate / canary / soak)
+# 302 — Two Linux VMs (generate / canary / soak)
 
-This is the meeting after [202](301-CUSTOMER.md). 202 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 202.
+This is the meeting after [301](301-CUSTOMER.md). 301 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 301. Commands were taught in [102](../training/102-COMMANDS.md) and [104](../training/104-HAND-BUILT-MODULE.md). The scripts are [201](../tool/201-TOOL-COMMANDS.md).
 
 **LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`$QA_HOST`) + rhel-prod (`$PROD_HOST`). The host stayed Enforcing the whole way.
 
@@ -42,6 +42,8 @@ To read the narration on a laptop without the VMs: `bash scripts/demo_e2e_mac.sh
 
 ## Part 1 — Mac: can you reach both VMs?
 
+No SELinux command. The Mac has no `getenforce`.
+
 ```mermaid
 flowchart LR
   write["Write the two inventories"] --> ping["Ping both VMs"]
@@ -69,6 +71,8 @@ bash scripts/sync_rhel_dev.sh
 
 ## Part 2 — QA: install shopapi and collect denials
 
+Replaces [104 prep](../training/104-HAND-BUILT-MODULE.md#prep) via [demo_bootstrap.sh](../tool/201-TOOL-COMMANDS.md#scriptsdemobootstrapsh). Denials: [ausearch](../training/102-COMMANDS.md#ausearch--m-avc).
+
 The Mac tells you to run:
 
 ```bash
@@ -89,6 +93,8 @@ Curl only `/health`, `/state`, and `/log`. Do not open `/feature-spool` here. Th
 A good end: the process label is `shopapi_t`, and `ausearch` shows `shopapi_t` lines. Go back to the Mac. It copies the JAR QA just built onto prod, so prod does not need Maven.
 
 ## Part 3 — QA: turn those denials into a module
+
+Replaces [104 lab 3](../training/104-HAND-BUILT-MODULE.md#lab-3--write-the-allow-and-load-it) via [dev_generate_policy.sh](../tool/201-TOOL-COMMANDS.md#scriptsdev_generate_policysh) and [semodule -i](../training/102-COMMANDS.md#semodule--i) on the QA host.
 
 Still on QA, when the Mac says so:
 
@@ -121,6 +127,8 @@ The script copies `shopapi.te`, `shopapi.fc`, `policy_version.txt`, and `shopapi
 
 ## Part 5 — Mac: canary, then enforce on QA
 
+[deploy_canary.yml](../tool/201-TOOL-COMMANDS.md#ansibledeploy_canaryyml) on QA. Day 0 of a production soak installs the RPM. It does not `semodule -i`.
+
 ```mermaid
 flowchart LR
   canary["deploy_canary.yml on QA"] --> lab["LAB ONLY banner"]
@@ -144,6 +152,8 @@ ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e 
 After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permissive.
 
 ## Part 6 — Prod soak hits `/feature-spool`, the gate refuses, then the fix is enforced
+
+[ausearch](../training/102-COMMANDS.md#ausearch--m-avc), then [soak_monitor.yml](../tool/201-TOOL-COMMANDS.md#ansiblesoak_monitoryml). The gate fails closed when `sesearch` is missing. Enforce without `force_enforce` is [enforce_production.yml](../tool/201-TOOL-COMMANDS.md#ansibleenforce_productionyml). The production install is the RPM at priority 200, not a hand `semodule -i` at 400.
 
 ```mermaid
 flowchart TD
@@ -206,6 +216,8 @@ ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.
 Expected: `shopapi_t` is enforcing. The report records `force_enforce`.
 
 ## Part 7 — Outage and rollback
+
+[emergency_rollback.yml](../tool/201-TOOL-COMMANDS.md#ansibleemergency_rollbackyml) is [semanage permissive -a](../training/102-COMMANDS.md#semanage-permissive). `getenforce` stays Enforcing.
 
 ```mermaid
 flowchart TD

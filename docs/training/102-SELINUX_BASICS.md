@@ -807,5 +807,5 @@ Numbered catalog: [docs/README.md](../README.md).
 | **This file (102)** | | What the words and commands mean |
 | **201** | [How the tool works](../tool/201-TOOL-COMMANDS.md) | Which script implements the steps in section 12 |
 | **202** | [Customer talk](../demo/301-CUSTOMER.md) | After 101 |
-| **203** | [Two Linux VMs](../demo/203-RHEL_TWO_HOST.md) | The ship talk |
+| **203** | [Two Linux VMs](../demo/302-TECHNICAL.md) | The ship talk |
 | **301** | [Ship the module](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |

@@ -198,7 +198,7 @@ git checkout -- selinux/shopapi/
 sudo bash scripts/demo_bootstrap.sh --shopapi-only
 ```
 
-Need two VMs from a Mac first? [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md). Run every command in this 101 **on rhel-qa**, not in macOS Terminal.
+Need two VMs from a Mac first? [302-TECHNICAL.md](../demo/302-TECHNICAL.md). Run every command in this 101 **on rhel-qa**, not in macOS Terminal.
 
 ---
 
@@ -673,7 +673,7 @@ You now have the skills the demo assumes. **Do not** run the full talk yet — r
 | **3 shopapi** | Types-only seed, first-ship `/health` `/state` `/log`, generate from **observed** AVCs | Labs 1–4 (the talk curls three first-ship URLs at once; you split `/log` so one AVC was readable). |
 | **4–5** (technical) | PR, canary, soak, `/feature-spool` on **prod**, rollback, recanary | Labs 5–6 on **one** QA host. Prod does **not** `semodule -i`. |
 
-Next: **[202](../demo/301-CUSTOMER.md)** (`demo_present.sh`). Two-host ship path: **[203](../demo/203-RHEL_TWO_HOST.md)**.
+Next: **[202](../demo/301-CUSTOMER.md)** (`demo_present.sh`). Two-host ship path: **[203](../demo/302-TECHNICAL.md)**.
 
 ---
 
@@ -806,4 +806,4 @@ sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "
 - `setenforce 0`
 - `audit2allow` piped to `semodule` on the box
 - `curl …/feature-spool` before lab 5
-- `semodule -i` on **prod** (Ansible / RPM — [203-RHEL_TWO_HOST.md](../demo/203-RHEL_TWO_HOST.md))
+- `semodule -i` on **prod** (Ansible / RPM — [302-TECHNICAL.md](../demo/302-TECHNICAL.md))

@@ -99,7 +99,7 @@ Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-cl
 
 | Follow | For |
 |--------|-----|
-| **[203](docs/demo/203-RHEL_TWO_HOST.md)** | QA box + prod box; **no git clone on prod** |
+| **[203](docs/demo/302-TECHNICAL.md)** | QA box + prod box; **no git clone on prod** |
 | **[301](docs/admin/301-ANSIBLE_OPERATIONS.md)** | Canary, soak, enforce, rollback, and a denial after ship |
 | [ansible/aap/README.md](ansible/aap/README.md) | Click-create job templates + **Release canary** / **Promote to enforce** |
 
@@ -156,7 +156,7 @@ macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still ru
 
 Copy `scripts/lab.env.example` to `scripts/lab.env` and set `QA_HOST`, `PROD_HOST`, and `SSH_USER`. Scripts read `lab.env` when that file is present. If it is absent, they require those three variables. Re-check with `ping` if a VM was recreated.
 
-**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/demo/203-RHEL_TWO_HOST.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
+**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/demo/302-TECHNICAL.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
 
 **Before the talk (101):** [docs/training/101-SELINUX.md](docs/training/101-SELINUX.md) (one host, shopapi). Then pick **one** demo:
 
