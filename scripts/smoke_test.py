@@ -180,6 +180,8 @@ def test_rpm_signing_tree_and_shopapi_ports() -> None:
         assert "dirty git tree" in dirty.stderr
 
         env["FAKE_GIT_STATUS"] = ""
+        # Hide a host rpmbuild. The assertion is the missing-tool refusal.
+        env["PATH"] = str(bindir)
         missing = subprocess.run(
             [BASH, str(build)],
             cwd=PROJECT_ROOT,
@@ -713,6 +715,29 @@ def test_check_soak_ready_gate() -> None:
         assert old.returncode == 0, old.stderr
 
 
+def test_avc_epoch_window() -> None:
+    """Formatted ausearch -ts dates are not used. Denials after an epoch marker count."""
+    query = subprocess.run(
+        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_query_epoch.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert query.returncode == 0, query.stdout + query.stderr
+    window = subprocess.run(
+        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_epoch_window.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert window.returncode == 0, window.stdout + window.stderr
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "test_avc_epoch_window.sh" in workflow
+    assert "AVC_REQUIRE_AUSEARCH" in workflow
+
+
 def test_monitor_avc_skip() -> None:
     script = PROJECT_ROOT / "scripts" / "monitor_avc.sh"
     manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
@@ -934,6 +959,17 @@ def test_demo_present_dry_run() -> None:
     assert "/feature-spool" in out
     assert "permissive=0" in out
     assert out.find("Act 3") < out.find("Act 6")
+    blocked = out.find("--apply --app-name shopapi")
+    review1 = out.find("--allow-needs-review")
+    load1 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp")
+    perm = out.find("semanage permissive -d shopapi_t")
+    fail_curl = out.find("/feature-spool || true")
+    review2 = out.find("--allow-needs-review", perm)
+    load2 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp", load1 + 1)
+    payoff = out.find("HTTP 200. shopapi_t is still enforcing.", load2)
+    assert -1 not in (blocked, review1, load1, perm, fail_curl, review2, load2, payoff), out
+    assert blocked < review1 < load1 < perm < fail_curl < review2 < load2 < payoff, out
+    assert "This is the QA host" in out
     tech = subprocess.run(
         [BASH, str(script), "--dry-run", "--no-type", "--auto", "--profile", "technical"],
         cwd=PROJECT_ROOT,
@@ -946,6 +982,12 @@ def test_demo_present_dry_run() -> None:
     assert "tomcat_can_network_connect" not in out
     assert "Already enforcing" not in out
     assert "httpd_can_network_connect" not in out
+    assert "Tomcat is vendor-covered" not in out
+    assert "covered / tune / generate" not in out
+    assert "Covered → tuned → generated" not in out
+    assert "NEEDS_LIVE_CHECK" not in out
+    assert "no name_bind denial on distro tomcat_t" in out
+    assert "no mislabel denial on distro tomcat_t" in out
     jws = subprocess.run(
         [
             BASH,
@@ -968,6 +1010,9 @@ def test_demo_present_dry_run() -> None:
     assert "jws6_tomcat" in jws_out
     assert "DENIED" in jws_out
     assert "loaded_unconfined" not in jws_out
+    assert "Tomcat is vendor-covered" in jws_out
+    assert "name_bind on unreserved_port_t" in jws_out
+    assert "Covered → tuned → generated" in jws_out
     help_run = subprocess.run(
         [BASH, str(script), "--help"],
         cwd=PROJECT_ROOT,
@@ -1043,6 +1088,47 @@ def _without_lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
     ):
         env.pop(key, None)
     return env
+
+
+def test_prod_soak_gate_and_lab_signing() -> None:
+    """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    assert "LAST_VERIFIED:** 2026-09-18" in guide
+    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
+    assert "/feature-spool" in gate
+    assert "e2e_run_expect_fail" in gate
+    assert "soak_monitor.yml" in gate
+    assert "enforce_production.yml -e change_ticket=DEMO\"" in gate
+    assert "force_enforce=true" not in gate
+    clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
+    assert "soak-clean" in clean
+    assert "force_enforce=true" in clean
+    assert "day count" in clean
+    talk = mac.split("Part 6 —", 1)[1]
+    dirty = talk.find("mac_ship_prod soak_demo")
+    fix = talk.find("--part generate --skip-export")
+    recanary = talk.find("mac_ship_prod recanary")
+    rollback = talk.find("emergency_rollback.yml")
+    assert -1 not in (dirty, fix, recanary, rollback)
+    assert dirty < fix < recanary < rollback
+    assert "/feature-spool" in prod
+    assert "part_soak()" in prod
+    assert "lab_signing_setup.sh" in guide
+    assert "gpgcheck=1" in guide
+    script = PROJECT_ROOT / "scripts" / "lab_signing_setup.sh"
+    body = script.read_text(encoding="utf-8")
+    assert "gpgcheck=1" in body
+    assert "--export-secret-keys" not in body
+    refused = subprocess.run(
+        [BASH, str(script), "--print-secret"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert refused.returncode != 0
+    assert "private key" in (refused.stdout + refused.stderr).lower()
 
 
 def test_demo_e2e_scripts_dry_run() -> None:
@@ -1272,6 +1358,43 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
     assert "Bad substitution" not in out
 
 
+def test_narration_live_checks_and_enforce_paths() -> None:
+    """Distro narration, one live-check list, and enforce-check uses the manifest."""
+    live = PROJECT_ROOT / "docs" / "demo" / "LIVE_CHECKS.md"
+    text = live.read_text(encoding="utf-8")
+    assert "matchpathcon /run/shopapi/no-such-file" in text
+    assert "ps -o label,args -C java" in text
+    assert "rm -rf /run/shopapi" not in text
+    assert "ps -eZ -C java" not in text
+    hits = []
+    for path in PROJECT_ROOT.rglob("*"):
+        if not path.is_file() or path == live or path.name == "smoke_test.py" or ".git" in path.parts:
+            continue
+        if path.suffix not in {".md", ".sh", ".yml", ".py", ".service"} and path.name != "boolean_hints.yml":
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if "NEEDS_LIVE_CHECK" in body:
+            hits.append(str(path.relative_to(PROJECT_ROOT)))
+    assert hits == [], hits
+    hints = (PROJECT_ROOT / "config" / "boolean_hints.yml").read_text(encoding="utf-8")
+    assert "jws6_can_network_connect" not in hints
+    assert "httpd_can_network_connect" in hints
+    gen = (PROJECT_ROOT / "scripts" / "dev_generate_policy.sh").read_text(encoding="utf-8")
+    start = gen.index("run_enforce_check()")
+    end = gen.index("print_pr_steps()", start)
+    body = gen[start:end]
+    assert "/opt/myapp" not in body
+    assert "myapp.service" not in body
+    assert "PATHS_CSV" in body
+    assert "PRIMARY_SERVICE" in body
+    basics = (PROJECT_ROOT / "docs" / "training" / "102-SELINUX_BASICS.md").read_text(encoding="utf-8")
+    assert "matchpathcon /run/shopapi/no-such-file" in basics
+    assert "ps -o label,args -C java" in basics
+
+
 def test_demo_present_preflight_names_bootstrap() -> None:
     script = PROJECT_ROOT / "scripts" / "demo_present.sh"
     result = subprocess.run(
@@ -1323,14 +1446,32 @@ def test_selinux_booleans_and_app_ci() -> None:
         encoding="utf-8"
     )
     assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
-    assert "uses: OWNER/selinux-pac/.github/workflows/selinux-policy-ci.yml@REF" in guide
+    assert "uses: OWNER/selinux-pac/.github/workflows/selinux-policy-app.yml@REF" in guide
+    assert "does not work" in guide
     assert "module `jboss`" not in guide
-    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml").read_text(
         encoding="utf-8"
     )
     assert "workflow_call:" in workflow
     assert "app-forbidden-patterns:" in workflow
     assert "app-compiled-policy:" in workflow
+    assert "tools_repo:" in workflow
+    assert "tools_ref:" in workflow
+    assert "anurag-saran/selinux-pac" in workflow
+    assert "github.event_name" not in workflow
+    assert "github.workflow_ref" not in workflow
+    own = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_call:" not in own
+    assert "github.event_name" not in own
+    proof = (
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml"
+    ).read_text(encoding="utf-8")
+    assert "uses: ./.github/workflows/selinux-policy-app.yml" in proof
+    assert "selinux/shopapi" in proof
+    assert "can-setenforce" in proof
+    assert "bypass module was accepted" in proof
     canary = (
         PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "canary.yml"
     ).read_text(encoding="utf-8")
@@ -1922,12 +2063,15 @@ def test_needs_review_hits() -> None:
 def test_deterministic_fixture_classify() -> None:
     """Golden verdict checks for deterministic_gen --explain and full generation."""
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
-    manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
+    default_manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
     te = PROJECT_ROOT / "selinux" / "myapp.te"
     fc = PROJECT_ROOT / "selinux" / "myapp.fc"
 
     for case_dir in _deterministic_fixture_dirs(root):
         case = case_dir.name
+        manifest = case_dir / "manifest.yml"
+        if not manifest.is_file():
+            manifest = default_manifest
         meta = _deterministic_case_meta(case_dir)
         mock = _deterministic_sepolgen_mock(case_dir)
         boolean_mock = _deterministic_boolean_mock(case_dir)
@@ -2091,7 +2235,9 @@ def test_deterministic_fixture_classify() -> None:
             ).hexdigest()
             assert digest_a == digest_b, f"{case}: non-deterministic output between runs"
         if case in ("04-boolean-network-connect", "10-boolean-hint"):
-            out_te = (case_dir / "_out" / "myapp.te").read_text(encoding="utf-8")
+            # Fixture 10's manifest app_name is httpd, so the generator writes httpd.te.
+            te_name = "httpd.te" if case == "10-boolean-hint" else "myapp.te"
+            out_te = (case_dir / "_out" / te_name).read_text(encoding="utf-8")
             assert "http_port_t" not in out_te, f"{case}: must not add permanent allow on http_port_t"
             row = next(r for r in rows if r.get("verdict") == "boolean")
             assert row.get("boolean") == "httpd_can_network_connect"
@@ -2100,6 +2246,9 @@ def test_deterministic_fixture_classify() -> None:
         if case == "10-boolean-hint":
             row10 = next(r for r in rows if r.get("verdict") == "boolean")
             assert row10.get("engine") == "curated_override", row10
+            avc10 = (case_dir / "avc.log").read_text(encoding="utf-8")
+            assert "httpd_t" in avc10
+            assert "myapp_t" not in avc10
 
 
 def test_payments_onboarding_module() -> None:
@@ -2248,7 +2397,11 @@ def test_boolean_hint_yaml_still_documents_patterns() -> None:
 
     hints = load_boolean_hints(PROJECT_ROOT / "config" / "boolean_hints.yml")
     assert hints and hints[0].get("boolean") == "httpd_can_network_connect"
-    assert "src_type" not in (hints[0].get("match") or {})
+    match = hints[0].get("match") or {}
+    assert match.get("src_type") == "httpd_t"
+    assert match.get("tgt_type") == "http_port_t"
+    assert match.get("tclass") == "tcp_socket"
+    assert match.get("perms") == ["name_connect"]
 
 
 def test_fc_labeling_drift_detection() -> None:
@@ -2717,19 +2870,32 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         "fc-relabel-shadow",
         "foreign-entrypoint",
         "dontaudit-forbidden",
+        "can-setenforce",
+        "can-load-policy",
+        "can-read-shadow-passwords",
+        "can-write-shadow-passwords",
     ]
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-bypasses"
     script = (PROJECT_ROOT / "scripts" / "reject_compiled_bypasses.sh").read_text(encoding="utf-8")
     semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(encoding="utf-8")
     assert "was accepted" in script
+    assert "accepted clean" in script
+    assert "expected message" in script
+    assert "pac_control_t" in semantics
+    assert "attribute grant beyond control" in semantics
     assert "--dontaudit" in semantics
     assert "/etc/shadow" in semantics
+    clean = root / "clean" / "bypass.te"
+    assert "typeattribute" not in clean.read_text(encoding="utf-8")
+    assert "allow " not in clean.read_text(encoding="utf-8")
     for name in names:
         assert name in script
         te = (root / name / "bypass.te").read_text(encoding="utf-8")
         fc = (root / name / "bypass.fc").read_text(encoding="utf-8")
         assert te.startswith("policy_module(bypass, 1.0.0)\n")
         assert "bypass_exec_t" in fc
+        expected = (root / name / "expected.txt").read_text(encoding="utf-8").strip()
+        assert expected, name
     interface_te = (root / "interface-macro" / "bypass.te").read_text(encoding="utf-8")
     interface_if = (root / "interface-macro" / "bypass.if").read_text(encoding="utf-8")
     assert "allow " not in interface_te
@@ -2756,6 +2922,32 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
     assert "dontaudit bypass_t shadow_t:file read;" in (
         root / "dontaudit-forbidden" / "bypass.te"
     ).read_text(encoding="utf-8")
+    for attr in (
+        "can_setenforce",
+        "can_load_policy",
+        "can_read_shadow_passwords",
+        "can_write_shadow_passwords",
+    ):
+        matched = list(root.glob(f"*/bypass.te"))
+        assert any(
+            f"typeattribute bypass_t {attr};" in path.read_text(encoding="utf-8")
+            for path in matched
+        ), attr
+        assert attr in semantics
+    assert "sesearch --direct" not in semantics
+    assert "typepermissive" in semantics
+    assert (root / "can-setenforce" / "expected.txt").read_text(encoding="utf-8").strip() == (
+        "attribute grant beyond control: setenforce on security"
+    )
+    assert (root / "can-load-policy" / "expected.txt").read_text(encoding="utf-8").strip() == (
+        "attribute grant beyond control: load_policy on security"
+    )
+    assert (root / "can-read-shadow-passwords" / "expected.txt").read_text(
+        encoding="utf-8"
+    ).strip() == "attribute grant beyond control: can_read_shadow_passwords"
+    assert (root / "can-write-shadow-passwords" / "expected.txt").read_text(
+        encoding="utf-8"
+    ).strip() == "attribute grant beyond control: can_write_shadow_passwords"
 
     workflow = yaml.safe_load(
         (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(encoding="utf-8")
@@ -3158,10 +3350,13 @@ def main() -> int:
         ("assemble_pr_body", test_assemble_pr_body),
         ("verify_file_contexts_skip", test_verify_file_contexts_skip),
         ("check_soak_ready_gate", test_check_soak_ready_gate),
+        ("avc_epoch_window", test_avc_epoch_window),
         ("monitor_avc_skip", test_monitor_avc_skip),
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
+        ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
+        ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),

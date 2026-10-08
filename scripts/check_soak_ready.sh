@@ -147,8 +147,7 @@ fi
 
 now_epoch="$(date +%s)"
 days_elapsed=$(( (now_epoch - deploy_epoch) / 86400 ))
-since_ts="$(avc_epoch_to_ts "${deploy_epoch}")"
-avc_count="$(count_domain_events_since "${DOMAIN}" "${since_ts}")"
+avc_count="$(count_domain_events_since "${DOMAIN}" "${deploy_epoch}")"
 
 log_info "Soak: ${days_elapsed} day(s) elapsed (minimum ${MIN_DAYS})"
 log_info "Events since canary deploy for ${DOMAIN}: ${avc_count} (maximum ${MAX_AVC})"

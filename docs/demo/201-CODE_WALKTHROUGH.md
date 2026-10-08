@@ -96,7 +96,7 @@ flowchart TD
 3. **Export AVCs** — `scripts/dev_generate_policy.sh --app-name shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
 4. **Generate policy** — **`cli/deterministic_gen.py`** classifies each denial and writes the `.te` / `.fc` updates. It runs offline, from rules in the repo.
 5. **Review** — Output lands in **`policy_out/`** (`.te`, `.fc`, `pr_summary.md`, `findings.json`). You compare to **`selinux/`** and open a PR.
-6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls that workflow. The generator already ran the same forbidden-pattern check, so `forbidden-patterns` should pass.
+6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls **`selinux-policy-app.yml`** and passes the tools repo and ref. The generator already ran the same forbidden-pattern check, so `forbidden-patterns` should pass.
 7. **Deploy** — Admins use **AAP** ([`ansible/aap/`](../../ansible/aap/)): workflow **Release canary**, daily **Soak monitor**, then **Promote to enforce**. Soak fail: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). See [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
 
 **Golden rule:** committed policy lives in **`selinux/`**. **`policy_out/`** is disposable local output.

@@ -255,7 +255,6 @@ EnvironmentFile=-/etc/shopapi.env
 WorkingDirectory={install_root}
 # Wrapper is shopapi_exec_t and execs /usr/bin/java (java_exec_t).
 # init_daemon_domain transitions from init_t. No SELinuxContext=.
-# NEEDS_LIVE_CHECK: ps -eZ -C java  (type is {domain}).
 ExecStart={install_root}/bin/shopapi -jar {install_root}/shopapi.jar
 Restart=on-failure
 RestartSec=5

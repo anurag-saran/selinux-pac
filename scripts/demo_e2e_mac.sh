@@ -93,7 +93,7 @@ mac_ship_prod() {
 
     tlab_explain "Prod installs from a dnf repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand."
     if [[ -z "${SELINUX_GPG_NAME:-}" ]]; then
-        echo "No signing key: SELINUX_GPG_NAME is unset. This lab cannot publish a repository prod will trust. Say that on screen."
+        echo "No signing key: SELINUX_GPG_NAME is unset. Run bash scripts/lab_signing_setup.sh, then export SELINUX_GPG_NAME and SELINUX_RPM_REPO. Do not install unsigned RPMs on prod."
         echo "Expected: spoken stop — no signing key; do not install unsigned RPMs on prod"
     else
         e2e_run "bash packaging/publish_internal.sh"
@@ -112,44 +112,42 @@ Press Enter here when that is what you showed." \
     tlab_pause
 
     if [[ "${mode}" == "soak_demo" ]]; then
-        tlab_print_section "Soak: shopapi still works, AVC file is clean"
+        tlab_print_section "Soak: /feature-spool is denied, so the gate refuses"
         e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak
-curl /health /state /log (not /feature-spool). They should return 200 and ausearch should show no shopapi denials.
-Press Enter here when you have seen both." \
+Curl /health /state /log /feature-spool. shopapi_t is permissive, so the page can still return 200. ausearch must show a shopapi denial for /var/spool/shopapi.
+Press Enter here when the denial is on screen." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak $(e2e_auto_flags)'"
 
-        tlab_explain "soak_monitor gates net-new vs installed policy. First-ship URLs are already allowed, so this playbook should pass (failed=0)."
-        e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
+        tlab_explain "soak_monitor must fail. The spool write is not in the module we just shipped."
+        e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
         tlab_pause
 
         e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc
-There should be no /var/lib/shopapi/selinux_soak_last_fail.avc. Press Enter here when you have shown that." \
+/var/lib/shopapi/selinux_soak_last_fail.avc should exist. Press Enter here when you have shown that." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc $(e2e_auto_flags)'"
-    else
-        tlab_explain "Recanary soak: the new module should already allow the spool write, so net-new is 0."
-        e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
-        tlab_pause
+
+        tlab_explain "Enforce without force_enforce. That flag would skip this AVC failure and the seven-day count. We do not pass it. The day count is not how you get past a denial."
+        e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO"
+        tlab_checkpoint "The gate refused. shopapi_t stays permissive. We do not force_enforce a failed soak."
+        return 0
     fi
 
-    tlab_explain "soak_status is read-only. inventory.production.yml still wants 7 days."
+    tlab_explain "Recanary soak: the new module allows the spool write, so net-new is 0."
+    e2e_handoff "On the PROD VM window run:
+  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-clean
+/health /state /log /feature-spool should return 200, and ausearch should show no shopapi denial since this canary.
+Press Enter here when you have seen that." \
+        "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-clean $(e2e_auto_flags)'"
+    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
+    tlab_pause
+    tlab_explain "soak_status is read-only. inventory.production.yml still wants 7 days. The AVC gate passed."
     e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --limit canary"
     tlab_pause
-
-    if [[ "${DEMO_PROD_FORCE_ENFORCE}" == "true" ]]; then
-        if [[ "${mode}" == "soak_demo" ]]; then
-            tlab_explain "Soak was clean. This recording treats soak as complete with force_enforce=true plus a change ticket. Then we will call /feature-spool, which is not in this module."
-        else
-            tlab_explain "This recording uses force_enforce=true plus a change ticket."
-        fi
-        e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true"
-        tlab_checkpoint "failed=0 on prod for the talk. Real shops omit force_enforce and wait seven clean days."
-    else
-        tlab_explain "DEMO_PROD_FORCE_ENFORCE is false — enforce MUST fail until seven days have passed."
-        e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=CHG123"
-        tlab_checkpoint "You already locked down the QA VM. Prod waits."
-    fi
+    tlab_explain "This recording cannot wait 7 days. force_enforce skips the day count and is written in the deploy report. It is not a way past a failed soak."
+    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true"
+    tlab_checkpoint "AVC gate passed. force_enforce recorded the day-count skip. shopapi_t is enforcing."
 }
 
 mac_copy_prod_avc_to_dev() {
@@ -167,7 +165,7 @@ cd "${PROJECT_ROOT}"
 e2e_banner "MAC — the remote control (no SELinux on this laptop)"
 tlab_why "macOS cannot enforce SELinux. This window talks to two RHEL VMs over SSH: QA ${DEV_HOST} and prod ${PROD_HOST}."
 tlab_explain "Look at the prompt. If it says rhel-qa or rhel-prod, you are in the wrong window."
-tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate policy from AVCs on rhel-qa → PR on selinux-pac → prod canary/soak → treat soak as complete and enforce → /feature-spool fails → admin rollback → generate the fix on rhel-qa → second PR → recanary."
+tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate on rhel-qa → PR → prod canary. The soak curls /feature-spool, the monitor fails, and enforce without force_enforce refuses. Fix on rhel-qa, second PR, recanary, clean soak, then enforce. The day-count skip is force_enforce and is written in the deploy report. The outage and rollback beat comes after that."
 tlab_pause
 
 tlab_print_section "Part 1 — Can the Mac reach the VMs?"
@@ -223,25 +221,11 @@ tlab_print_section "Part 5 — Canary + lab enforce on QA"
 mac_canary_enforce_dev
 tlab_pause
 
-tlab_print_section "Part 6 — RPMs on prod, canary, clean soak, then enforce"
+tlab_print_section "Part 6 — Prod soak hits /feature-spool; the gate refuses; then the fix is enforced"
 mac_ship_prod soak_demo
 tlab_pause
 
-tlab_print_section "Part 7 — Fail on prod; admin restore; generate on QA; recanary"
-e2e_handoff "On the PROD VM window run:
-  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
-curl /feature-spool should return 500. Press Enter here when /tmp/prod-feature-spool.avc exists." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
-
-tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
-e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
-tlab_pause
-
-e2e_handoff "On the PROD VM window run:
-  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
-curl /health and /feature-spool should return 200 again. Press Enter here when the app is up." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
-
+tlab_explain "The denial is already in /tmp/prod-feature-spool.avc. Generate the spool allow on rhel-qa. Do not semodule -i on prod."
 mac_copy_prod_avc_to_dev
 tlab_pause
 
@@ -255,15 +239,27 @@ tlab_pause
 mac_open_policy_pr
 tlab_pause
 
-tlab_explain "Recanary the new module on QA, then rebuild RPMs and ship prod. We still do not generate on prod."
+tlab_explain "Merge that PR. Recanary the new module on QA, then rebuild RPMs and ship prod. The clean soak must pass before enforce."
 mac_canary_enforce_dev
 tlab_pause
 mac_ship_prod recanary
+tlab_pause
 
-e2e_handoff "On the PROD VM window retest:
-  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part retest
-curl /feature-spool should return 200 under the new module." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part retest $(e2e_auto_flags)'"
+tlab_print_section "Part 7 — Outage and rollback"
+tlab_explain "This beat is the enforcing denial and the rollback. It is what you show when shopapi_t is enforcing and the loaded module does not allow /var/spool/shopapi. After the fix above, that allow is loaded, so /feature-spool returns 200. Say the rollback playbook anyway: it puts the domain back to permissive and getenforce stays Enforcing."
+e2e_handoff "On the PROD VM window run:
+  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
+When the spool allow is not loaded, curl /feature-spool returns 500 and /tmp/prod-feature-spool.avc is written. After Part 6, expect HTTP 200." \
+    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
+
+tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
+e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
+tlab_pause
+
+e2e_handoff "On the PROD VM window run:
+  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
+curl /health and /feature-spool should return 200 again. Press Enter here when the app is up." \
+    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
 
 echo
 echo -e "${TLAB_BOLD}End of the Mac talk track.${TLAB_NC} Full script: docs/demo/203-RHEL_TWO_HOST.md"

@@ -150,9 +150,10 @@ fi
 
 semodule -B 2>/dev/null || true
 
-# Do not stop auditd or rewrite /var/log/audit. Later ausearch -ts starts here.
+# Do not stop auditd or rewrite /var/log/audit. The marker is an epoch.
+# Later readers keep msg=audit records at or after this second.
 mkdir -p /var/lib/selinux-pac-demo
-date '+%m/%d/%Y %H:%M:%S' >/var/lib/selinux-pac-demo/ausearch-since
+date +%s >/var/lib/selinux-pac-demo/ausearch-since
 chmod 0644 /var/lib/selinux-pac-demo/ausearch-since
 
 rm -rf /var/lib/selinux-policy-ops/shopapi \

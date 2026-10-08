@@ -497,8 +497,19 @@ run_enforce_check() {
 
     semodule -i "${pp_path}"
     semanage permissive -d "${DOMAIN}" 2>/dev/null || true
-    restorecon -Rv /opt/myapp /var/lib/myapp /var/log/myapp /run/myapp 2>/dev/null || true
-    systemctl restart myapp-backend.service myapp.service
+    if [[ -z "${PATHS_CSV:-}" || -z "${PRIMARY_SERVICE:-}" ]]; then
+        log_error "enforce-check needs the manifest paths and primary unit"
+        return 1
+    fi
+    local -a restore_paths=()
+    local -a units=()
+    IFS=',' read -r -a restore_paths <<< "${PATHS_CSV}"
+    restorecon -Rv "${restore_paths[@]}" 2>/dev/null || true
+    if [[ "${HAS_BACKEND:-0}" == "1" && -n "${BACKEND_SERVICE:-}" ]]; then
+        units+=("${BACKEND_SERVICE}")
+    fi
+    units+=("${PRIMARY_SERVICE}")
+    systemctl restart "${units[@]}"
     if bash "${SCRIPT_DIR}/wait_for_endpoints.sh" --host 127.0.0.1 --retries 10 --delay 2; then
         log_info "enforce-check passed under enforcing ${DOMAIN}"
         return 0

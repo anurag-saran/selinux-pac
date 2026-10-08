@@ -357,8 +357,12 @@ act0_triage() {
             tlab_explain "Loaded module tomcat is not confinement. Distro $(demo_tomcat_domain) is unconfined_domain_type — Act 1/2 denials will not fire. JWS jws6_tomcat_t would. This talk still generates only for shopapi."
         fi
     fi
-    tlab_explain "This demo will generate policy only for shopapi. Tomcat is vendor-covered."
-    tlab_checkpoint "Audience can place their estate: covered / tune / generate."
+    if present_distro_unconfined; then
+        tlab_explain "This demo generates policy only for shopapi. Distro tomcat_t is unconfined, so Act 1 and Act 2 do not produce denials."
+    else
+        tlab_explain "This demo will generate policy only for shopapi. Tomcat is vendor-covered."
+        tlab_checkpoint "Audience can place their estate: covered / tune / generate."
+    fi
     tlab_pause
 }
 
@@ -397,6 +401,18 @@ act1_app_a() {
         tlab_checkpoint "Vendor policy confined this domain. A real denial on demand. We authored nothing."
     fi
     tlab_pause
+}
+
+# Distro tomcat_t is unconfined_domain_type. Dry-run uses the variant flag.
+# A live host uses the type on the policy.
+present_distro_unconfined() {
+    if [[ "${E2E_DRY}" -eq 1 && "${DEMO_DRY_UNCONFINED}" -eq 1 ]]; then
+        return 0
+    fi
+    if [[ "${E2E_DRY}" -eq 0 ]] && demo_selinux_type_unconfined "$(demo_tomcat_domain)"; then
+        return 0
+    fi
+    return 1
 }
 
 # Return 0 if ausearch -ts recent matches PATTERN. Dry-run always 0 (show the fix).
@@ -440,11 +456,16 @@ act2_app_b() {
     e2e_run "curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 2 http://127.0.0.1:${APP_B_PORT}/inherited/ || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | grep name_bind | tail -n 10 || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | audit2why | tail -n 30 || true"
-    demo_expect "name_bind on unreserved_port_t → semanage port -a -t http_port_t -p tcp ${APP_B_PORT}"
-    act2_fix_if_avc "port ${APP_B_PORT}" "name_bind" \
-        "sudo semanage port -a -t http_port_t -p tcp ${APP_B_PORT} || sudo semanage port -m -t http_port_t -p tcp ${APP_B_PORT}"
-    if [[ "${E2E_DRY}" -eq 1 ]] || act2_has_avc "name_bind"; then
-        e2e_run "sudo systemctl restart $(demo_tomcat_service)"
+    if present_distro_unconfined; then
+        demo_expect "no name_bind denial on distro tomcat_t — say so and skip. Do not label the port."
+        echo "No AVC matching name_bind for port ${APP_B_PORT} — skipping that one-line fix. Do not invent a .te."
+    else
+        demo_expect "name_bind on unreserved_port_t → semanage port -a -t http_port_t -p tcp ${APP_B_PORT}"
+        act2_fix_if_avc "port ${APP_B_PORT}" "name_bind" \
+            "sudo semanage port -a -t http_port_t -p tcp ${APP_B_PORT} || sudo semanage port -m -t http_port_t -p tcp ${APP_B_PORT}"
+        if [[ "${E2E_DRY}" -eq 1 ]] || act2_has_avc "name_bind"; then
+            e2e_run "sudo systemctl restart $(demo_tomcat_service)"
+        fi
     fi
     e2e_run "curl -sS http://127.0.0.1:${APP_B_PORT}/inherited/ || true"
 
@@ -452,11 +473,16 @@ act2_app_b() {
     e2e_run "curl -sS http://127.0.0.1:${APP_B_PORT}/inherited/data.jsp || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | grep -E 'appdata|user_home_t' | tail -n 10 || true"
     e2e_run "sudo ausearch -m avc -ts recent 2>/dev/null | audit2why | tail -n 30 || true"
-    demo_expect "mislabeled ${APP_B_DATA} → semanage fcontext + restorecon (no .te)"
-    act2_fix_if_avc "label ${APP_B_DATA}" "appdata|user_home_t" \
-        "sudo semanage fcontext -a -t ${fctx} '${APP_B_DATA}(/.*)?' || sudo semanage fcontext -a -t tomcat_var_lib_t '${APP_B_DATA}(/.*)?'"
-    if [[ "${E2E_DRY}" -eq 1 ]] || act2_has_avc "appdata|user_home_t"; then
-        e2e_run "sudo restorecon -Rv ${APP_B_DATA}"
+    if present_distro_unconfined; then
+        demo_expect "no mislabel denial on distro tomcat_t — say so and skip. Do not add an fcontext."
+        echo "No AVC matching appdata or user_home_t for ${APP_B_DATA} — skipping that one-line fix. Do not invent a .te."
+    else
+        demo_expect "mislabeled ${APP_B_DATA} → semanage fcontext + restorecon (no .te)"
+        act2_fix_if_avc "label ${APP_B_DATA}" "appdata|user_home_t" \
+            "sudo semanage fcontext -a -t ${fctx} '${APP_B_DATA}(/.*)?' || sudo semanage fcontext -a -t tomcat_var_lib_t '${APP_B_DATA}(/.*)?'"
+        if [[ "${E2E_DRY}" -eq 1 ]] || act2_has_avc "appdata|user_home_t"; then
+            e2e_run "sudo restorecon -Rv ${APP_B_DATA}"
+        fi
     fi
     e2e_run "curl -sS http://127.0.0.1:${APP_B_PORT}/inherited/data.jsp || true"
 
@@ -491,9 +517,13 @@ act2_app_b() {
     demo_expect "semanage fcontext / setsebool / semanage port — zero policy module"
     if [[ "${E2E_DRY}" -eq 1 ]]; then
         echo "bash scripts/dev_generate_policy.sh --tune-report --app-name tomcat --unit $(demo_tomcat_service)"
-        echo "semanage fcontext -a -t ${fctx} \"${APP_B_DATA}(/.*)?\"  &&  restorecon -Rv ${APP_B_DATA}"
-        echo "(no setsebool unless audit2why names a boolean that getsebool lists)"
-        echo "semanage port -a -t http_port_t -p tcp ${APP_B_PORT}"
+        if present_distro_unconfined; then
+            echo "(distro tomcat_t: no name_bind, no mislabeled file, no name_connect — tune report has no host fix)"
+        else
+            echo "semanage fcontext -a -t ${fctx} \"${APP_B_DATA}(/.*)?\"  &&  restorecon -Rv ${APP_B_DATA}"
+            echo "(no setsebool unless audit2why names a boolean that getsebool lists)"
+            echo "semanage port -a -t http_port_t -p tcp ${APP_B_PORT}"
+        fi
         echo "(dry-run — live: policy_out/tune_report.md; still no .te)"
     else
         e2e_run "bash scripts/dev_generate_policy.sh --tune-report --app-name tomcat --unit $(demo_tomcat_service)" || true
@@ -504,10 +534,10 @@ act2_app_b() {
     demo_expect "empty — nothing under selinux/"
     e2e_run "sudo semodule -l | wc -l"
     demo_expect "${modules_before} — unchanged; we did not load a new module"
-    if [[ "${E2E_DRY}" -eq 1 ]]; then
-        tlab_checkpoint "Three probes, one-line fixes only when a denial was real, zero .te. If you were about to write a module for App B, the app was configured wrong."
-    elif demo_selinux_type_unconfined "$(demo_tomcat_domain)"; then
+    if present_distro_unconfined; then
         tlab_checkpoint "Distro tomcat_t is unconfined — App B probes produced no AVC, so we skipped the tunings. Zero .te. JWS would have needed the three host commands. shopapi is still the generate target."
+    elif [[ "${E2E_DRY}" -eq 1 ]]; then
+        tlab_checkpoint "Three probes, one-line fixes only when a denial was real, zero .te. If you were about to write a module for App B, the app was configured wrong."
     else
         tlab_checkpoint "Three probes, one-line fixes only when a denial was real, zero .te. If you were about to write a module for App B, the app was configured wrong."
     fi
@@ -520,7 +550,7 @@ act3_generate() {
     e2e_run "systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'"
     demo_expect "ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar and no SELinuxContext= line"
     e2e_run "ps -o label=,comm= -C java | head"
-    demo_expect "shopapi_t java. NEEDS_LIVE_CHECK: ps -eZ -C java"
+    demo_expect "shopapi_t java"
     local shop_port
     shop_port="$(demo_manifest_http_port "${PROJECT_ROOT}/config/shopapi.manifest.yml")"
     tlab_explain "Exercise endpoints under the permissive seed so the AVC log is real. Types-only seed is committed. Allows come from those AVCs — not a JVM cookbook. execmem is needs_review if and only if the AVC log shows it."
@@ -533,7 +563,14 @@ act3_generate() {
     tlab_explain "execmem is memory that is both writable and executable. The generator recorded the denial and refused to write the allow. The log showed it, so the next command opts in."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
     demo_expect "second run writes the reviewed execmem allow; findings.json lists observed verdicts"
-    tlab_checkpoint "This is the first time we authored policy. We declined twice first."
+    tlab_explain "This is the QA host. Compile and load the module here. Production does not semodule -i."
+    e2e_run "sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi"
+    e2e_run "sudo semodule -i selinux/shopapi/shopapi.pp"
+    e2e_run "sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi"
+    e2e_run "sudo semanage port -a -t shopapi_port_t -p tcp ${shop_port} 2>/dev/null || sudo semanage port -l | grep shopapi_port_t"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/health && curl -sf http://127.0.0.1:${shop_port}/state && curl -sf http://127.0.0.1:${shop_port}/log"
+    demo_expect "HTTP 200 on /health /state /log after the module is loaded"
+    tlab_checkpoint "This is the first time we authored policy. We declined twice first. The loaded module still serves the first-ship URLs."
     tlab_pause
 }
 
@@ -554,6 +591,16 @@ act6_enforce_payoff() {
     tlab_explain "Generate again. execmem and the /log allow are baseline. The new lines are the spool rule only."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
     demo_expect "spool rule is new; execmem appears once"
+    tlab_explain "This is the QA host. Load the spool rule. shopapi_t stays off the permissive list."
+    e2e_run "sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi"
+    e2e_run "sudo semodule -i selinux/shopapi/shopapi.pp"
+    e2e_run "sudo restorecon -Rv /var/spool/shopapi"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/feature-spool"
+    demo_expect "HTTP 200. shopapi_t is still enforcing."
+    e2e_run "getenforce"
+    demo_expect "Enforcing"
+    e2e_run "sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissive'"
+    demo_expect "shopapi_t is not permissive"
     tlab_pause
 }
 
@@ -609,7 +656,11 @@ main() {
         [[ -n "${act}" ]] || continue
         run_act "${act}"
     done
-    tlab_checkpoint "Done. Covered → tuned → generated. Restraint first."
+    if present_distro_unconfined; then
+        tlab_checkpoint "Done. Restraint first."
+    else
+        tlab_checkpoint "Done. Covered → tuned → generated. Restraint first."
+    fi
 }
 
 main

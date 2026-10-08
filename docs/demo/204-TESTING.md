@@ -144,7 +144,7 @@ python3 scripts/smoke_test.py
 | AI / deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
 | **Enforce-check** | `bash scripts/dev_generate_policy.sh --apply --enforce-check --app-name shopapi` | Yes (root on RHEL **qa**) |
 
-**`--enforce-check`** compiles the candidate `.pp`, removes permissive on `shopapi_t`, runs `wait_for_endpoints.sh` (including domain-context verification), and prints recent AVCs on failure.
+**`--enforce-check`** compiles the candidate `.pp`, removes permissive on the manifest domain, runs `restorecon` on the manifest paths, restarts the manifest units, runs `wait_for_endpoints.sh` (including domain-context verification), and prints recent AVCs on failure.
 
 ### 3.1 Compile on RHEL
 

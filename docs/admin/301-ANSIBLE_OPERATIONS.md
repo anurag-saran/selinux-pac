@@ -35,9 +35,9 @@ The host stays **Enforcing** the whole time. Canary makes only the app domain lo
 | **rhel-qa** | The app build, the audit log, and `dev_generate_policy.sh`. Compile here. |
 | **Production** | RPMs and AAP. No git clone. |
 
-Policy CI for an app repo calls this repo's workflow. Copying [`.github/workflows/selinux-policy-ci.yml`](../../.github/workflows/selinux-policy-ci.yml) into the app repo does not work: `make test` and the validators live here, not next to the app.
+Policy CI for an app repo calls [`.github/workflows/selinux-policy-app.yml`](../../.github/workflows/selinux-policy-app.yml). That file is `workflow_call` only. In a called workflow the `github` context is the caller's, so the tools repo and ref are inputs. Copying [`.github/workflows/selinux-policy-ci.yml`](../../.github/workflows/selinux-policy-ci.yml) into the app repo does not work: `make test` and the validators live here, not next to the app.
 
-Put this in the app repo as `.github/workflows/selinux-policy.yml`. `OWNER/selinux-pac` is the fork you trust, and `REF` is a commit or tag on that fork. The app repo's token must be able to read it. GitHub does not deploy.
+Put this in the app repo as `.github/workflows/selinux-policy.yml`. `OWNER/selinux-pac` is the fork you trust, and `REF` is a commit or tag on that fork. Pass the same ref as `tools_ref` so the scripts match the workflow file. The app repo's token must be able to read it. GitHub does not deploy.
 
 ```yaml
 name: SELinux policy
@@ -47,11 +47,13 @@ on:
     branches: [main]
 jobs:
   policy:
-    uses: OWNER/selinux-pac/.github/workflows/selinux-policy-ci.yml@REF
+    uses: OWNER/selinux-pac/.github/workflows/selinux-policy-app.yml@REF
     with:
       policy_dir: selinux/shopapi
       module: shopapi
       domain: shopapi_t
+      tools_repo: OWNER/selinux-pac
+      tools_ref: REF
 ```
 
 `policy_dir` is the directory that contains `shopapi.te` and `policy_version.txt`. The called jobs check out the app and this repo, then run forbidden-patterns, `cli/policy_audit.py`, version consistency, and the Stream 9 compiled check against that directory. Canary stays on AAP.
