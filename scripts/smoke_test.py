@@ -2597,6 +2597,47 @@ def test_runner_var_selects_rhel_host() -> None:
     assert "make vm-check" in guide
 
 
+def test_runner_container_expression_both_cases() -> None:
+    """rhel9-utm selects no container. Any other RUNNER value keeps Stream 9."""
+    expr = re.compile(
+        r"vars\.RUNNER != 'rhel9-utm' && '([^']+)' \|\| fromJSON\('null'\)"
+    )
+
+    def evaluate(runner: str, image: str):
+        # GitHub Actions && and || return the operand, and fromJSON('null') is null.
+        left = image if runner != "rhel9-utm" else False
+        return left if left else None
+
+    jobs = {
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml": "compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml": "app-compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml": "bypass-rejected",
+        PROJECT_ROOT / ".github" / "workflows" / "demo-estate.yml": "shopapi-policy",
+    }
+    import yaml
+
+    for path, job_id in jobs.items():
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        container = str(workflow["jobs"][job_id]["container"])
+        match = expr.search(container)
+        assert match, container
+        assert "vars.RUNNER == 'rhel9-utm'" not in container
+        image = match.group(1)
+        assert evaluate("rhel9-utm", image) is None
+        assert evaluate("", image) == "quay.io/centos/centos:stream9"
+        assert evaluate("ubuntu-latest", image) == "quay.io/centos/centos:stream9"
+        runs = "\n".join(
+            step.get("run") or "" for step in workflow["jobs"][job_id]["steps"]
+        )
+        assert "sudo dnf install" in runs
+        assert re.search(r"(?m)^dnf install", runs) is None
+    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
+    assert "github-runner ALL=(ALL) NOPASSWD: /usr/bin/dnf, /usr/bin/bash" in guide
+    ci = (PROJECT_ROOT / ".github/workflows/selinux-policy-ci.yml").read_text(encoding="utf-8")
+    assert "sudo bash scripts/validate_policy_semantics.sh" in ci
+    assert "sudo bash scripts/reject_compiled_bypasses.sh" in ci
+
+
 def test_soak_counts_every_domain_denial() -> None:
     """Denials outside the manifest paths still count when scontext is the app domain."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -4039,6 +4080,7 @@ def main() -> int:
         ("init_uses_daemon_domain", test_init_uses_daemon_domain),
         ("vm_check_reports_each_result", test_vm_check_reports_each_result),
         ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
+        ("runner_container_expression_both_cases", test_runner_container_expression_both_cases),
         ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),
         ("soak_counts_every_domain_denial", test_soak_counts_every_domain_denial),
         ("soak_ignore_is_explicit", test_soak_ignore_is_explicit),

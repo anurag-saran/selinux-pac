@@ -63,10 +63,12 @@ jobs:
   app-compiled-policy:
     name: app-compiled-policy
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
-    container: ${{ vars.RUNNER == 'rhel9-utm' && fromJSON('null') || 'quay.io/centos/centos:stream9' }}
+    container: ${{ vars.RUNNER != 'rhel9-utm' && 'quay.io/centos/centos:stream9' || fromJSON('null') }}
     steps:
+      - name: Ensure sudo
+        run: command -v sudo >/dev/null 2>&1 || dnf install -y sudo
       - name: Install git for checkout
-        run: dnf install -y git
+        run: sudo dnf install -y git
       - uses: actions/checkout@v4
         with:
           path: app
@@ -76,7 +78,7 @@ jobs:
           ref: ${{ inputs.tools_ref }}
           path: tools
       - name: Install policy toolchain
-        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml
+        run: sudo dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml
       - name: Compiled policy semantics
         env:
           POLICY_DIR: ${{ inputs.policy_dir }}
@@ -86,4 +88,5 @@ jobs:
           set -euo pipefail
           src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
           POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
+            sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN \
             bash "${GITHUB_WORKSPACE}/tools/scripts/validate_policy_semantics.sh" "${src}"
