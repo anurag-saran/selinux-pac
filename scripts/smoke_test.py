@@ -927,6 +927,16 @@ def test_demo_present_dry_run() -> None:
     assert "GENERATION BLOCKED" in out
     assert "/feature-spool" in out
     assert "permissive=0" in out
+    assert out.find("Act 3") < out.find("Act 6")
+    tech = subprocess.run(
+        [BASH, str(script), "--dry-run", "--no-type", "--auto", "--profile", "technical"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    tech_out = tech.stdout + tech.stderr
+    assert tech.returncode == 0, tech_out
+    assert "Act 6" not in tech_out
     assert "tomcat_can_network_connect" not in out
     assert "Already enforcing" not in out
     assert "httpd_can_network_connect" not in out
@@ -961,6 +971,7 @@ def test_demo_present_dry_run() -> None:
     help_out = help_run.stdout + help_run.stderr
     assert help_run.returncode == 0, help_out
     assert "demo_e2e_mac.sh" in help_out
+    assert "0,1,2,3,6" in help_out
     te = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
     assert not any(
         (not line.lstrip().startswith("#")) and "execmem" in line

@@ -49,8 +49,8 @@ Spring Boot (shopapi) → show the enforcing payoff.
   Guide: docs/demo/202-DEMO_GUIDE.md
 
 Options:
-  --profile customer|technical   customer = acts 0,1,2,3 (~20 min)
-                                 technical = 0–5 (adds PR + points at demo_e2e_mac.sh)
+  --profile customer|technical   customer = acts 0,1,2,3,6 (~20 min)
+                                 technical = 0–5 (PR and the 203 pointer; no enforcing payoff)
   --acts LIST                    Comma-separated act numbers (overrides --profile)
   --preflight                    Check the host and exit (pass/fail table)
   --dry-run                      Print narration + commands; execute nothing
@@ -559,7 +559,7 @@ act6_enforce_payoff() {
 
 act4_pr() {
     e2e_banner "Act 4 — PR (technical)"
-    tlab_explain "Policy PR on the app tree. CI forbidden-patterns already ran at generate time."
+    tlab_explain "Policy PR on the app tree. CI runs offline-tests, forbidden-patterns, compiled-policy, and version-consistency. Forbidden-patterns already ran at generate time."
     e2e_run "bash scripts/validate_forbidden_patterns.sh selinux/shopapi"
     if [[ "${OPEN_PR}" -eq 1 ]]; then
         e2e_run_allow_fail "bash scripts/demo_open_generated_pr.sh"

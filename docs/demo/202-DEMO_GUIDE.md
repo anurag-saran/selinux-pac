@@ -1,6 +1,6 @@
 # 202 — Three-app customer talk
 
-**Finish [101](../training/101-SELINUX.md) before Acts 0–3.** That guide is the typed shopapi loop (one AVC, generate, same URL adds no rule, new URL fails under enforcing). This talk assumes those commands.
+**Finish [101](../training/101-SELINUX.md) before Acts 0, 1, 2, 3, and 6.** That guide is the typed shopapi loop (one AVC, generate, same URL adds no rule, new URL fails under enforcing). This talk assumes those commands.
 
 **LAST_VERIFIED:** 2026-09-18 — live on RHEL with distro Tomcat (`tomcat_t`) + JDK 17. JWS 6 + `jws6-tomcat-selinux` is still the confined App A/B path.
 
@@ -15,7 +15,7 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
-Use `--profile customer`. That is Acts 0, 1, 2, and 3, about 20 minutes. `--profile technical` adds Act 4 (open a pull request) and Act 5 (a pointer at the 203 talk). Act 5 does not run the 203 talk.
+Use `--profile customer`. That is Acts 0, 1, 2, 3, and 6, about 20 minutes. Act 6 is last: it drops `shopapi_t` from the permissive list. `--profile technical` is Acts 0–5 (the pull request, then a pointer at the 203 talk). It does not run Act 6. Act 5 does not run the 203 talk.
 
 On a laptop, `--dry-run` prints this talk and runs nothing. `make check` runs the offline tests, including a dry-run of both talk scripts. The sample module in those tests is `selinux/myapp.te`. Nothing starts an application.
 
@@ -25,9 +25,10 @@ flowchart LR
   act1["Act 1 App A :8080<br/>Nothing to author"]
   act2["Act 2 App B :8090<br/>Tune the host, zero .te"]
   act3["Act 3 shopapi :8091<br/>Generate the module"]
+  act6["Act 6 Enforcing<br/>/feature-spool fails"]
   later["Not this meeting<br/>203 ship path"]
-  act0 --> act1 --> act2 --> act3
-  act3 -.-> later
+  act0 --> act1 --> act2 --> act3 --> act6
+  act6 -.-> later
 ```
 
 | Act | What you show | Where you stop |
@@ -35,7 +36,8 @@ flowchart LR
 | **0** | Tomcat already has a Red Hat module. Shopapi does not. | You do not write a policy file for Tomcat. |
 | **1** | The normal page on port 8080 works. The forbidden page is the proof. | You do not change anything. |
 | **2** | A second Tomcat on port 8090, files in `/opt/appdata`, and a call out to a payment service. | You do not write a policy file. `git status` of `selinux/` stays empty. |
-| **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool`. That failure is the next meeting. |
+| **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool` in this act. |
+| **6** | Take `shopapi_t` off the permissive list. `/log` still works. `/feature-spool` fails, and the denial says `permissive=0`. `getenforce` still prints Enforcing. | Generate adds only the spool rule. This is the last act of the customer profile. |
 
 The next meeting, when they want Ansible, RPMs, and the soak gate, is [203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md).
 
@@ -88,8 +90,8 @@ bash scripts/demo_present.sh --profile customer
 
 | Flag | Meaning |
 |------|---------|
-| `--profile customer` | Acts 0–3 (~20 min): triage, App A, App B, generate shopapi |
-| `--profile technical` | Customer path plus PR + a pointer at `demo_e2e_mac.sh` (does not run the three-host talk) |
+| `--profile customer` | Acts 0, 1, 2, 3, and 6 (~20 min): triage, App A, App B, generate shopapi, then the enforcing payoff |
+| `--profile technical` | Acts 0–5. The enforcing payoff stays on the customer profile. Act 5 points at `demo_e2e_mac.sh` and does not run it. |
 | `--acts 0,1,2` | Manual act list |
 | `--preflight` | Pass/fail table. Missing App A → `make demo-bootstrap`. **Already-tuned App B** (port 8090 labelled, `/opt/appdata` fcontext, or connect boolean on) is a **FAIL** — Act 2 would produce no denial. |
 | `--dry-run` | Narration + commands + expected output; **executes nothing** |
@@ -101,7 +103,7 @@ The three-host generate/canary/soak talk is **[203](203-RHEL_TWO_HOST.md)** (`de
 
 ## What you say, command by command
 
-`--profile customer` is Acts 0–3. Say the sentence, then let the script run the command under it. A line that starts with `Expected:` is what a good screen looks like.
+`--profile customer` is Acts 0, 1, 2, 3, and 6. Say the sentence, then let the script run the command under it. A line that starts with `Expected:` is what a good screen looks like.
 
 ### Before anyone is watching
 
@@ -305,7 +307,7 @@ curl -sS http://127.0.0.1:8091/state || true
 curl -sS http://127.0.0.1:8091/log || true
 ```
 
-These three URLs are the first ship. The seed is types-only, and shopapi is permissive, so the requests succeed and the denials land in the audit log. Do not curl `/feature-spool` in this act. That URL is the later outage, after the first module is enforcing.
+These three URLs are the first ship. The seed is types-only, and shopapi is permissive, so the requests succeed and the denials land in the audit log. Do not curl `/feature-spool` in this act. Act 6 opens it after `shopapi_t` leaves the permissive list.
 
 ```bash
 sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 20
