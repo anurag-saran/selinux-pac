@@ -133,6 +133,11 @@ NEEDS_REVIEW_RULES: frozenset[tuple[str, str, str]] = frozenset(
     }
 )
 
+# Compiled-policy CI hard-fails these capability permissions. They must stay a
+# subset of NEEDS_REVIEW_RULES. Other needs-review permissions (execmem, dac_override,
+# setuid, ...) stay an opt-in review and do not fail the compiled check.
+COMPILED_REJECT_CAPABILITIES = frozenset({"sys_admin", "sys_module"})
+
 # What the permission allows, why it weakens the domain, and alternatives.
 # Keyed by (tclass, perm). Keep in sync with NEEDS_REVIEW_RULES.
 NEEDS_REVIEW_RATIONALE: dict[tuple[str, str], tuple[str, str, str]] = {

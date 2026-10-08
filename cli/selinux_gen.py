@@ -21,6 +21,8 @@ from typing import Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from policy_rules import FORBIDDEN_TARGET_TYPES  # noqa: E402
+
 try:
     from dotenv import load_dotenv
 
@@ -66,7 +68,7 @@ FORBIDDEN_TE_PATTERNS = [
 
 INVALID_REQUIRE_TYPE = re.compile(r"require\s*\{[^}]*\btype\s+myapp_", re.DOTALL)
 
-FORBIDDEN_PRIVILEGED_TYPES = ("shadow_t", "unconfined_t", "sysadm_t")
+FORBIDDEN_PRIVILEGED_TYPES = FORBIDDEN_TARGET_TYPES
 
 
 @dataclass

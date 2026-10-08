@@ -66,11 +66,13 @@ if re.search(r'require\s*\{[^}]*\btype\s+' + re.escape(prefix), te, re.DOTALL):
     check_fail "Custom types declared inside require block"
 fi
 
-for priv in shadow_t unconfined_t sysadm_t; do
+while IFS= read -r priv; do
+    [[ -n "${priv}" ]] || continue
     if grep -qE "allow[[:space:]]+[^[:space:]]+[[:space:]]+${priv}[[:space:]]*:" "${te}"; then
         check_fail "Forbidden allow rule targeting high-privilege type: ${priv}"
     fi
-done
+done < <(PYTHONPATH="${PROJECT_ROOT}/cli" python3 -c 'from policy_rules import FORBIDDEN_TARGET_TYPES
+print("\n".join(sorted(FORBIDDEN_TARGET_TYPES)))')
 
 if grep -qE 'allow[[:space:]]+[^[:space:]]+[[:space:]]+var_t:file[[:space:]]+\{[^}]*write' "${te}"; then
     check_fail "Forbidden broad var_t:file write — use dedicated application types"

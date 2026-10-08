@@ -2190,6 +2190,68 @@ def test_force_reason_recorded() -> None:
         assert "<!-- AUTO:VENDOR_OVERRIDE -->" not in body
 
 
+def test_policy_rules_are_the_single_source() -> None:
+    """Generator and CI must read forbidden and needs-review rules from policy_rules."""
+    import deterministic_gen
+    import policy_audit
+    import policy_rules
+    import selinux_gen
+
+    assert selinux_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
+    assert selinux_gen.FORBIDDEN_PRIVILEGED_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
+    assert deterministic_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
+    assert deterministic_gen.needs_review_hits is policy_rules.needs_review_hits
+    assert policy_audit.COMPILED_REJECT_CAPABILITIES is policy_rules.COMPILED_REJECT_CAPABILITIES
+    review_caps = {
+        perm for tclass, perm, _scope in policy_rules.NEEDS_REVIEW_RULES if tclass == "capability"
+    }
+    assert policy_rules.COMPILED_REJECT_CAPABILITIES <= review_caps
+    assert "execmem" not in policy_rules.COMPILED_REJECT_CAPABILITIES
+    script = (PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "from policy_rules import FORBIDDEN_TARGET_TYPES" in script
+    assert "for priv in shadow_t unconfined_t sysadm_t" not in script
+
+    def module(root: Path, allow_line: str) -> None:
+        te = (
+            "policy_module(probe, 1.0.0)\n"
+            "type probe_t;\n"
+            "type probe_exec_t;\n"
+            "type probe_var_lib_t;\n"
+            f"{allow_line}\n"
+        )
+        fc = (
+            "/opt/probe    gen_context(system_u:object_r:probe_exec_t,s0)\n"
+            "/var/lib/probe(/.*)?    gen_context(system_u:object_r:probe_var_lib_t,s0)\n"
+        )
+        (root / "probe.te").write_text(te, encoding="utf-8")
+        (root / "probe.fc").write_text(fc, encoding="utf-8")
+
+    checker = PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        module(root, "allow probe_t probe_var_lib_t:file { read };")
+        clean = subprocess.run(
+            [BASH, str(checker), str(root)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
+        )
+        assert clean.returncode == 0, clean.stderr
+        module(root, "allow probe_t selinux_config_t:file { read };")
+        foreign = subprocess.run(
+            [BASH, str(checker), str(root)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
+        )
+        assert foreign.returncode != 0, foreign.stdout
+        assert "selinux_config_t" in foreign.stderr
+
+
 def test_compiled_policy_rejects_foreign_entrypoint() -> None:
     """entrypoint on a type this module does not declare fails the compiled check."""
     fixture = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-policy"
@@ -2553,6 +2615,7 @@ def main() -> int:
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),
         ("force_reason_recorded", test_force_reason_recorded),
+        ("policy_rules_are_the_single_source", test_policy_rules_are_the_single_source),
         ("compiled_policy_rejects_foreign_entrypoint", test_compiled_policy_rejects_foreign_entrypoint),
         ("policy_audit_rejects_review_bypasses", test_policy_audit_rejects_review_bypasses),
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),

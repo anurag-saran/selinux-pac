@@ -7,9 +7,8 @@ import re
 import sys
 from pathlib import Path
 
-from policy_rules import FORBIDDEN_TARGET_TYPES
+from policy_rules import COMPILED_REJECT_CAPABILITIES, FORBIDDEN_TARGET_TYPES
 
-COMPILED_CAPABILITIES = ("sys_admin", "sys_module")
 COMPILED_SECURITY_PERMS = ("load_policy", "setenforce")
 
 
@@ -110,7 +109,7 @@ def audit_allow_text(text: str, domain: str) -> list[str]:
             errors.append(f"compiled allow {domain} -> {type_name}")
     if re.search(rf"\ballow\s+{re.escape(domain)}\s+file_type\b", compact):
         errors.append(f"compiled allow {domain} -> file_type (every file type)")
-    for perm in COMPILED_CAPABILITIES:
+    for perm in sorted(COMPILED_REJECT_CAPABILITIES):
         if re.search(
             rf"\ballow\s+{re.escape(domain)}\s+self:capability\b[^{{;]*\{{[^}}]*\b{perm}\b",
             compact,
