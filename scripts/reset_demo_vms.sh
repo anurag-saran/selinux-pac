@@ -16,9 +16,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEV_INVENTORY="${PROJECT_ROOT}/ansible/inventory.dev.yml"
-PROD_INVENTORY="${PROJECT_ROOT}/ansible/inventory.production.yml"
-SSH_USER="${ANSIBLE_SSH_USER:-ansible}"
+# shellcheck source=lib/lab_env.sh
+source "${SCRIPT_DIR}/lib/lab_env.sh"
+lab_env_load
+SSH_USER="${SSH_USER:-}"
 DEV_HOST="${DEV_HOST:-}"
 PROD_HOST="${PROD_HOST:-}"
 DO_DEV=1
@@ -32,11 +33,12 @@ Usage: $(basename "$0") [options]
 
 Lab reset for a second run of the two-host shopapi talk. From the Mac:
 
-  • Unload shopapi / shopapi_canary / shopapi_ports and leftover seports
+  • Unload shopapi / shopapi_canary / shopapi_ports and the local port 8090 assignment
   • Clear semanage permissive on shopapi_t
   • Untune App B so a second customer Act 2 still produces denials:
-      semanage port -d tcp 8090, fcontext -d /opt/appdata, setsebool connect off,
+      semanage port -d tcp 8090, fcontext -d /opt/appdata,
       chcon user_home_t on /opt/appdata
+  • Write an ausearch timestamp. Do not stop auditd or rewrite /var/log/audit.
   • On prod: rpm -e shopapi-selinux selinux-policy-ops; delete soak/AVC files
   • Restore this laptop’s types-only selinux/shopapi/ seed from git
   • Leave /opt/shopapi and shopapi.service in place
@@ -50,26 +52,15 @@ Options:
   --dev-only   Reset rhel-qa only (alias: --qa-only)
   --prod-only  Reset rhel-prod only
   --dry-run    Print targets and remote steps; do not SSH
-  --qa-host H  Override (alias: --dev-host; default: inventory.dev.yml or 192.168.64.6)
+  --qa-host H  Override (alias: --dev-host)
   --dev-host H Same as --qa-host
-  --prod-host H Override (default: inventory.production.yml or 192.168.64.5)
-  --user NAME  SSH user (default: ansible, or ANSIBLE_SSH_USER)
+  --prod-host H Override
+  --user NAME  SSH user
   -h, --help
 
-Hosts: DEV_HOST / PROD_HOST env, then gitignored inventories, then UTM defaults.
+Hosts come from QA_HOST, PROD_HOST, and SSH_USER, or from scripts/lab.env.
+Flags override those. There is no built-in address.
 EOF
-}
-
-inventory_host() {
-    local file="$1"
-    [[ -f "${file}" ]] || return 1
-    awk '/ansible_host:/ { print $2; exit }' "${file}" | tr -d '"'
-}
-
-inventory_user() {
-    local file="$1"
-    [[ -f "${file}" ]] || return 1
-    awk '/ansible_user:/ { print $2; exit }' "${file}" | tr -d '"'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -90,19 +81,8 @@ if [[ "${DO_DEV}" -eq 0 && "${DO_PROD}" -eq 0 ]]; then
     exit 2
 fi
 
-if [[ -z "${DEV_HOST}" ]]; then
-    DEV_HOST="$(inventory_host "${DEV_INVENTORY}" || true)"
-fi
-if [[ -z "${PROD_HOST}" ]]; then
-    PROD_HOST="$(inventory_host "${PROD_INVENTORY}" || true)"
-fi
-DEV_HOST="${DEV_HOST:-192.168.64.6}"
-PROD_HOST="${PROD_HOST:-192.168.64.5}"
-
-if [[ -z "${ANSIBLE_SSH_USER:-}" ]]; then
-    inv_user="$(inventory_user "${DEV_INVENTORY}" || true)"
-    [[ -n "${inv_user}" ]] && SSH_USER="${inv_user}"
-fi
+lab_env_load
+lab_env_require
 
 # Shared remote body. $1 is "dev" or "prod".
 # Unload policy leftovers; keep the JVM. Host stays Enforcing.

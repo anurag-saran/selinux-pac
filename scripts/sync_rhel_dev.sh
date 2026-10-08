@@ -10,9 +10,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEV_HOST="${DEV_HOST:-192.168.64.6}"
-DEV_USER="${ANSIBLE_SSH_USER:-ansible}"
-TARGET="${DEV_USER}@${DEV_HOST}"
+# shellcheck source=lib/lab_env.sh
+source "${SCRIPT_DIR}/lib/lab_env.sh"
+lab_env_load
+DEV_USER="${SSH_USER:-}"
+TARGET=""
 REMOTE_DEST="selinux-pac"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o LogLevel=ERROR)
 
@@ -35,6 +37,12 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -z "${TARGET}" ]]; then
+    lab_env_require
+    DEV_USER="${SSH_USER}"
+    TARGET="${DEV_USER}@${QA_HOST}"
+fi
 
 if ! command -v rsync >/dev/null 2>&1; then
     echo "rsync not found on this controller" >&2

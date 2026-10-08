@@ -4,9 +4,11 @@
 E2E_DRY="${E2E_DRY:-0}"
 E2E_PART="${E2E_PART:-all}"
 E2E_SKIP_EXPORT="${E2E_SKIP_EXPORT:-0}"
-DEV_HOST="${DEV_HOST:-192.168.64.6}"
-PROD_HOST="${PROD_HOST:-192.168.64.5}"
-E2E_SSH_USER="${ANSIBLE_SSH_USER:-ansible}"
+# shellcheck source=lab_env.sh
+_e2e_here="${BASH_SOURCE[0]%/*}"
+source "${_e2e_here}/lab_env.sh"
+unset _e2e_here
+lab_env_load
 
 e2e_usage_common() {
     cat <<EOF
@@ -74,6 +76,7 @@ e2e_parse_args() {
             *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
         esac
     done
+    lab_env_require
     e2e_install_quiet_ssh
 }
 

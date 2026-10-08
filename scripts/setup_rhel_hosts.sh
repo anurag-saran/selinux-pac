@@ -8,9 +8,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ANSIBLE_DIR="${PROJECT_ROOT}/ansible"
 
-DEV_HOST=""
-PROD_HOST=""
-ANSIBLE_USER="${ANSIBLE_SSH_USER:-ansible}"
+# shellcheck source=lib/lab_env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/lab_env.sh"
+lab_env_load
+DEV_HOST="${DEV_HOST:-}"
+PROD_HOST="${PROD_HOST:-}"
+ANSIBLE_USER="${SSH_USER:-}"
 DEV_CHECKOUT=""
 DEV_INVENTORY="${ANSIBLE_DIR}/inventory.dev.yml"
 PROD_INVENTORY="${ANSIBLE_DIR}/inventory.production.yml"
@@ -32,7 +35,7 @@ write options:
   --qa-host HOST      QA / discovery box IP or DNS (required; alias: --dev-host)
   --dev-host HOST     Same as --qa-host (legacy name)
   --prod-host HOST    Prod box IP or DNS (required)
-  --user NAME         SSH user (default: ansible, or ANSIBLE_SSH_USER)
+  --user NAME         SSH user (default: SSH_USER, or scripts/lab.env)
   --qa-checkout PATH  Repo on the QA box (default: /home/<user>/selinux-pac)
   --dev-checkout PATH Same as --qa-checkout (legacy name)
 
@@ -45,11 +48,15 @@ EOF
 }
 
 require_write_args() {
-    if [[ -z "${DEV_HOST}" || -z "${PROD_HOST}" ]]; then
-        echo "write requires --qa-host (or --dev-host) and --prod-host" >&2
-        usage
-        exit 2
+    if [[ -n "${DEV_HOST}" && -z "${QA_HOST:-}" ]]; then
+        QA_HOST="${DEV_HOST}"
     fi
+    if [[ -n "${ANSIBLE_USER}" ]]; then
+        SSH_USER="${ANSIBLE_USER}"
+    fi
+    lab_env_require
+    DEV_HOST="${DEV_HOST:-${QA_HOST}}"
+    ANSIBLE_USER="${SSH_USER}"
 }
 
 write_inventories() {
@@ -173,11 +180,9 @@ doctor_hosts() {
 }
 
 print_bootstrap() {
-    local dev_hint="rhel-qa.example.com"
-    if [[ -f "${DEV_INVENTORY}" ]]; then
-        dev_hint="$(awk '/ansible_host:/ { print $2; exit }' "${DEV_INVENTORY}" | tr -d '"')"
-        [[ -n "${dev_hint}" ]] || dev_hint="rhel-qa.example.com"
-    fi
+    lab_env_require
+    ANSIBLE_USER="${SSH_USER}"
+    local dev_hint="${QA_HOST}"
     cat <<EOF
 === Bootstrap the QA RHEL box (run over SSH as a user with sudo) ===
 === Next: docs/demo/203-RHEL_TWO_HOST.md (look at the prompt: Mac vs rhel-qa) ===

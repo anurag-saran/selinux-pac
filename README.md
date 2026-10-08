@@ -147,14 +147,14 @@ macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still ru
 
 | Command | What it does | Good sign |
 |---------|----------------|-----------|
-| `bash scripts/setup_rhel_hosts.sh write --qa-host 192.168.64.6 --prod-host 192.168.64.5` | Writes gitignored `ansible/inventory.dev.yml` and `ansible/inventory.production.yml` with those SSH IPs. QA gets `soak_min_days: 0` (lab). Prod gets `soak_min_days: 7` and **no git clone** (`selinux_ops_from_package: true`). | Prints `Wrote …/inventory.dev.yml` and `…/inventory.production.yml` |
+| `bash scripts/setup_rhel_hosts.sh write --qa-host "$QA_HOST" --prod-host "$PROD_HOST"` | Writes gitignored `ansible/inventory.dev.yml` and `ansible/inventory.production.yml` with those SSH hosts. QA gets `soak_min_days: 0` (lab). Prod gets `soak_min_days: 7` and **no git clone** (`selinux_ops_from_package: true`). | Prints `Wrote …/inventory.dev.yml` and `…/inventory.production.yml` |
 | `bash scripts/setup_rhel_hosts.sh ping` | Ansible `ping` module over SSH to both VMs (can the controller reach them?). | `SUCCESS` / `pong` for `rhel-qa` and `rhel-prod` |
 | `bash scripts/setup_rhel_hosts.sh doctor` | On each VM (as sudo): hostname, `getenforce`, `ausearch`, `sesearch`. Prod also checks `selinux-policy-ops` and **does not fail** if that RPM is not installed yet. | `Enforcing`; paths to `ausearch` and `sesearch`. Prod may print `selinux-policy-ops: not installed (expected before RPMs)` |
 | `bash scripts/setup_rhel_hosts.sh bootstrap` | **Prints** the SSH/`dnf`/`demo_bootstrap.sh --shopapi-only` commands for **rhel-qa only**. It does not run them. | A block starting `=== Bootstrap the QA RHEL box` |
-| `bash scripts/sync_rhel_dev.sh` | rsync this checkout to `~/selinux-pac` on rhel-qa (shopapi lives here). | `Synced … -> ansible@192.168.64.6:selinux-pac/` |
+| `bash scripts/sync_rhel_dev.sh` | rsync this checkout to `~/selinux-pac` on rhel-qa (shopapi lives here). | `Synced … -> $SSH_USER@$QA_HOST:selinux-pac/` |
 | `bash scripts/reset_demo_vms.sh` | Between rehearsals: unload leftover `shopapi` modules and prod RPMs; untune App B (port 8090 / `/opt/appdata` / connect boolean). JVM stays. Restore the types-only `selinux/shopapi/` seed. | `Good: no shopapi (or leftover myapp) module loaded` on both VMs |
 
-Those IPs are this Mac’s UTM shared network (`rhel-qa` = `192.168.64.6`, `rhel-prod` = `192.168.64.5`). Re-check with `ping` if a VM was recreated.
+Copy `scripts/lab.env.example` to `scripts/lab.env` and set `QA_HOST`, `PROD_HOST`, and `SSH_USER`. Scripts read `lab.env` when that file is present. If it is absent, they require those three variables. Re-check with `ping` if a VM was recreated.
 
 **You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/demo/203-RHEL_TWO_HOST.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
 
@@ -182,9 +182,9 @@ See **[202](docs/demo/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `b
 
 | Window | Start |
 |--------|--------|
-| Mac | `cd /Users/asaran/projects/selinux-pac` then `bash scripts/demo_e2e_mac.sh` |
-| rhel-qa | `ssh ansible@192.168.64.6` — run the `--part` the Mac prints (`app`, then `generate`, later `--skip-export`) |
-| rhel-prod | `ssh ansible@192.168.64.5` — run the `--part` the Mac prints (`app`, `rpms`, `soak`, `soak-avc`, `fail`, `restore`, `retest`) |
+| Mac | From the repo root, `bash scripts/demo_e2e_mac.sh` |
+| rhel-qa | `ssh $SSH_USER@$QA_HOST` — run the `--part` the Mac prints (`app`, then `generate`, later `--skip-export`) |
+| rhel-prod | `ssh $SSH_USER@$PROD_HOST` — run the `--part` the Mac prints (`app`, `rpms`, `soak`, `soak-avc`, `fail`, `restore`, `retest`) |
 
 Unattended rehearsal: `bash scripts/demo_e2e_mac.sh --auto --no-type`. Talk-only: `--dry-run`. Policy PRs: `gh auth login` with push access to **this** repo (`selinux/shopapi/`). CI `forbidden-patterns` should go green (`validate_forbidden_patterns.sh` already ran at generate time).
 

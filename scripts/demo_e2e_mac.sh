@@ -33,8 +33,8 @@ Do not run this as the first customer conversation.
 $(e2e_usage_common)
 
 Other windows (do not run those scripts here unless using --auto):
-  ssh ${E2E_SSH_USER}@${DEV_HOST}   →  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh
-  ssh ${E2E_SSH_USER}@${PROD_HOST}  →  bash ~/e2e-demo/demo_e2e_rhel_prod.sh
+  ssh ${E2E_SSH_USER:-SSH_USER}@${DEV_HOST:-QA_HOST}   →  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh
+  ssh ${E2E_SSH_USER:-SSH_USER}@${PROD_HOST:-PROD_HOST}  →  bash ~/e2e-demo/demo_e2e_rhel_prod.sh
 EOF
 }
 

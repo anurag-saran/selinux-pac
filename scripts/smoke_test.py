@@ -1016,6 +1016,29 @@ def test_demo_present_dry_run() -> None:
     assert_mentions(tech_out, "shopapi")
 
 
+def _lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = os.environ.copy() if base is None else dict(base)
+    env["QA_HOST"] = "qa.example.com"
+    env["PROD_HOST"] = "prod.example.com"
+    env["SSH_USER"] = "ssh-user"
+    return env
+
+
+def _without_lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
+    env = os.environ.copy() if base is None else dict(base)
+    for key in (
+        "QA_HOST",
+        "PROD_HOST",
+        "SSH_USER",
+        "DEV_HOST",
+        "ANSIBLE_SSH_USER",
+        "E2E_SSH_USER",
+        "ANSIBLE_USER",
+    ):
+        env.pop(key, None)
+    return env
+
+
 def test_demo_e2e_scripts_dry_run() -> None:
     """Mac/QA/prod talk tracks: shopapi, not Flask. QA/prod scripts refuse Darwin."""
     mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
@@ -1032,6 +1055,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
+            env=_lab_hosts(),
         )
         mac_out = mac_run.stdout + mac_run.stderr
         assert mac_run.returncode == 0, mac_out
@@ -1069,6 +1093,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        env=_lab_hosts(),
     )
     qa_out = qa_run.stdout + qa_run.stderr
     if sys.platform == "darwin":
@@ -1079,6 +1104,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        env=_lab_hosts(),
     )
     prod_out = prod_run.stdout + prod_run.stderr
     if sys.platform == "darwin":
@@ -1090,6 +1116,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        env=_lab_hosts(),
     )
     reset_out = reset_run.stdout + reset_run.stderr
     assert reset_run.returncode == 0, reset_out
@@ -1103,10 +1130,110 @@ def test_demo_e2e_scripts_dry_run() -> None:
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
+        env=_lab_hosts(),
     )
     boot_out = boot.stdout + boot.stderr
     assert boot.returncode == 0, boot_out
     assert_mentions(boot_out, "demo_bootstrap.sh --shopapi-only")
+
+
+def test_lab_env_required() -> None:
+    """Talk scripts need QA_HOST, PROD_HOST, and SSH_USER, or scripts/lab.env."""
+    reset = PROJECT_ROOT / "scripts" / "reset_demo_vms.sh"
+    lab = PROJECT_ROOT / "scripts" / "lab.env"
+    backup = lab.read_bytes() if lab.exists() else None
+    if lab.exists():
+        lab.unlink()
+    try:
+        bare = _without_lab_hosts()
+        missing = subprocess.run(
+            [BASH, str(reset), "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=bare,
+        )
+        missing_out = missing.stdout + missing.stderr
+        assert missing.returncode == 2, missing_out
+        assert "QA_HOST" in missing_out
+        assert "PROD_HOST" in missing_out
+        assert "SSH_USER" in missing_out
+        assert "lab.env" in missing_out
+
+        helped = subprocess.run(
+            [BASH, str(reset), "--help"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=bare,
+        )
+        assert helped.returncode == 0, helped.stdout + helped.stderr
+
+        present = subprocess.run(
+            [BASH, str(reset), "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=_lab_hosts(bare),
+        )
+        present_out = present.stdout + present.stderr
+        assert present.returncode == 0, present_out
+        assert "qa.example.com" in present_out
+        assert "192.168.64" not in present_out
+
+        lab.write_text(
+            "QA_HOST=from-file.example.com\n"
+            "PROD_HOST=prod-file.example.com\n"
+            "SSH_USER=file-user\n",
+            encoding="utf-8",
+        )
+        from_file = subprocess.run(
+            [BASH, str(reset), "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=bare,
+        )
+        file_out = from_file.stdout + from_file.stderr
+        assert from_file.returncode == 0, file_out
+        assert "from-file.example.com" in file_out
+
+        both = subprocess.run(
+            [BASH, str(reset), "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=_lab_hosts(bare),
+        )
+        both_out = both.stdout + both.stderr
+        assert both.returncode == 0, both_out
+        assert "qa.example.com" in both_out
+        assert "from-file.example.com" not in both_out
+    finally:
+        if backup is None:
+            lab.unlink(missing_ok=True)
+        else:
+            lab.write_bytes(backup)
+
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    example = (PROJECT_ROOT / "scripts" / "lab.env.example").read_text(encoding="utf-8")
+    assert "192.168.64" not in readme
+    assert "/Users/asaran" not in readme
+    assert "fall back to a lab pair" not in readme
+    assert "192.168.64" not in example
+    assert "/Users/" not in example
+    gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+    assert "scripts/lab.env" in gitignore
+    assert "scripts/lab.env.example" not in gitignore
+    for rel in (
+        "scripts/lib/e2e_demo.sh",
+        "scripts/reset_demo_vms.sh",
+        "scripts/sync_rhel_dev.sh",
+        "scripts/build_rpms_on_dev.sh",
+        "scripts/setup_rhel_hosts.sh",
+    ):
+        text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
+        assert "192.168.64" not in text, rel
 
 
 def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
@@ -3027,6 +3154,7 @@ def main() -> int:
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
+        ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),
         ("soak_net_new_empty_manifest", test_soak_net_new_empty_manifest),

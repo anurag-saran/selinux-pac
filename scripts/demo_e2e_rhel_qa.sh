@@ -44,7 +44,7 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
 
-Presenter script for the QA VM (${DEV_HOST}). Do not run this on the Mac.
+Presenter script for the QA VM (${DEV_HOST:-QA_HOST}). Do not run this on the Mac.
 Demo application is shopapi (Spring Boot).
 
   --part app              shopapi + types-only seed + first-ship curls
