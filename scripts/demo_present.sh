@@ -44,7 +44,7 @@ Spring Boot (shopapi) → show the enforcing payoff.
 
   One RHEL box. Do not run this as the three-host production walkthrough.
   Multi-host (~45 min, Mac + rhel-qa + rhel-prod):  bash scripts/demo_e2e_mac.sh
-  Guide: docs/demo/202-DEMO_GUIDE.md
+  Guide: docs/demo/301-CUSTOMER.md
 
 Options:
   --profile customer|technical   customer = acts 0,1,2,3,6 (~20 min)

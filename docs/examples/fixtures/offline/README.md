@@ -1,6 +1,6 @@
 # Offline fixtures
 
-Used by `scripts/lib/stage_offline_fixture.sh` when a host has no audit log. Prefer the default **deterministic** engine ([`201 — Generate a module`](../../../demo/201-CODE_WALKTHROUGH.md#generate-a-module)).
+Used by `scripts/lib/stage_offline_fixture.sh` when a host has no audit log. Prefer the default **deterministic** engine ([`201 — Generate a module`](../../../tool/201-TOOL-COMMANDS.md#generate-a-module)).
 
 | Path | Role |
 |------|------|

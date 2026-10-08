@@ -45,7 +45,7 @@ labels:
 - [ ] `selinux/myapp.fc` (File Contexts)
 - [ ] `selinux/policy_version.txt` (SemVer bump — must match `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
 - [ ] `selinux/myapp.if` — N/A (standalone demo module)
-- [ ] `selinux/payments/payments.if` — updated if this PR touches cross-module interfaces (see [201 — Add an application](../../docs/demo/201-CODE_WALKTHROUGH.md#add-an-application))
+- [ ] `selinux/payments/payments.if` — updated if this PR touches cross-module interfaces (see [201 — Add an application](../../docs/tool/201-TOOL-COMMANDS.md#add-an-application))
 
 ---
 
@@ -77,7 +77,7 @@ A laptop without `selinux-policy-devel` does not compile. The Stream 9 job does.
 
 ### 6. Security and Sysadmin Checklist (Admin Team Review)
 
-> Full principles and anti-patterns: [`docs/demo/201-CODE_WALKTHROUGH.md`](../../docs/demo/201-CODE_WALKTHROUGH.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
+> Full principles and anti-patterns: [`docs/tool/201-TOOL-COMMANDS.md`](../../docs/tool/201-TOOL-COMMANDS.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
 
 | Security Check | Status | Notes / Approver Initials |
 | --- | --- | --- |
@@ -98,9 +98,9 @@ A laptop without `selinux-policy-devel` does not compile. The Stream 9 job does.
 
 **After merge:** Compile with CLI (`bash scripts/compile_and_validate.sh`, optional `packaging/build_rpms.sh`), then AAP **SELinux – Release canary** (`ansible/deploy_canary.yml`).
 
-**Soak:** Daily AAP **SELinux – Soak monitor** (`ansible/soak_monitor.yml`) — zero **net-new** access needs vs installed policy. Before enforce: **Soak status** (`ansible/soak_status.yml`). If soak fails: [`docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship`](../../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) (PR + recanary, not live patch).
+**Soak:** Daily AAP **SELinux – Soak monitor** (`ansible/soak_monitor.yml`) — zero **net-new** access needs vs installed policy. Before enforce: **Soak status** (`ansible/soak_status.yml`). If soak fails: [`docs/admin/401-OPERATIONS.md#a-denial-after-ship`](../../docs/admin/401-OPERATIONS.md#a-denial-after-ship) (PR + recanary, not live patch).
 
-**Production enforce (manual):** AAP workflow **SELinux – Promote to enforce** (`ansible/enforce_production.yml`) after soak. See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../../docs/admin/301-ANSIBLE_OPERATIONS.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../../docs/admin/301-ANSIBLE_OPERATIONS.md).
+**Production enforce (manual):** AAP workflow **SELinux – Promote to enforce** (`ansible/enforce_production.yml`) after soak. See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/401-OPERATIONS.md`](../../docs/admin/401-OPERATIONS.md) and [`docs/admin/401-OPERATIONS.md`](../../docs/admin/401-OPERATIONS.md).
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary

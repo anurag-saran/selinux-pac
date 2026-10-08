@@ -1,6 +1,6 @@
-# 301 — Ship the module
+# 401 — Ship the module
 
-This is the page after [203](../demo/203-RHEL_TWO_HOST.md). 203 shows the same jobs on two VMs. This page is how you run them for a real app: where the files live, which job to click, and what to do when a denial shows up.
+This is the page after [302](../demo/302-TECHNICAL.md). 302 shows the same jobs on two VMs. This page is how you run them for a real app: where the files live, which job to click, and what to do when a denial shows up. Commands were taught in [102](../training/102-COMMANDS.md). The playbook-to-command map is [201](../tool/201-TOOL-COMMANDS.md).
 
 Production does not get a git clone. A pull request is reviewed, an RPM is built, and **Ansible Automation Platform (AAP)** installs it. The same YAML runs as `ansible-playbook` on a laptop until AAP is wired up.
 
@@ -160,7 +160,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --l
 
 On the production host, the same check is `/usr/libexec/selinux-policy-ops/monitor_avc.sh` with `--max-net-new 0`. That script is in the `selinux-policy-ops` RPM. Do not clone this repo onto the server to run it.
 
-**Net-new** means an access the installed policy does not already allow. Repeated lines for an access that is already allowed do not fail the gate. `sesearch` does that comparison. `setools-console` is a requirement of `selinux-policy-ops`. Canary, soak, and enforce fail when `sesearch` is missing.
+**Net-new** means an access the installed policy does not already allow. Repeated lines for an access that is already allowed do not fail the gate. `sesearch` does that comparison. `setools-console` is a requirement of `selinux-policy-ops`. The soak gate fails closed when `sesearch` is missing. It does not report a clean window. Day 0 installs the RPM (`dnf`), which lands the module at priority 200. It does not `semodule -i` a loose `.pp` at priority 400.
 
 Canary already runs the label check on the host before it restarts the service. To see that line yourself, SSH to production and run the copy that the RPM installed:
 
@@ -216,7 +216,7 @@ flowchart TD
 
 Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe `audit2allow` into `semodule` on the server.
 
-1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [203](../demo/203-RHEL_TWO_HOST.md) shows this after `/feature-spool` returns 500.
+1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [203](../demo/302-TECHNICAL.md) shows this after `/feature-spool` returns 500.
 2. Copy `/var/lib/<app>/selinux_soak_last_fail.json` and `selinux_soak_last_fail.avc` off the host.
 3. On rhel-qa, run `bash scripts/dev_generate_policy.sh`. If the vendor check says the app is already covered, re-run with `--tune-report` and apply those host commands. Use `--force "reason"` only when the app really is not the vendor one.
 4. Open the pull request on the **app** repo. The reusable workflow runs forbidden-patterns, the source audit, version consistency, and the Stream 9 compiled check.
@@ -241,7 +241,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 - [ ] Soak monitor is scheduled daily, with a notification on job failure.
 - [ ] Production hosts have `selinux-policy-ops` and `setools-console`, and no git clone.
 
-`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../demo/201-CODE_WALKTHROUGH.md#add-an-application). The two-VM rehearsal is [203](../demo/203-RHEL_TWO_HOST.md).
+`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../tool/201-TOOL-COMMANDS.md#add-an-application). The two-VM rehearsal is [203](../demo/302-TECHNICAL.md).
 
 ## When something fails
 

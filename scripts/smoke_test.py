@@ -1007,7 +1007,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
     mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "LAST_VERIFIED:** 2026-09-18" in guide
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
     assert "/feature-spool" in gate
@@ -1084,7 +1084,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "/var/log/audit/audit.log" not in reset_text
     mac_text = mac.read_text(encoding="utf-8")
     prod_text = prod.read_text(encoding="utf-8")
-    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "git checkout main" in mac_text
     assert "gpgcheck=1" in mac_text
     assert "No signing key" in mac_text
@@ -1273,7 +1273,7 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
 
 def test_narration_live_checks_and_enforce_paths() -> None:
     """Distro narration, one live-check list, and enforce-check uses the manifest."""
-    live = PROJECT_ROOT / "docs" / "demo" / "LIVE_CHECKS.md"
+    live = PROJECT_ROOT / "docs" / "LIVE_CHECKS.md"
     text = live.read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in text
     assert "ps -o label,args -C java" in text
@@ -1303,7 +1303,7 @@ def test_narration_live_checks_and_enforce_paths() -> None:
     assert "myapp.service" not in body
     assert "PATHS_CSV" in body
     assert "PRIMARY_SERVICE" in body
-    basics = (PROJECT_ROOT / "docs" / "training" / "102-SELINUX_BASICS.md").read_text(encoding="utf-8")
+    basics = (PROJECT_ROOT / "docs" / "training" / "102-COMMANDS.md").read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in basics
     assert "ps -o label,args -C java" in basics
 
@@ -1355,7 +1355,7 @@ def test_selinux_booleans_and_app_ci() -> None:
     """Manifest booleans, packaged verify path, and app-repo CI call."""
     import yaml
 
-    guide = (PROJECT_ROOT / "docs" / "admin" / "301-ANSIBLE_OPERATIONS.md").read_text(
+    guide = (PROJECT_ROOT / "docs" / "admin" / "401-OPERATIONS.md").read_text(
         encoding="utf-8"
     )
     assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
@@ -2491,7 +2491,7 @@ def test_runner_var_selects_rhel_host() -> None:
         assert "rhel9-utm" in str(job["container"])
         assert "quay.io/centos/centos:stream9" in str(job["container"])
         assert "fedora:41" not in path.read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "204-TESTING.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
     assert "rhel-ci" in guide
     assert "rhel-qa" in guide and "rhel-prod" in guide
     assert "make vm-check" in guide

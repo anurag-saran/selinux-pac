@@ -1,6 +1,6 @@
-# 204 — Testing
+# 303 — Testing
 
-This is the testing guide. Older notes called the same page 205.
+This is the testing guide. Older notes called the same page 204, then 205.
 
 This document is the **single reference** for how this repository tests SELinux policy — from developer laptop checks through production enforce gates.
 
@@ -8,11 +8,11 @@ This document is the **single reference** for how this repository tests SELinux 
 |----------|------------|------|
 | **App developer** | §1 Integration endpoints | §1.5 App manifest, §2 Local smoke tests |
 | **Policy author opening a PR** | §4 CI on pull requests | §5 Shell gate scripts |
-| **Admin / SRE** | §6 Staging and production gates | [`203-RHEL_TWO_HOST.md`](203-RHEL_TWO_HOST.md), [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) |
+| **Admin / SRE** | §6 Staging and production gates | [`302-TECHNICAL.md`](302-TECHNICAL.md), [`401-OPERATIONS.md`](../admin/401-OPERATIONS.md) |
 
-Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](202-DEMO_GUIDE.md)**; **file-by-file code tour** in **[201](201-CODE_WALKTHROUGH.md)**. **Catalog:** [`README.md`](../README.md).
+Related: concepts in **[101](../training/101-CONCEPTS.md)**; commands in **[102](../training/102-COMMANDS.md)**; the hand-built lab in **[104](../training/104-HAND-BUILT-MODULE.md)**; the customer talk in **[301](301-CUSTOMER.md)**; tool commands in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md). The soak gate fails closed when `sesearch` is missing ([201](../tool/201-TOOL-COMMANDS.md#scriptsmonitor_avcsh)).
 
-**Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)).
+**Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([302-TECHNICAL.md](302-TECHNICAL.md)).
 
 ---
 
@@ -203,7 +203,7 @@ These run on **SELinux hosts** (Ansible playbooks call them; admins can run manu
 
 ## 6. Staging and production gates
 
-Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)). The three-app customer talk is [202-DEMO_GUIDE.md](202-DEMO_GUIDE.md); the two-host pipeline ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)) runs the same playbooks from the Mac.
+Production control plane is **Ansible Automation Platform (AAP)** ([401-OPERATIONS.md](../admin/401-OPERATIONS.md)). The three-app customer talk is [301-CUSTOMER.md](301-CUSTOMER.md); the two-host pipeline ([302-TECHNICAL.md](302-TECHNICAL.md)) runs the same playbooks from the Mac.
 
 | Phase | Playbook | Key tests embedded |
 |-------|----------|-------------------|
@@ -215,7 +215,7 @@ Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_
 
 Full Ansible task order and variables: [`ansible/README.md`](../../ansible/README.md).
 
-Admin runbook with pass/fail examples: [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md#soak).
+Admin runbook with pass/fail examples: [`401-OPERATIONS.md`](../admin/401-OPERATIONS.md#soak).
 
 ---
 
@@ -249,6 +249,6 @@ Layer 7  emergency_rollback                           outage response
 | Check | Command |
 |-------|---------|
 | House-rule golden fixtures | `make test-fixtures` or `make test` |
-| Explain a denial log | `python3 cli/deterministic_gen.py --explain …` — [201 — Generate a module](201-CODE_WALKTHROUGH.md#generate-a-module) |
-| Full dev path | `bash scripts/dev_generate_policy.sh --skip-export` — [201 — Generate a module](201-CODE_WALKTHROUGH.md#generate-a-module) |
+| Explain a denial log | `python3 cli/deterministic_gen.py --explain …` — [201 — Generate a module](../tool/201-TOOL-COMMANDS.md#generate-a-module) |
+| Full dev path | `bash scripts/dev_generate_policy.sh --skip-export` — [201 — Generate a module](../tool/201-TOOL-COMMANDS.md#generate-a-module) |
 | Coverage gate | `bash scripts/verify_avc_coverage.sh` after generation |

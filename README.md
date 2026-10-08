@@ -2,14 +2,14 @@
 
 **The RHEL admin tool for shipping SELinux policy as code.** Developers open a PR, CI rejects dangerous allows (`forbidden-patterns`), admins compile and publish a signed RPM, **Ansible Automation Platform (AAP)** canaries, soaks, and enforces. The host stays **Enforcing**. Policy is a versioned product — not a one-off `audit2allow` on a box.
 
-The **customer talk** is **202** — three applications (distro Tomcat loaded but unconfined, inherited Tomcat you tune, Spring Boot you generate). Finish **[101](docs/training/101-SELINUX.md)** first. The two-host generate/canary/soak pipeline is **203** (**shopapi**). Offline `make check` uses **deterministic fixtures** (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules — not a live Flask app. This tool repo is the generator, CI helpers, and AAP path. Numbered catalog: [docs/README.md](docs/README.md).
+The **customer talk** is **301** — three applications (distro Tomcat loaded but unconfined, inherited Tomcat you tune, Spring Boot you generate). Finish **[104](docs/training/104-HAND-BUILT-MODULE.md)** first. The two-host generate/canary/soak pipeline is **302** (**shopapi**). Offline `make check` uses **deterministic fixtures** (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules — not a live Flask app. This tool repo is the generator, CI helpers, and AAP path. Numbered catalog: [docs/README.md](docs/README.md).
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
+| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[301](docs/demo/301-CUSTOMER.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
-| **Application developer** | [Developers](#developers) and **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)** |
+| **Application developer** | [Developers](#developers) and **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)** |
 | **Offline check (any laptop)** | `make check` (**204**) |
 
 ---
@@ -47,7 +47,7 @@ Those are complementary, not substitutes: his loop detects and routes; this tool
 
 - **Developers own the allow list in git.** `.te` / `.fc` / `selinux_ports` are reviewed like application code. CI blocks `shadow_t`, wildcards, `bin_t` execute, and the rest of the forbidden set.
 - **Admins own production mutation.** The only control plane is AAP (same YAML on a laptop until the project is imported). Execution nodes SSH in; they never clone this repo onto prod.
-- **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship))
+- **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship))
 - **Soak is evidence, not a calendar sticker.** Daily net-new vs the installed module. Fail closed if `sesearch` is missing (`setools-console` is an RPM require).
 - **Break-glass is still gated.** `force_enforce` defaults false and still needs `change_ticket`. Rollback does not require an API key.
 
@@ -95,12 +95,12 @@ Prod     Release canary → Soak monitor → Promote to enforce
 
 ## Admins: your environment
 
-Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-click datacenter installer; this is the customer path. Full checklist: [docs/admin/301-ANSIBLE_OPERATIONS.md#roll-this-out](docs/admin/301-ANSIBLE_OPERATIONS.md#roll-this-out). Doc index: [docs/README.md](docs/README.md).
+Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-click datacenter installer; this is the customer path. Full checklist: [docs/admin/401-OPERATIONS.md#roll-this-out](docs/admin/401-OPERATIONS.md#roll-this-out). Doc index: [docs/README.md](docs/README.md).
 
 | Follow | For |
 |--------|-----|
-| **[203](docs/demo/203-RHEL_TWO_HOST.md)** | QA box + prod box; **no git clone on prod** |
-| **[301](docs/admin/301-ANSIBLE_OPERATIONS.md)** | Canary, soak, enforce, rollback, and a denial after ship |
+| **[302](docs/demo/302-TECHNICAL.md)** | QA box + prod box; **no git clone on prod** |
+| **[401](docs/admin/401-OPERATIONS.md)** | Canary, soak, enforce, rollback, and a denial after ship |
 | [ansible/aap/README.md](ansible/aap/README.md) | Click-create job templates + **Release canary** / **Promote to enforce** |
 
 **Scripts** (run from the controller — laptop or AAP execution node):
@@ -115,7 +115,7 @@ bash scripts/setup_rhel_hosts.sh doctor
 # bootstrap — print (do not run) SSH steps for rhel-qa only
 bash scripts/setup_rhel_hosts.sh bootstrap
 # next app after the shopapi demo
-bash scripts/selinux_pac_adopt.sh init payments     # see docs/demo/201-CODE_WALKTHROUGH.md#add-an-application
+bash scripts/selinux_pac_adopt.sh init payments     # see docs/tool/201-TOOL-COMMANDS.md#add-an-application
 
 # Package + publish (see packaging/internal.env.example)
 bash packaging/build_rpms.sh                        # selinux-policy-ops + shopapi-selinux (demo) + myapp-selinux (test fixture)
@@ -156,18 +156,18 @@ macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still ru
 
 Copy `scripts/lab.env.example` to `scripts/lab.env` and set `QA_HOST`, `PROD_HOST`, and `SSH_USER`. Scripts read `lab.env` when that file is present. If it is absent, they require those three variables. Re-check with `ping` if a VM was recreated.
 
-**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[203](docs/demo/203-RHEL_TWO_HOST.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
+**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[302](docs/demo/302-TECHNICAL.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash scripts/reset_demo_vms.sh`, then the Mac conductor.
 
-**Before the talk (101):** [docs/training/101-SELINUX.md](docs/training/101-SELINUX.md) (one host, shopapi). Then pick **one** demo:
+**Before the talk (104):** [docs/training/104-HAND-BUILT-MODULE.md](docs/training/104-HAND-BUILT-MODULE.md) (one host, shopapi). Then pick **one** demo:
 
 | Talk | Audience | Setup | Length | Start |
 |------|----------|--------|--------|-------|
-| **202** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
-| **203** | Technical deep dive | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
+| **301** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
+| **302** | Technical deep dive | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
 `--help` on each script names the other. Do not run `demo_e2e_mac.sh` as the first customer conversation.
 
-**202 customer talk:**
+**301 customer talk:**
 
 ```bash
 bash scripts/demo_present.sh --dry-run --profile customer   # any laptop
@@ -176,9 +176,9 @@ bash scripts/demo_present.sh --preflight
 bash scripts/demo_present.sh --profile customer
 ```
 
-See **[202](docs/demo/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
+See **[301](docs/demo/301-CUSTOMER.md)**. Already-tuned App B (second run): `bash scripts/reset_demo_vms.sh --dev-only`.
 
-**203 three-host pipeline:** three Terminal windows. The Mac script is the conductor; press Enter between steps.
+**302 three-host pipeline:** three Terminal windows. The Mac script is the conductor; press Enter between steps.
 
 | Window | Start |
 |--------|--------|
@@ -194,7 +194,7 @@ Lab enforce uses `soak_min_days: 0` on **QA only** — never copy that onto prod
 
 ## Developers
 
-Training before the three-app talk: **[101](docs/training/101-SELINUX.md)**.
+Training before the three-app talk: **[101](docs/training/101-CONCEPTS.md)** through **[104](docs/training/104-HAND-BUILT-MODULE.md)**.
 
 On **rhel-qa** (repo checkout, SELinux Enforcing):
 
@@ -207,9 +207,9 @@ gh pr create --body-file policy_out/pr_body.md --label security --label selinux
 
 The generator classifies the denial: **file** → `.fc` + `restorecon`; **port** → `selinux_ports` in the manifest (canary runs `semanage port -a`); **boolean** → `selinux_booleans` in the manifest, applied by canary with `ansible.posix.seboolean` (not a raw allow in the `.te`); **new allow** → `.te` under CI forbidden-patterns. It does not auto-edit production.
 
-CI must pass `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls this workflow instead of copying it; see [301](docs/admin/301-ANSIBLE_OPERATIONS.md). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`. Shopapi starts from `/opt/shopapi/bin/shopapi` (the `shopapi_exec_t` wrapper around the system Java). The unit has no `SELinuxContext=` line.
+CI must pass `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls this workflow instead of copying it; see [401](docs/admin/401-OPERATIONS.md). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`. Shopapi starts from `/opt/shopapi/bin/shopapi` (the `shopapi_exec_t` wrapper around the system Java). The unit has no `SELinuxContext=` line.
 
-New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)**.
+New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)**.
 
 Ports stay in the committed manifest (`selinux_ports`). Probe host/IP is per inventory (`http_probe_host`).
 
@@ -223,9 +223,10 @@ selinux/      Policy source of truth (.te/.fc, policy_version.txt)
 ansible/      selinux_pac role + aap/ Controller workflows
 packaging/    selinux-policy-ops + <app>-selinux; publish_internal.sh
 scripts/      setup_rhel_hosts.sh (admins), demo_e2e_*.sh (three-window lab talk track)
-docs/training/    101 labs, 102 basics
-docs/demo/        202 customer talk, 203 ship talk, 201 how the tool works, 204 tests
-docs/admin/       301 ship
+docs/training/    101 concepts, 102 commands, 103 config files, 104 hand-built module
+docs/tool/        201 tool commands, 202 tool lab
+docs/demo/        301 customer talk, 302 ship talk, 303 tests
+docs/admin/       401 ship
 ```
 
 ---
@@ -233,5 +234,5 @@ docs/admin/       301 ship
 ## Safety
 
 - Never `force_enforce` without a change ticket. Never copy `soak_min_days: 0` from `inventory.dev.yml` onto prod (enforce refuses it on the `production` group). The three-window demo may pass `force_enforce=true` with `-e change_ticket=DEMO` so the talk can finish.
-- If a file or port is denied after ship: [docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) — PR + recanary, not live `semodule -i`.
+- If a file or port is denied after ship: [docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship) — PR + recanary, not live `semodule -i`.
 - AAP is the control plane (RPMs, `serial: 1`). Do not `semodule -i` generated policy on prod.

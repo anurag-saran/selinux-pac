@@ -13,7 +13,7 @@ lab_env_load
 e2e_usage_common() {
     cat <<EOF
 For the ~20 min single-host customer talk, see scripts/demo_present.sh.
-Guide: docs/demo/202-DEMO_GUIDE.md  ·  docs/demo/203-RHEL_TWO_HOST.md
+Guide: docs/demo/301-CUSTOMER.md  ·  docs/demo/302-TECHNICAL.md
 
 Options:
   --auto       No Enter pauses. On the Mac script, also SSH and run the VM talk tracks.
