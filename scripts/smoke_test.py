@@ -2233,7 +2233,9 @@ def test_deterministic_fixture_classify() -> None:
             ).hexdigest()
             assert digest_a == digest_b, f"{case}: non-deterministic output between runs"
         if case in ("04-boolean-network-connect", "10-boolean-hint"):
-            out_te = (case_dir / "_out" / "myapp.te").read_text(encoding="utf-8")
+            # Fixture 10's manifest app_name is httpd, so the generator writes httpd.te.
+            te_name = "httpd.te" if case == "10-boolean-hint" else "myapp.te"
+            out_te = (case_dir / "_out" / te_name).read_text(encoding="utf-8")
             assert "http_port_t" not in out_te, f"{case}: must not add permanent allow on http_port_t"
             row = next(r for r in rows if r.get("verdict") == "boolean")
             assert row.get("boolean") == "httpd_can_network_connect"
