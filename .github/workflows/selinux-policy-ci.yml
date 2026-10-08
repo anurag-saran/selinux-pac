@@ -37,8 +37,8 @@ jobs:
 
   compiled-policy:
     name: compiled-policy
-    runs-on: ubuntu-latest
-    container: quay.io/centos/centos:stream9
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ vars.RUNNER == 'rhel9-utm' && fromJSON('null') || 'quay.io/centos/centos:stream9' }}
     steps:
       - name: Install git for checkout
         run: dnf install -y git

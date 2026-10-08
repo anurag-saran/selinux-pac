@@ -163,10 +163,18 @@ The generator already ran the same forbidden-pattern check, so these jobs are ex
 |-----------|----------------|----------------|
 | `offline-tests` | `make test` | Deterministic fixtures, blast-radius fixtures, tune-report fixtures, smoke tests, and the static validators |
 | `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments`, then `cli/policy_audit.py` | No wildcards, forbidden target types, or `bin_t` execute |
-| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` in a CentOS Stream 9 container | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
+| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` on Stream 9, or on the `rhel9-utm` runner when `RUNNER` is set | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
 | `version-consistency` | `scripts/validate_version_consistency.sh` | `policy_version.txt` matches `policy_module()` |
 
 Those four names are stable so branch protection can require them. `make check` on a laptop is `make test` plus linters. The Stream 9 job is the compile. A laptop without `selinux-policy-devel` does not compile.
+
+Repo variable `RUNNER` defaults to unset, which is `ubuntu-latest` plus the Stream 9 container for the SELinux jobs (`compiled-policy`, `app-compiled-policy`, `bypass-rejected`, and `shopapi-policy-compile`). Set `RUNNER` to `rhel9-utm` to run those jobs on that runner with no container.
+
+Register the runner on a dedicated **rhel-ci** VM. Do not register it on rhel-qa or rhel-prod. On that VM, install the GitHub Actions runner, and give it the label `rhel9-utm`. The runner user needs passwordless `dnf` so the job can install `selinux-policy-devel` and `setools-console`. Then set the repository variable `RUNNER` to `rhel9-utm`.
+
+A public repository that uses a self-hosted runner must require approval before workflows from outside collaborators run, or the repository must be private. A pull request from a fork can otherwise run code on the VM.
+
+`make vm-check` is the same compile list on the QA VM, not on the runner. Copy `scripts/lab.env.example` to `scripts/lab.env`, set `QA_HOST`, `PROD_HOST`, and `SSH_USER`, then run `make vm-check`. It syncs the checkout and prints one PASS or FAIL line per check. The last line is `host-unchanged`: `semodule -l` must not list `bypass_*` or `pac_control`.
 
 Compiled `selinux/myapp.pp` is **not** committed to Git.
 

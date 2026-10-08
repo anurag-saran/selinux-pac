@@ -2328,6 +2328,122 @@ AVC
     assert "var_spool_t" in out
 
 
+def test_vm_check_reports_each_result() -> None:
+    """Each QA check prints PASS or FAIL, and a loaded bypass module fails the host check."""
+    script = PROJECT_ROOT / "scripts" / "vm_check.sh"
+    text = script.read_text(encoding="utf-8")
+    for name in (
+        "integration-compile",
+        "integration-semantics",
+        "reject_compiled_bypasses",
+        "test_avc_epoch_window",
+        "test_avc_query_epoch",
+        "integration-blast-radius",
+        "host-unchanged",
+    ):
+        assert name in text
+    assert "semodule -l" in text
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        log = root / "ssh.log"
+        ssh = bindir / "ssh"
+        ssh.write_text(
+            "#!/bin/sh\n"
+            "cmd=\n"
+            "for arg in \"$@\"; do cmd=\"$arg\"; done\n"
+            "printf '%s\\n' \"$cmd\" >> \"$VM_LOG\"\n"
+            "case \"$cmd\" in\n"
+            "  *HOME/selinux-pac*) printf '%s' /home/ansible/selinux-pac ;;\n"
+            "  *semodule*)\n"
+            "    if [ \"$VM_MODE\" = bypass ]; then\n"
+            "      printf '%s\\n' 'bypass_shadow 1.0' 'pac_control 1.0'\n"
+            "    else\n"
+            "      printf '%s\\n' 'shopapi 1.0'\n"
+            "    fi\n"
+            "    ;;\n"
+            "  *integration-compile*)\n"
+            "    if [ \"$VM_MODE\" = compile-fail ]; then echo 'SKIP integration-compile' >&2; exit 1; fi\n"
+            "    ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        ssh.chmod(0o755)
+        rsync = bindir / "rsync"
+        rsync.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        rsync.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env["QA_HOST"] = "qa.example"
+        env["PROD_HOST"] = "prod.example"
+        env["SSH_USER"] = "ansible"
+        env["VM_LOG"] = str(log)
+        env["VM_MODE"] = "ok"
+        ok = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+        for name in (
+            "integration-compile",
+            "integration-semantics",
+            "reject_compiled_bypasses",
+            "test_avc_epoch_window",
+            "test_avc_query_epoch",
+            "integration-blast-radius",
+            "host-unchanged",
+        ):
+            assert f"PASS {name}" in ok.stdout, ok.stdout
+        env["VM_MODE"] = "bypass"
+        leaked = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert leaked.returncode != 0
+        assert "FAIL host-unchanged" in leaked.stdout
+        env["VM_MODE"] = "compile-fail"
+        broken = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert broken.returncode != 0
+        assert "FAIL integration-compile" in broken.stdout
+
+
+def test_runner_var_selects_rhel_host() -> None:
+    """SELinux jobs stay on Stream 9 unless RUNNER is the rhel9-utm label."""
+    import yaml
+
+    jobs = {
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml": "compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml": "app-compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml": "bypass-rejected",
+        PROJECT_ROOT / ".github" / "workflows" / "demo-estate.yml": "shopapi-policy",
+    }
+    for path, job_id in jobs.items():
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        job = workflow["jobs"][job_id]
+        assert "vars.RUNNER" in str(job["runs-on"])
+        assert "rhel9-utm" in str(job["container"])
+        assert "quay.io/centos/centos:stream9" in str(job["container"])
+        assert "fedora:41" not in path.read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "204-TESTING.md").read_text(encoding="utf-8")
+    assert "rhel-ci" in guide
+    assert "rhel-qa" in guide and "rhel-prod" in guide
+    assert "make vm-check" in guide
+
+
 def test_soak_counts_every_domain_denial() -> None:
     """Denials outside the manifest paths still count when scontext is the app domain."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -3519,6 +3635,8 @@ def main() -> int:
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),
         ("payments_onboarding_module", test_payments_onboarding_module),
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
+        ("vm_check_reports_each_result", test_vm_check_reports_each_result),
+        ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
         ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),
         ("soak_counts_every_domain_denial", test_soak_counts_every_domain_denial),
         ("soak_ignore_is_explicit", test_soak_ignore_is_explicit),
