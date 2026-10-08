@@ -68,7 +68,7 @@ cp "${ROOT}/scripts/lib/avc_query.sh" \
 mkdir -p "${OPS_SRC}/lib/pac_cli"
 cp "${ROOT}/cli/soak_net_new.py" \
    "${ROOT}/cli/avc_preprocess.py" \
-   "${ROOT}/cli/selinux_gen.py" "${OPS_SRC}/lib/pac_cli/"
+   "${ROOT}/cli/avc_parse.py" "${OPS_SRC}/lib/pac_cli/"
 
 bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
 bash "${ROOT}/scripts/compile_and_validate.sh" selinux

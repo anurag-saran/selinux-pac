@@ -2,20 +2,17 @@
 #
 # dev_generate_policy.sh — One-command developer self-service policy generation
 #
-# Exports AVC logs, runs cli/deterministic_gen.py (+ optional summarize_pr.py), diffs against selinux/
+# Exports AVC logs, runs cli/deterministic_gen.py, diffs against selinux/
 # promotes generated policy into selinux/ for PR commit.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-GEN="${PROJECT_ROOT}/cli/selinux_gen.py"
 DETERMINISTIC="${PROJECT_ROOT}/cli/deterministic_gen.py"
 VERIFY_AVC="${PROJECT_ROOT}/cli/verify_avc_coverage.py"
 APP_NAME="${POLICY_APP:-myapp}"
 DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
-ENGINE="${POLICY_ENGINE:-deterministic}"
-LLM_SUMMARY="${POLICY_SUMMARY_LLM:-0}"
 APPLY=0
 ENFORCE_CHECK=0
 SKIP_EXPORT=0
@@ -55,8 +52,6 @@ Usage: $(basename "$0") [options]
 Developer self-service: export AVCs → generate policy → diff → optional promote to selinux/
 
 Options:
-  --engine MODE    deterministic (default); llm is deprecated → deterministic + --llm-summary
-  --llm-summary    After generation, polish pr_summary.md narrative via OpenAI (needs OPENAI_API_KEY)
   --apply          Copy policy_out/{app}.te/.fc into selinux/ after generation
   --enforce-check  Load candidate policy enforcing and run endpoint + domain checks
   --open-pr        Run gh pr create with assembled pr_body.md (requires gh CLI + git branch)
@@ -74,17 +69,12 @@ Options:
   -h, --help       Show this help
 
 Environment:
-  OPENAI_API_KEY   Required only for --llm-summary (or POLICY_SUMMARY_LLM=1)
-  POLICY_ENGINE    Default: deterministic
-  POLICY_SUMMARY_LLM  Set to 1 to run cli/summarize_pr.py after generation
   POLICY_ALLOW_DEGRADED  Pass --allow-degraded to deterministic_gen when sepolgen missing
   POLICY_ALLOW_NEEDS_REVIEW  Pass --allow-needs-review (domain-weakening allows)
-  OPENAI_BASE_URL  Optional LiteLLM endpoint
-  OPENAI_API_MODEL Optional model override
 
 Example:
   sudo bash scripts/dev_generate_policy.sh --apply
-  bash scripts/dev_generate_policy.sh --llm-summary --skip-export   # optional admin prose
+  bash scripts/dev_generate_policy.sh --skip-export
   bash scripts/dev_generate_policy.sh --tune-report --app-name tomcat --unit tomcat.service
   bash scripts/dev_generate_policy.sh --force "non-standard layout vs jws6_tomcat" --apply
   git checkout -b policy/update && git add selinux/ && gh pr create --body-file policy_out/pr_body.md
@@ -109,8 +99,6 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --allow-needs-review) ALLOW_NEEDS_REVIEW=1; shift ;;
-        --engine) ENGINE="$2"; shift 2 ;;
-        --llm-summary) LLM_SUMMARY=1; shift ;;
         --app-name) APP_NAME="$2"; DOMAIN="${APP_NAME}_t"; shift 2 ;;
         --unit) PRIMARY_SERVICE="$2"; shift 2 ;;
         --app-root) APP_ROOT="$2"; shift 2 ;;
@@ -265,14 +253,6 @@ run_tune_report() {
         --port-type "${port_type}"
 }
 
-require_api_key() {
-    [[ "${LLM_SUMMARY}" -eq 1 ]] || return 0
-    [[ -n "${OPENAI_API_KEY:-}" ]] || {
-        log_error "Set OPENAI_API_KEY for --llm-summary (or unset POLICY_SUMMARY_LLM)"
-        exit 1
-    }
-}
-
 resolve_manifest_policy_paths() {
     python3 - "${MANIFEST}" "${APP_ROOT}" "${PROJECT_ROOT}" <<'PY'
 import sys
@@ -367,11 +347,6 @@ export_avcs() {
 }
 
 generate_policy() {
-    if [[ "${ENGINE}" == llm ]]; then
-        log_warn "--engine llm is deprecated; using deterministic + --llm-summary"
-        ENGINE=deterministic
-        LLM_SUMMARY=1
-    fi
     log_info "Running cli/deterministic_gen.py (policy)..."
     if [[ "${ALLOW_NEEDS_REVIEW}" -eq 1 ]]; then
         export POLICY_ALLOW_NEEDS_REVIEW=1
@@ -384,7 +359,6 @@ generate_policy() {
         "${POLICY_VERSION_FILE}" \
         "${POLICY_OUT}" \
         "${APP_NAME}"
-    run_llm_pr_summary_if_requested "${POLICY_OUT}" "${APP_NAME}"
 }
 
 show_diff() {
@@ -556,7 +530,6 @@ main() {
         return 0
     fi
 
-    require_api_key
     sync_identity_from_manifest
     check_vendor_policy
     require_existing_policy

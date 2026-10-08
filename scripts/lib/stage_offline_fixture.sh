@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# stage_skip_ai_fixture.sh — Populate policy_out/ from offline demo fixtures.
+# stage_offline_fixture.sh — Populate policy_out/ from offline demo fixtures.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-FIXTURE_ROOT="${PROJECT_ROOT}/docs/examples/fixtures/skip_ai"
+FIXTURE_ROOT="${PROJECT_ROOT}/docs/examples/fixtures/offline"
 POLICY_OUT="${PROJECT_ROOT}/policy_out"
 APP_NAME="${POLICY_APP:-myapp}"
 SELINUX_DIR="${PROJECT_ROOT}/selinux"
@@ -15,7 +15,7 @@ VERSION_FILE="${SELINUX_DIR}/policy_version.txt"
 log_error() { echo "[ERROR] $*" >&2; }
 
 [[ -d "${FIXTURE_ROOT}/generated" ]] || {
-    log_error "Missing ${FIXTURE_ROOT}/generated — run scripts/refresh_skip_ai_fixture.sh"
+    log_error "Missing ${FIXTURE_ROOT}/generated — run scripts/refresh_offline_fixture.sh"
     exit 1
 }
 
@@ -33,7 +33,7 @@ fi
 
 if [[ -n "${canonical_version}" && -n "${generated_version}" && "${generated_version}" != "${canonical_version}" ]]; then
     log_error "Fixture generated/ is ${generated_version} but selinux/policy_version.txt is ${canonical_version}"
-    log_error "Run: bash scripts/refresh_skip_ai_fixture.sh"
+    log_error "Run: bash scripts/refresh_offline_fixture.sh"
     exit 1
 fi
 

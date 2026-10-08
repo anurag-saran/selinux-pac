@@ -222,7 +222,7 @@ Schedule **Soak monitor** in AAP on the canary group. See [301-ANSIBLE_OPERATION
 
 Role phase **`rollback`**. **Permissive first** (stock modules / `semanage`); optional **`dnf downgrade`**; then `semodule -B`, restorecon, restarts, AVC export. Optional ops scripts if RPM installed.
 
-**No OpenAI on target** — run [`generate_emergency_patch.yml`](generate_emergency_patch.yml) on the **controller git checkout** after fetching `/tmp/emergency_avc.log` or `selinux_soak_last_fail.avc`. Output is `policy_out/` for a PR — never `semodule -i` on prod. See [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
+Run [`generate_emergency_patch.yml`](generate_emergency_patch.yml) on the **controller git checkout** after fetching `/tmp/emergency_avc.log` or `selinux_soak_last_fail.avc`. Output is `policy_out/` for a PR — never `semodule -i` on prod. See [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
 
 ### Example
 
@@ -273,7 +273,7 @@ Installed by **`selinux-policy-ops`** RPM (or checkout when `selinux_ops_from_pa
 | `check_soak_ready.sh` | optional host CLI (also in ops RPM) |
 | `post_deploy_report.sh` | canary, enforce, rollback (optional) |
 
-**Controller / CI only:** `compile_and_validate.sh`, `classify_policy_blast_radius.sh`, `cli/selinux_gen.py`, `scripts/selinux_pac_adopt.sh`.
+**Controller / CI only:** `compile_and_validate.sh`, `classify_policy_blast_radius.sh`, `cli/deterministic_gen.py`, `scripts/selinux_pac_adopt.sh`.
 
 Parity guard: [`scripts/validate_rpm_ops_parity.sh`](../scripts/validate_rpm_ops_parity.sh) (`make test-rpm`).
 

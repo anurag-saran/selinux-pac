@@ -267,7 +267,7 @@ def validate_selinux_booleans(booleans: Any, domain: str) -> list[str]:
             errors.append(f"{label} must be a mapping")
             continue
         name = str(entry.get("name") or "")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        if re.match(r"[A-Za-z_][A-Za-z0-9_]*\Z", name) is None:
             errors.append(f"{label} name {name!r} is not a boolean identifier")
         if name == "tomcat_can_network_connect":
             errors.append(

@@ -26,9 +26,7 @@ PROFILE="customer"
 ACTS=""
 PREFLIGHT=0
 DEMO_APP="shopapi"
-SKIP_AI=1
 OPEN_PR=0
-LLM_SUMMARY=0
 PREFLIGHT_FAIL=0
 DEMO_DRY_VARIANT="distro"
 DEMO_DRY_UNCONFINED=1
@@ -57,7 +55,6 @@ Options:
   --variant distro|jws           Dry-run host (default distro). Prints what that
                                  host shows: distro tomcat_t is unconfined;
                                  jws is jws6_tomcat_t and confined.
-  --skip-ai                      Do not require OPENAI_API_KEY (default)
   --open-pr                      Preflight requires gh auth
   --auto                         No Enter pauses
   --no-type                      Instant command echo
@@ -87,9 +84,7 @@ while [[ $# -gt 0 ]]; do
                 *) echo "Unknown --variant ${2} (use distro|jws)" >&2; exit 2 ;;
             esac
             ;;
-        --skip-ai) SKIP_AI=1; shift ;;
         --open-pr) OPEN_PR=1; shift ;;
-        --llm-summary) LLM_SUMMARY=1; SKIP_AI=0; shift ;;
         --auto) TLAB_AUTO=1; shift ;;
         --no-type) TLAB_NO_TYPE=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -312,16 +307,6 @@ run_preflight() {
         else
             pf_row "FAIL" "gh auth" "missing" "gh auth login (required with --open-pr)"
         fi
-    fi
-
-    if [[ "${SKIP_AI}" -eq 0 && "${LLM_SUMMARY}" -eq 1 ]]; then
-        if [[ -n "${OPENAI_API_KEY:-}" ]]; then
-            pf_row "PASS" "OPENAI_API_KEY" "set"
-        else
-            pf_row "FAIL" "OPENAI_API_KEY" "unset" "export OPENAI_API_KEY or pass --skip-ai"
-        fi
-    else
-        pf_row "PASS" "OPENAI_API_KEY" "not required (deterministic / --skip-ai)"
     fi
 
     echo

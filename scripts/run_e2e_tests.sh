@@ -22,14 +22,14 @@ python3 scripts/smoke_test.py || log_fail "smoke_test.py"
 log_ok "validate_rpm_ops_parity"
 bash scripts/validate_rpm_ops_parity.sh || log_fail "rpm parity"
 
-log_ok "stage_skip_ai_fixture"
-bash scripts/lib/stage_skip_ai_fixture.sh || log_fail "skip_ai fixture"
+log_ok "stage_offline_fixture"
+bash scripts/lib/stage_offline_fixture.sh || log_fail "offline fixture"
 
 mkdir -p policy_out
-cp docs/examples/fixtures/skip_ai/avc.log policy_out/avc.log
+cp docs/examples/fixtures/offline/avc.log policy_out/avc.log
 
-log_ok "dev_generate_policy (--engine deterministic --skip-export)"
-if bash scripts/dev_generate_policy.sh --skip-export --engine deterministic; then
+log_ok "dev_generate_policy (--skip-export)"
+if bash scripts/dev_generate_policy.sh --skip-export; then
     log_ok "dev_generate deterministic pipeline"
 else
     log_fail "dev_generate_policy deterministic"

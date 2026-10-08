@@ -47,8 +47,7 @@ from policy_rules import (
     format_needs_review_note,
     needs_review_hits,
 )
-from selinux_gen import (  # noqa: E402
-    domain_for_app,
+from avc_parse import (  # noqa: E402
     format_version,
     parse_avc_line,
     parse_version,
@@ -279,7 +278,7 @@ def collapse_to_pattern(perms: frozenset[str]) -> str | None:
 def parse_avc_file(
     avc_path: Path, domains: set[str]
 ) -> tuple[list, dict[tuple[str, str, str], set[str]], dict[tuple[str, str, str], set[int]]]:
-    from selinux_gen import AvcEntry
+    from avc_parse import AvcEntry
 
     entries: list[AvcEntry] = []
     paths: dict[tuple[str, str, str], set[str]] = {}

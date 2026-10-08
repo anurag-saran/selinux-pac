@@ -99,16 +99,14 @@ python3 scripts/smoke_test.py
 
 | Test name | What it verifies |
 |-----------|------------------|
-| `prompts` | AI user prompt includes domain, existing `.te`, AVC summary structure |
 | `avc_parsing` | `parse_avc_line`, dedup, domain filter |
 | `perm_merge` | Duplicate AVC lines merge permissions on same src/tgt/class |
 | `type_extraction_dedup` | `system_r` vs `object_r` in scontext normalize to same type |
 | `subtract_existing` | Net-new detection skips permissions already in `.te` |
 | `net_new_detection` | Partial overlap — only missing perms flagged net-new |
-| `preprocess_stats` | Raw vs merged AVC counts for LLM input |
-| `prompt_uses_summary` | Prompt contains Net-new / Already covered sections |
-| `no_changes_needed_summary` | Fully covered AVCs produce no-change summary |
-| `policy_json_validation` | AI JSON shape, forbidden patterns, PR summary headings |
+| `preprocess_stats` | Raw vs merged AVC counts |
+| `structured_summary_sections` | Summary contains Net-new / Already covered sections |
+| `pr_summary_headings` | `pr_summary` requires the four section headings |
 | `version_bump` | SemVer bump in `policy_version.txt` |
 | `version_consistency` | `validate_version_consistency.sh` passes on committed `selinux/` |
 | `classify_fail_closed_json` | Corrupt blast-radius input → JSON with `fail_closed: true` |
@@ -126,7 +124,8 @@ python3 scripts/smoke_test.py
 | `e2e_quiet_ssh_wrap_skips_when_ssh_missing` | `e2e_install_quiet_ssh` no-ops when `ssh`/`scp` are missing or `E2E_DRY=1` |
 | `app_manifest` | Validates demo + example manifests; `shell-export` emits expected keys |
 | `rpm_ops_parity` | Ops RPM file list matches repo scripts |
-| `skip_ai_fixture_sync` | Offline demo `skip_ai/generated/` matches committed `selinux/` |
+| `offline_fixture_sync` | Offline demo `offline/generated/` matches committed `selinux/` |
+| `tracked_tree_has_no_model_client` | Tracked files do not name a removed model client |
 | `deterministic_verdict_fixture_coverage` | Every classification verdict has ≥1 golden row under `docs/examples/fixtures/deterministic/` |
 | `needs_review_hits` | `execmem` / `dac_override` / foreign `process transition` match `NEEDS_REVIEW_RULES`; in-module transition does not |
 | `deterministic_fixture_classify` | Each fixture: `--explain` + generation vs `expected.json`; optional `sepolgen_mock.json` |
@@ -141,7 +140,7 @@ python3 scripts/smoke_test.py
 | Compile | `bash scripts/compile_and_validate.sh selinux` | Yes — `selinux-policy-devel` on **rhel-qa** |
 | Semantic assertions | `bash scripts/validate_policy_semantics.sh selinux` | Yes — rhel-qa |
 | Staging + AVC export | `make demo-bootstrap` + curl shopapi `/health` `/state` `/log` | Yes (RHEL **qa**) |
-| AI / deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
+| Deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
 | **Enforce-check** | `bash scripts/dev_generate_policy.sh --apply --enforce-check --app-name shopapi` | Yes (root on RHEL **qa**) |
 
 **`--enforce-check`** compiles the candidate `.pp`, removes permissive on the manifest domain, runs `restorecon` on the manifest paths, restarts the manifest units, runs `wait_for_endpoints.sh` (including domain-context verification), and prints recent AVCs on failure.

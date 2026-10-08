@@ -18,9 +18,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "/bin/bash"
 sys.path.insert(0, str(PROJECT_ROOT / "cli"))
 
+from avc_parse import (  # noqa: E402
+    bump_policy_version,
+    deduplicate_avc_entries,
+    filter_avc_entries,
+    parse_avc_line,
+    read_policy_version,
+)
 from avc_preprocess import (  # noqa: E402
     AccessNeed,
-    build_llm_avc_summary,
     extract_type,
     merge_avc_entries,
     normalize_perms,
@@ -28,17 +34,7 @@ from avc_preprocess import (  # noqa: E402
     preprocess_avc_entries,
     subtract_covered,
 )
-from prompt_templates import SYSTEM_PROMPT, build_user_prompt  # noqa: E402
-from selinux_gen import (  # noqa: E402
-    bump_policy_version,
-    deduplicate_avc_entries,
-    filter_avc_entries,
-    parse_avc_line,
-    parse_policy_json,
-    read_policy_version,
-    validate_policy_content,
-    validate_pr_summary,
-)
+from pr_summary_common import validate_pr_summary  # noqa: E402
 
 
 def assert_mentions(text: str, *needles: str) -> None:
@@ -337,28 +333,6 @@ def test_make_deps_uses_venv() -> None:
     assert "$(PIP) install" in deps
 
 
-def test_prompts() -> None:
-    avc = (
-        'type=AVC msg=audit(123): avc: denied { write } for pid=1 comm="python3" '
-        "scontext=system_u:system_r:myapp_t:s0 "
-        "tcontext=system_u:object_r:myapp_var_lib_t:s0 tclass=file permissive=1"
-    )
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
-    prompt = build_user_prompt(
-        "myapp_t", avc, app_name="myapp", version="1.0.0", existing_te=te, existing_fc=fc
-    )
-    assert "myapp_t" in prompt
-    assert "Existing Type Enforcement" in prompt
-    assert len(SYSTEM_PROMPT) > 100
-    import policy_rules
-
-    forbidden = ", ".join(sorted(policy_rules.FORBIDDEN_TARGET_TYPES))
-    assert forbidden in SYSTEM_PROMPT
-    for name in policy_rules.FORBIDDEN_TARGET_TYPES:
-        assert name in SYSTEM_PROMPT
-
-
 def test_avc_parsing() -> None:
     line = (
         'type=AVC msg=audit(1): avc: denied { write append open } for pid=99 '
@@ -453,44 +427,21 @@ def test_preprocess_stats() -> None:
     assert stats["merged"] < stats["raw"]
 
 
-def test_prompt_uses_summary() -> None:
+def test_structured_summary_sections() -> None:
     te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
     entries = [
         parse_avc_line(
             _sample_avc_line("link", "system_u:system_r:myapp_t:s0", "system_u:object_r:myapp_var_lib_t:s0")
         )
     ]
-    summary, _ = build_llm_avc_summary(entries, existing_te=te)
-    prompt = build_user_prompt(
-        "myapp_t", summary, app_name="myapp", version="1.0.0", existing_te=te, existing_fc=fc
-    )
-    assert "Net-new access needs" in prompt
-    assert "Access needs derived from AVCs" in prompt
-    assert "Already covered by existing policy" in prompt
+    summary, stats = preprocess_avc_entries(entries, existing_te=te)
+    assert stats["net_new"] >= 1
+    assert "Net-new access needs" in summary
+    assert "Already covered by existing policy" in summary
 
 
-def test_no_changes_needed_summary() -> None:
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    entries = [
-        parse_avc_line(
-            _sample_avc_line("read", "system_u:system_r:myapp_t:s0", "system_u:object_r:myapp_lib_t:s0")
-        )
-    ]
-    summary, stats = build_llm_avc_summary(entries, existing_te=te)
-    assert stats.get("no_changes_needed") == 1
-    assert "no te_content changes required" in summary.lower() or "No te_content changes" in summary
-
-
-def test_pr_summary_split_and_validate() -> None:
-    from pr_summary_common import (
-        merge_pr_summary,
-        split_pr_summary_sections,
-        validate_narrative_section,
-        validate_pr_summary,
-    )
-
-    narrative = "\n".join(
+def test_pr_summary_headings() -> None:
+    body = "\n".join(
         [
             "### Network Bindings",
             "- port 8888",
@@ -505,51 +456,12 @@ def test_pr_summary_split_and_validate() -> None:
             "- no wildcards",
         ]
     )
-    tail = "\n".join(
-        [
-            "### Host administrative actions (not shipped in RPM)",
-            "- None",
-            "",
-            "### Classification audit (engine)",
-            "| Verdict | Target | Engine | Note |",
-            "| --- | --- | --- | --- |",
-            "| direct | myapp_log_t | rules | ok |",
-        ]
-    )
-    template = narrative + "\n\n" + tail
-    got_narr, got_tail = split_pr_summary_sections(template)
-    assert "### Host administrative" in got_tail
-    assert "Classification audit" in got_tail
-    merged = merge_pr_summary(got_narr, got_tail)
-    validate_pr_summary(merged)
-    validate_narrative_section(got_narr)
+    validate_pr_summary(body)
     try:
-        validate_narrative_section("allow myapp_t shadow_t:file read;")
-        raise AssertionError("expected validate_narrative_section to fail")
+        validate_pr_summary("### Network Bindings\n- only one section\n")
+        raise AssertionError("expected validate_pr_summary to fail")
     except RuntimeError:
         pass
-
-
-def test_policy_json_validation() -> None:
-    payload = {
-        "module_name": "myapp",
-        "te_content": "policy_module(myapp, 1.0.0)\ntype myapp_t;\n",
-        "fc_content": (
-            "/opt/myapp/app\\.py -- gen_context(system_u:object_r:myapp_exec_t,s0)\n"
-            "/var/lib/myapp(/.*)? gen_context(system_u:object_r:myapp_var_lib_t,s0)\n"
-            "/run/myapp(/.*)? gen_context(system_u:object_r:myapp_var_run_t,s0)\n"
-        ),
-        "rationale": "test",
-        "pr_summary": (
-            "### Network Bindings\n- Binds unreserved_port_t:8888\n\n"
-            "### File System Access\n- myapp_var_lib_t read/write\n\n"
-            "### Process Execution\n- myapp_exec_t transitions\n\n"
-            "### Explicit Denials Maintained\n- No shadow_t access\n"
-        ),
-    }
-    data = parse_policy_json(json.dumps(payload))
-    validate_policy_content(data["te_content"], data["fc_content"], "myapp_t", "myapp")
-    validate_pr_summary(data["pr_summary"])
 
 
 def test_version_bump() -> None:
@@ -1706,7 +1618,7 @@ def test_promote_policy_version_from_te() -> None:
     import tempfile
 
     version_sh = PROJECT_ROOT / "scripts" / "lib" / "version.sh"
-    te_src = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "skip_ai" / "generated" / "myapp.te"
+    te_src = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         policy_out = root / "policy_out"
@@ -1808,13 +1720,36 @@ def test_check_soak_auto_tier_fail_closed() -> None:
     assert "soak minimum 7 day" in combined, combined
 
 
-def test_skip_ai_fixture_sync() -> None:
-    """Offline demo generated/ must match selinux/ (refresh_skip_ai_fixture.sh)."""
-    fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "skip_ai" / "generated"
+def test_tracked_tree_has_no_model_client() -> None:
+    """Fail when a tracked file still names the removed model client."""
+    pattern = "|".join(
+        [
+            r"\b" + "A" + "I" + r"\b",
+            "LL" + "M",
+            "open" + "a" + "i",
+            "gp" + "t-",
+            "dot" + "env",
+            "prompt_" + "templates",
+            "skip_" + "a" + "i",
+        ]
+    )
+    result = subprocess.run(
+        ["git", "grep", "-i", "-I", "-E", "-n", pattern],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, result.stdout
+    assert result.stdout == ""
+
+
+def test_offline_fixture_sync() -> None:
+    """Offline demo generated/ must match selinux/ (refresh_offline_fixture.sh)."""
+    fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated"
     for name in ("myapp.te", "myapp.fc"):
         assert (fix / name).read_text(encoding="utf-8") == (
             PROJECT_ROOT / "selinux" / name
-        ).read_text(encoding="utf-8"), f"Drift in skip_ai/generated/{name} — run refresh_skip_ai_fixture.sh"
+        ).read_text(encoding="utf-8"), f"Drift in offline/generated/{name} — run refresh_offline_fixture.sh"
 
 
 DETERMINISTIC_CLASSIFICATION_VERDICTS = frozenset(
@@ -2704,12 +2639,7 @@ def test_policy_rules_are_the_single_source() -> None:
     import deterministic_gen
     import policy_audit
     import policy_rules
-    import prompt_templates
-    import selinux_gen
 
-    assert prompt_templates.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
-    assert selinux_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
-    assert selinux_gen.FORBIDDEN_PRIVILEGED_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert deterministic_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert deterministic_gen.needs_review_hits is policy_rules.needs_review_hits
     assert policy_audit.COMPILED_REJECT_CAPABILITIES is policy_rules.COMPILED_REJECT_CAPABILITIES
@@ -3334,17 +3264,15 @@ def main() -> int:
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
         ("make_deps_uses_venv", test_make_deps_uses_venv),
-        ("prompts", test_prompts),
+        ("tracked_tree_has_no_model_client", test_tracked_tree_has_no_model_client),
         ("avc_parsing", test_avc_parsing),
         ("perm_merge", test_perm_merge),
         ("type_extraction_dedup", test_type_extraction_dedup),
         ("subtract_existing", test_subtract_existing),
         ("net_new_detection", test_net_new_detection),
         ("preprocess_stats", test_preprocess_stats),
-        ("prompt_uses_summary", test_prompt_uses_summary),
-        ("no_changes_needed_summary", test_no_changes_needed_summary),
-        ("pr_summary_split_and_validate", test_pr_summary_split_and_validate),
-        ("policy_json_validation", test_policy_json_validation),
+        ("structured_summary_sections", test_structured_summary_sections),
+        ("pr_summary_headings", test_pr_summary_headings),
         ("version_bump", test_version_bump),
         ("assemble_pr_body_policy_diff_section", test_assemble_pr_body_policy_diff_section),
         ("assemble_pr_body", test_assemble_pr_body),
@@ -3372,7 +3300,7 @@ def main() -> int:
         ("promote_policy_version_from_te", test_promote_policy_version_from_te),
         ("classify_fail_closed_json", test_classify_fail_closed_json),
         ("check_soak_auto_tier_fail_closed", test_check_soak_auto_tier_fail_closed),
-        ("skip_ai_fixture_sync", test_skip_ai_fixture_sync),
+        ("offline_fixture_sync", test_offline_fixture_sync),
         ("deterministic_verdict_fixture_coverage", test_deterministic_verdict_fixture_coverage),
         ("needs_review_hits", test_needs_review_hits),
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),

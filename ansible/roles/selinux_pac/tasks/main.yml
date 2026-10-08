@@ -58,7 +58,7 @@
   ansible.builtin.fail:
     msg: >-
       No policy_version.txt under {{ policy_artifact_dir }}
-      or module_dir — run dev_generate_policy or stage_skip_ai_fixture
+      or module_dir — run dev_generate_policy or stage_offline_fixture
   when:
     - selinux_pac_phase not in ['soak_monitor', 'soak_status', 'rollback', 'reset_host']
     - not (pac_pv_artifact.stat.exists | default(false))
