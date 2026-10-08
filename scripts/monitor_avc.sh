@@ -11,8 +11,9 @@ source "${SCRIPT_DIR}/lib/avc_query.sh"
 # shellcheck source=lib/manifest_shell.sh
 source "${SCRIPT_DIR}/lib/manifest_shell.sh"
 
-# Ansible become shells often omit /usr/sbin; sesearch lives in /usr/bin or /bin.
-export PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+# Ansible become shells often omit /usr/sbin. Append those dirs so a caller
+# PATH (a test fake for systemctl or auditctl) is still found first.
+export PATH="${PATH:-}:/usr/sbin:/usr/bin:/sbin:/bin"
 
 DOMAIN="${SELINUX_DOMAIN:-}"
 PATHS="${MONITOR_PATHS:-}"
