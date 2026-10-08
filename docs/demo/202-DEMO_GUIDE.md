@@ -293,7 +293,7 @@ flowchart LR
 systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'
 ```
 
-`systemctl cat` prints the unit file. `grep` keeps the start line. Expected: `ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar` and no `SELinuxContext=` line. `ps -o label,args -C java` shows `shopapi_t`. Live commands are in [LIVE_CHECKS.md](LIVE_CHECKS.md).
+`systemctl cat` prints the unit file. `grep` keeps the start line. Expected: `ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar` and no `SELinuxContext=` line. `ps -o label,args -C java` shows `shopapi_t`. Live commands are in [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
 ```bash
 ps -o label=,comm= -C java | head

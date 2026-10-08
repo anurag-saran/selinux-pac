@@ -6,7 +6,7 @@ The **customer talk** is **202** — three applications (distro Tomcat loaded bu
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](docs/training/101-SELINUX.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
+| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-SELINUX_BASICS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
 | **Application developer** | [Developers](#developers) and **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)** |

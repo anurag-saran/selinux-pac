@@ -15,9 +15,8 @@ policy_module(shopapi, 1.0.0)
 # https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if
 # The wrapper execs /usr/bin/java. The java_exec interface is discovered;
 # do not hand-write it. That interface is can_exec only, not an entrypoint.
-# NEEDS_LIVE_CHECK: systemctl cat shopapi.service | grep SELinuxContext || echo 'no SELinuxContext'
-#   ps -eZ -C java
-# Expected: no SELinuxContext line, and the java process type is shopapi_t.
+# The unit has no SELinuxContext= line. The java process type is shopapi_t.
+# The host commands are in docs/LIVE_CHECKS.md.
 #############################################
 
 type shopapi_t;

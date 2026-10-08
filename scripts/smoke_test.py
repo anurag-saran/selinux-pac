@@ -1273,7 +1273,7 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
 
 def test_narration_live_checks_and_enforce_paths() -> None:
     """Distro narration, one live-check list, and enforce-check uses the manifest."""
-    live = PROJECT_ROOT / "docs" / "demo" / "LIVE_CHECKS.md"
+    live = PROJECT_ROOT / "docs" / "LIVE_CHECKS.md"
     text = live.read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in text
     assert "ps -o label,args -C java" in text

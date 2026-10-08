@@ -82,7 +82,7 @@ flowchart LR
   curls --> avc["ausearch shows shopapi_t"]
 ```
 
-`--shopapi-only` installs the service, the wrapper at `/opt/shopapi/bin/shopapi`, and the types-only seed. It does not copy a JDK and it does not set `SELinuxContext=`. `shopapi_t` is permissive: denials are logged and the requests still succeed. `getenforce` stays `Enforcing`. `ps -o label,args -C java` shows `shopapi_t`. Live commands are in [LIVE_CHECKS.md](LIVE_CHECKS.md).
+`--shopapi-only` installs the service, the wrapper at `/opt/shopapi/bin/shopapi`, and the types-only seed. It does not copy a JDK and it does not set `SELinuxContext=`. `shopapi_t` is permissive: denials are logged and the requests still succeed. `getenforce` stays `Enforcing`. `ps -o label,args -C java` shows `shopapi_t`. Live commands are in [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
 Curl only `/health`, `/state`, and `/log`. Do not open `/feature-spool` here. That URL is the outage on prod, later.
 

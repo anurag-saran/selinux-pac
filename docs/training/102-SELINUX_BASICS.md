@@ -358,7 +358,7 @@ The compile script (`scripts/compile_and_validate.sh`) also rejects a short list
 
 Installing a module updates the kernel's rule book and address book. Files that were created earlier keep whatever label they already had. A new directory under `/var/log` is born as `var_log_t`. After you install a module that says "`/var/log/shopapi` should be `shopapi_log_t`," the directory on disk is still `var_log_t` until you relabel it.
 
-`cp` creates a new file, so the copy gets a label from its new location. `mv` renames the existing file and keeps the old label. `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. The commands are in [LIVE_CHECKS.md](../demo/LIVE_CHECKS.md).
+`cp` creates a new file, so the copy gets a label from its new location. `mv` renames the existing file and keeps the old label. `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. The commands are in [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
 The app runs as `shopapi_t`. The allow rule permits writes to `shopapi_log_t`. The file is still `var_log_t`. The kernel denies the write. `chmod` can look perfectly fine at the same time, because Unix permissions and SELinux are separate checks.
 

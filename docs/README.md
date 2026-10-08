@@ -4,7 +4,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 
 | Folder | Start |
 |--------|--------|
-| [training/](training/101-SELINUX.md) | **[101](training/101-SELINUX.md)** on one RHEL box, **[102](training/102-SELINUX_BASICS.md)** when a word is new |
+| [training/](training/101-CONCEPTS.md) | **[101](training/101-CONCEPTS.md)** concepts, then the command catalog and the hand-built lab |
 | [demo/](demo/202-DEMO_GUIDE.md) | **[202](demo/202-DEMO_GUIDE.md)** (20 min) then **[203](demo/203-RHEL_TWO_HOST.md)** (45 min). **[201](demo/201-CODE_WALKTHROUGH.md)** is the code map. **[204](demo/204-TESTING.md)** is `make check`. |
 | [admin/](admin/301-ANSIBLE_OPERATIONS.md) | **[301](admin/301-ANSIBLE_OPERATIONS.md)** canary, soak, enforce |
 
@@ -18,7 +18,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **101** → **102** §1–4 if needed → **202** |
+| **New to SELinux** | **[101](training/101-CONCEPTS.md)** → **102** commands → **202** |
 | **RHEL admin (customer env)** | **[301](admin/301-ANSIBLE_OPERATIONS.md)** |
 | **Trying this on a Mac** | [../README.md](../README.md#try-it-on-a-mac) — two RHEL VMs + `setup_rhel_hosts.sh` |
 | **Laptop only (no VM)** | **101** [Appendix B](training/101-SELINUX.md#appendix-b-laptop-no-selinux) + `make check` (**204**) |
@@ -29,7 +29,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 
 | # | Guide | You need |
 |---|--------|----------|
-| **101** | [SELinux 101](training/101-SELINUX.md) | Type the shopapi loop on **one** RHEL box |
+| **101** | [Concepts](training/101-CONCEPTS.md) | Labels, enforcing, an AVC line. Commands: `getenforce`, `ls -Z`, `ps -eZ` |
 | **102** | [SELinux basics](training/102-SELINUX_BASICS.md) | What the words mean (lab 0 is §1–4) |
 | **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
 | **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
