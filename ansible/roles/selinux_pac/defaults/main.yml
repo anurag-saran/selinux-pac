@@ -40,4 +40,8 @@ http_probe_host: "127.0.0.1"
 
 # Enforce / AAP survey. force_enforce never skips the change_ticket check.
 force_enforce: false
+# Required when force_enforce is true. Recorded in the deploy report.
+break_glass_reason: ""
+# Skips only the day count and the daily history. Marker, AVC, net-new, and the report still run.
+skip_soak_days: false
 change_ticket: ""

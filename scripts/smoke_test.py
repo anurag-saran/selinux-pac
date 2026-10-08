@@ -1082,7 +1082,8 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     assert "force_enforce=true" not in gate
     clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "soak-clean" in clean
-    assert "force_enforce=true" in clean
+    assert "skip_soak_days=true" in clean
+    assert "force_enforce=true" not in clean
     assert "day count" in clean
     talk = mac.split("Part 6 —", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
@@ -3427,6 +3428,102 @@ def test_collect_soak_facts_monitor_crash() -> None:
         assert facts["avc_count_since_marker"] == -1
 
 
+def test_skip_soak_days_and_break_glass_reason() -> None:
+    """skip_soak_days skips only the clock. force_enforce requires a recorded reason."""
+    import yaml
+
+    tasks = yaml.safe_load(
+        (PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/enforce.yml").read_text(encoding="utf-8")
+    )
+    by_name = {task["name"]: task for task in tasks if isinstance(task, dict) and "name" in task}
+    day = by_name["Fail when soak period not met"]["when"]
+    daily = by_name["Require consecutive passing daily soak results"]["when"]
+    marker = by_name["Fail when canary marker missing"]["when"]
+    net_new = by_name["Fail when net-new AVC needs too high"]["when"]
+    report_gate = by_name["Fail when deploy report gate not satisfied"]["when"]
+    for clause in (day, daily):
+        assert any("skip_soak_days" in str(item) for item in clause)
+        assert any("force_enforce" in str(item) for item in clause)
+    for clause in (marker, net_new, report_gate):
+        assert any("force_enforce" in str(item) for item in clause)
+        assert not any("skip_soak_days" in str(item) for item in clause)
+    reason = by_name["Require a reason for break-glass enforce"]
+    assert reason["ansible.builtin.fail"]
+    assert any("break_glass_reason" in str(item) for item in reason["when"])
+
+    guide_201 = (PROJECT_ROOT / "docs/tool/201-TOOL-COMMANDS.md").read_text(encoding="utf-8")
+    guide_302 = (PROJECT_ROOT / "docs/demo/302-TECHNICAL.md").read_text(encoding="utf-8")
+    for guide in (guide_201, guide_302):
+        assert "skips only the day count and the daily history" in guide
+        assert "skips the marker, the AVC gate, net-new, the report, the day count, and the daily history" in guide
+    assert "skip_soak_days=true" in guide_302
+    assert "break_glass_reason" in guide_302
+
+    report_script = PROJECT_ROOT / "scripts" / "post_deploy_report.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skipped = root / "skipped.json"
+        run = subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(skipped),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+                "--skip-soak-days",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert skipped.is_file(), run.stderr
+        body = json.loads(skipped.read_text(encoding="utf-8"))
+        assert body["skip_soak_days"] is True
+        assert body["force_enforce"] is False
+        assert body["daily_history_bypassed"] is True
+        assert body["break_glass_reason"] is None
+        glass = root / "glass.json"
+        run = subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(glass),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+                "--force-enforce",
+                "--break-glass-reason",
+                "show the enforcing denial before the fix",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert glass.is_file(), run.stderr
+        body = json.loads(glass.read_text(encoding="utf-8"))
+        assert body["force_enforce"] is True
+        assert body["skip_soak_days"] is False
+        assert body["daily_history_bypassed"] is True
+        assert body["break_glass_reason"] == "show the enforcing denial before the fix"
+
+
 def test_stale_canary_marker_and_force_enforce_report() -> None:
     """An abandoned marker is reported, and force_enforce is written into the deploy report."""
     facts = PROJECT_ROOT / "scripts" / "collect_soak_facts.sh"
@@ -3963,6 +4060,7 @@ def main() -> int:
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
         ("new_canary_ignores_older_soak_files", test_new_canary_ignores_older_soak_files),
+        ("skip_soak_days_and_break_glass_reason", test_skip_soak_days_and_break_glass_reason),
         ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
     ]
     for name, fn in tests:

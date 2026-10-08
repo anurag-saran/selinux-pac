@@ -21,6 +21,8 @@ POLICY_VERSION_FILE="${PROJECT_ROOT}/selinux/policy_version.txt"
 FINDINGS_JSON=""
 POLICY_VERSION_OVERRIDE=""
 FORCE_ENFORCE=0
+SKIP_SOAK_DAYS=0
+BREAK_GLASS_REASON="${BREAK_GLASS_REASON:-}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -45,7 +47,9 @@ Options:
   --project-root PATH   Repo root for policy version lookup
   --manifest PATH       App manifest YAML (default: config/\${POLICY_APP:-myapp}.manifest.yml)
   --findings-json PATH  Optional policy_out/findings.json (embeds host_admin_actions booleans)
-  --force-enforce       Record that enforce skipped the daily soak-history files
+  --force-enforce       Record that enforce skipped every soak gate
+  --skip-soak-days      Record that enforce skipped only the day count and daily history
+  --break-glass-reason  Why force_enforce was used (also read from BREAK_GLASS_REASON)
   -h, --help            Show help
 EOF
 }
@@ -63,6 +67,9 @@ while [[ $# -gt 0 ]]; do
         --findings-json) FINDINGS_JSON="$2"; shift 2 ;;
         --manifest) MANIFEST="$2"; shift 2 ;;
         --force-enforce) FORCE_ENFORCE=1; shift ;;
+        --skip-soak-days) SKIP_SOAK_DAYS=1; shift ;;
+        --break-glass-reason) BREAK_GLASS_REASON="$2"; shift 2 ;;
+        --break-glass-reason=*) BREAK_GLASS_REASON="${1#--break-glass-reason=}"; shift ;;
         -h|--help) usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
     esac
@@ -211,6 +218,12 @@ else
     domain_permissive_json="null"
 fi
 
+if [[ -n "${BREAK_GLASS_REASON}" ]]; then
+    BREAK_GLASS_JSON="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${BREAK_GLASS_REASON}")"
+else
+    BREAK_GLASS_JSON=None
+fi
+
 python3 - "${endpoint_tmp}" "${MANIFEST:-}" "${services_ok}" <<PY
 import json
 import sys
@@ -256,7 +269,9 @@ report = {
     "host_admin_actions": host_admin_actions,
     "report_file": "${REPORT_FILE}",
     "force_enforce": ${FORCE_ENFORCE} == 1,
-    "daily_history_bypassed": ${FORCE_ENFORCE} == 1,
+    "skip_soak_days": ${SKIP_SOAK_DAYS} == 1,
+    "break_glass_reason": ${BREAK_GLASS_JSON},
+    "daily_history_bypassed": ${FORCE_ENFORCE} == 1 or ${SKIP_SOAK_DAYS} == 1,
 }
 Path("${REPORT_FILE}").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))

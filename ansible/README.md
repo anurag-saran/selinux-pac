@@ -107,7 +107,8 @@ Set in inventory `vars` or pass with `-e`. Role defaults live in [`roles/selinux
 | `soak_use_net_new` | `true` | Prefer net-new gate in `enforce.yml` |
 | `soak_notify_webhook` | *(empty)* | Optional POST URL when soak monitor fails (AAP notification templates are preferred) |
 | `canary_max_avc` | `0` | Max recent AVCs right after canary deploy |
-| `force_enforce` | `false` | Skip soak gate (break-glass); **requires** `change_ticket` |
+| `skip_soak_days` | `false` | Skip only the day count and daily history. Marker, AVC gate, net-new, and the report still run |
+| `force_enforce` | `false` | Skip every soak gate (break-glass); **requires** `change_ticket` and `break_glass_reason` |
 | `change_ticket` | `CHG123` | **Required** on enforce (AAP survey) |
 | `rollback_dnf_version` | *(unset)* | e.g. `1.1.1-1` → `dnf downgrade myapp-selinux-…` on emergency rollback |
 

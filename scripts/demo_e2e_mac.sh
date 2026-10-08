@@ -123,7 +123,7 @@ Press Enter here when the denial is on screen." \
 /var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc should exist. Leave it there. Press Enter here when you have shown that." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc $(e2e_auto_flags)'"
 
-        tlab_explain "Enforce without force_enforce. That flag would skip this AVC failure and the seven-day count. We do not pass it. The day count is not how you get past a denial."
+        tlab_explain "Enforce with neither flag. skip_soak_days skips only the day count and the daily history. force_enforce skips the marker, the AVC gate, net-new, the report, the day count, and the daily history, and it requires break_glass_reason. We pass neither."
         e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO"
         tlab_checkpoint "The gate refused. shopapi_t stays permissive. We do not force_enforce a failed soak."
         return 0
@@ -140,9 +140,9 @@ Press Enter here when you have seen that." \
     tlab_explain "soak_status is read-only. inventory.production.yml still wants 7 days. The AVC gate passed."
     e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --limit canary"
     tlab_pause
-    tlab_explain "This recording cannot wait 7 days. force_enforce skips the day count and is written in the deploy report. It is not a way past a failed soak."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true"
-    tlab_checkpoint "AVC gate passed. force_enforce recorded the day-count skip. shopapi_t is enforcing."
+    tlab_explain "This recording cannot wait 7 days. skip_soak_days skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run."
+    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e skip_soak_days=true"
+    tlab_checkpoint "AVC gate passed. skip_soak_days recorded the day-count skip. shopapi_t is enforcing."
 }
 
 mac_copy_prod_avc_to_dev() {

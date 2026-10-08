@@ -219,9 +219,10 @@ sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml \\
 # Install selinux-policy-ops + shopapi-selinux from your internal repo, then:
   ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
   ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary
-# Customer prod waits 7 days. Talk-only: add -e force_enforce=true (still needs a ticket).
+# Customer prod waits 7 days. Talk-only, after a clean soak: -e skip_soak_days=true
+# skips the day count and the daily history. The marker, AVC gate, net-new, and report still run.
   ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \\
-    -e change_ticket=DEMO -e force_enforce=true
+    -e change_ticket=DEMO -e skip_soak_days=true
 
 Docs: docs/demo/302-TECHNICAL.md
 EOF

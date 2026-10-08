@@ -198,7 +198,7 @@ On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. 
 
 The Mac then runs `soak_monitor.yml`. It must fail. `--part soak-avc` shows `/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc`. That directory is where `soak_monitor.yml` writes the fail files. Leave them in place. A later canary writes a new marker, and daily files and fail files older than that marker do not count.
 
-Enforce omits `force_enforce`. That flag would skip the AVC failure and the seven-day count. The playbook refuses. `shopapi_t` stays permissive.
+Enforce omits both flags. `skip_soak_days` skips only the day count and the daily history. `force_enforce` skips the marker, the AVC gate, net-new, the report, the day count, and the daily history, and it requires `break_glass_reason`. The playbook refuses. `shopapi_t` stays permissive.
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO
@@ -239,10 +239,10 @@ The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/
 
 On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `soak_monitor.yml` passes (`failed=0`).
 
-`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `force_enforce` skips the day count and is written in the deploy report. It is not a way past a failed soak.
+`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `skip_soak_days` skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run.
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true
+ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e skip_soak_days=true
 ```
 
 Expected: `shopapi_t` is enforcing. The demo ends enforcing.
