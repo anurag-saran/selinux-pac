@@ -59,6 +59,8 @@ run_check() {
     echo "PASS ${name}"
 }
 
+policy_before="$(ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo -n sha256sum /sys/fs/selinux/policy")"
+
 run_check integration-compile make integration-compile
 run_check integration-semantics make integration-semantics
 run_check reject_compiled_bypasses bash scripts/reject_compiled_bypasses.sh
@@ -66,11 +68,13 @@ run_check test_avc_epoch_window bash scripts/test_avc_epoch_window.sh
 run_check test_avc_query_epoch bash scripts/test_avc_query_epoch.sh
 run_check integration-blast-radius make integration-blast-radius
 
+policy_after="$(ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo -n sha256sum /sys/fs/selinux/policy")"
+
 set +e
 modules="$(ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo -n semodule -l" 2>&1)"
 mod_rc=$?
 set -e
-if [[ "${mod_rc}" -ne 0 ]] || printf '%s\n' "${modules}" | awk '{print $1}' | grep -Eq '^(bypass_|pac_control$)'; then
+if [[ "${mod_rc}" -ne 0 ]] || [[ "${policy_before}" != "${policy_after}" ]] || printf '%s\n' "${modules}" | awk '{print $1}' | grep -Eq '^(bypass_|pac_control$)'; then
     echo "FAIL host-unchanged"
     printf '%s\n' "${modules}" >&2
     fail=1

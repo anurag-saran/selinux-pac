@@ -228,6 +228,71 @@ def test_rpm_signing_tree_and_shopapi_ports() -> None:
         assert "labs only" in warned.stderr
 
 
+def test_signed_repo_published_on_qa() -> None:
+    """Canary installs latest from a gpgcheck=1 repo. Signing uses --key-id or _gpg_name."""
+    install = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "install_packages.yml"
+    ).read_text(encoding="utf-8")
+    assert "ansible.builtin.rpm_key" in install
+    assert "ansible.builtin.yum_repository" in install
+    assert "gpgcheck: 1" in install
+    assert "state: latest" in install
+    assert "update_cache: true" in install
+    publish = PROJECT_ROOT / "packaging" / "publish_internal.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        dist = PROJECT_ROOT / "dist"
+        dist.mkdir(exist_ok=True)
+        dummy = dist / "smoke-sign.rpm"
+        dummy.write_bytes(b"not-a-real-rpm")
+        bindir = root / "bin"
+        bindir.mkdir()
+        log = root / "rpmsign.log"
+        sudo = bindir / "sudo"
+        sudo.write_text("#!/bin/sh\nexec \"$@\"\n", encoding="utf-8")
+        sudo.chmod(0o755)
+        createrepo = bindir / "createrepo_c"
+        createrepo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        createrepo.chmod(0o755)
+
+        def write_rpmsign(help_text: str) -> None:
+            (bindir / "rpmsign").write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = --help ]; then printf '%s\\n' \"" + help_text + "\"; exit 0; fi\n"
+                "printf '%s\\n' \"$*\" >> \"$RPMSIGN_LOG\"\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            (bindir / "rpmsign").chmod(0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:/usr/bin:/bin"
+        env["SELINUX_INTERNAL_ENV"] = str(root / "no-such.env")
+        env["SELINUX_RPM_REPO"] = str(root / "repo")
+        env["SELINUX_GPG_NAME"] = "selinux-pac-lab"
+        env["LAB_GNUPGHOME"] = str(root / "gnupg")
+        env["RPMSIGN_LOG"] = str(log)
+        env.pop("SELINUX_ALLOW_UNSIGNED", None)
+        write_rpmsign("Usage: rpmsign --addsign --key-id KEYID")
+        with_key = subprocess.run(
+            [BASH, str(publish)], cwd=PROJECT_ROOT, capture_output=True, text=True, env=env
+        )
+        assert with_key.returncode == 0, with_key.stderr
+        signed = log.read_text(encoding="utf-8")
+        assert "--key-id" in signed
+        assert "_gpg_name selinux-pac-lab" in signed
+        log.write_text("", encoding="utf-8")
+        write_rpmsign("Usage: rpmsign --addsign")
+        with_macro = subprocess.run(
+            [BASH, str(publish)], cwd=PROJECT_ROOT, capture_output=True, text=True, env=env
+        )
+        dummy.unlink(missing_ok=True)
+        assert with_macro.returncode == 0, with_macro.stderr
+        signed = log.read_text(encoding="utf-8")
+        assert "--key-id" not in signed
+        assert "_gpg_name selinux-pac-lab" in signed
+
+
 def test_selinux_ports_and_canary_refuses_modify() -> None:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
     from app_manifest import (
@@ -980,6 +1045,18 @@ def test_demo_present_dry_run() -> None:
     assert_mentions(tech_out, "shopapi")
 
 
+def _install_healthy_audit(bindir: Path) -> None:
+    systemctl = bindir / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\nif [ \"$1\" = is-active ]; then exit 0; fi\nexit 1\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o755)
+    auditctl = bindir / "auditctl"
+    auditctl.write_text("#!/bin/sh\nprintf '%s\\n' 'enabled 1' 'lost 0'\n", encoding="utf-8")
+    auditctl.chmod(0o755)
+
+
 def _lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy() if base is None else dict(base)
     env["QA_HOST"] = "qa.example.com"
@@ -1017,15 +1094,19 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     assert "force_enforce=true" not in gate
     clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "soak-clean" in clean
-    assert "force_enforce=true" in clean
+    assert "skip_soak_days=true" in clean
+    assert "force_enforce=true" not in clean
     assert "day count" in clean
     talk = mac.split("Part 6 —", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
+    glass = talk.find("break_glass_reason")
+    fail = talk.find("--part fail")
+    rollback = talk.find("emergency_rollback.yml")
     fix = talk.find("--part generate --skip-export")
     recanary = talk.find("mac_ship_prod recanary")
-    rollback = talk.find("emergency_rollback.yml")
-    assert -1 not in (dirty, fix, recanary, rollback)
-    assert dirty < fix < recanary < rollback
+    ends = talk.find("shopapi_t enforcing")
+    assert -1 not in (dirty, glass, fail, rollback, fix, recanary, ends)
+    assert dirty < glass < fail < rollback < fix < recanary < ends
     assert "/feature-spool" in prod
     assert "part_soak()" in prod
     assert "lab_signing_setup.sh" in guide
@@ -1042,6 +1123,35 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     )
     assert refused.returncode != 0
     assert "private key" in (refused.stdout + refused.stderr).lower()
+
+
+def test_demo_outage_before_fix_dry_run() -> None:
+    """Dry-run prints the 500 and the rollback before the spool allow, and ends enforcing."""
+    mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        uname = Path(tmp) / "uname"
+        uname.write_text("#!/bin/sh\necho Darwin\n", encoding="utf-8")
+        uname.chmod(0o755)
+        env = _lab_hosts()
+        env["PATH"] = f"{tmp}:{env.get('PATH', '/usr/bin:/bin')}"
+        run = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    out = run.stdout + run.stderr
+    assert run.returncode == 0, out
+    refuse = out.find("enforce_production.yml -e change_ticket=DEMO")
+    glass = out.find("break_glass_reason=")
+    fail = out.find("--part fail")
+    rollback = out.find("emergency_rollback.yml")
+    fix = out.find("--part generate --skip-export")
+    clean = out.find("--part soak-clean")
+    ends = out.find("shopapi_t enforcing")
+    assert -1 not in (refuse, glass, fail, rollback, fix, clean, ends), out
+    assert refuse < glass < fail < rollback < fix < clean < ends
 
 
 def test_demo_e2e_scripts_dry_run() -> None:
@@ -1087,7 +1197,9 @@ def test_demo_e2e_scripts_dry_run() -> None:
     guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "git checkout main" in mac_text
     assert "gpgcheck=1" in mac_text
-    assert "No signing key" in mac_text
+    assert "private key stays on rhel-qa" in mac_text
+    assert "dnf repolist" in prod_text
+    assert "rpm -q gpg-pubkey" in prod_text
     assert "rpm -Uvh" not in mac_text
     assert "rpm -Uvh" not in prod_text
     assert "192.168.64." not in guide_203
@@ -2044,6 +2156,122 @@ def _run_deterministic_gen(
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def test_docs_match_the_store() -> None:
+    """Training pages name the store files, the RHEL 9 guide, and the current doc numbers."""
+    c103 = (PROJECT_ROOT / "docs/training/103-CONFIG-FILES.md").read_text(encoding="utf-8")
+    assert "ports.local" in c103
+    assert "file_contexts.local" in c103
+    assert "booleans.local" in c103
+    assert "permissive_<type>" in c103
+    assert "priority 400" in c103
+    assert "selinux-policy-targeted" in c103
+    assert "Every `semodule` or `semanage` rebuild rewrites this file" in c103
+    assert "It is what the kernel loads" in c103
+    assert "/etc/selinux/targeted/contexts/files/" in c103
+    assert "not this file by itself" not in c103
+
+    c101 = (PROJECT_ROOT / "docs/training/101-CONCEPTS.md").read_text(encoding="utf-8")
+    assert "Java started from that shell runs as **`unconfined_java_t`**" in c101
+
+    c102 = (PROJECT_ROOT / "docs/training/102-COMMANDS.md").read_text(encoding="utf-8")
+    assert "because `ausearch` reads stdin" in c102
+    assert "`aureport -a` lists AVC events" in c102
+    assert "`aureport -a --summary` counts them" in c102
+    assert "stub module" not in c102
+    assert "looking for `apache`" in c102
+    assert "red_hat_enterprise_linux/9/html/using_selinux" in c102
+    assert "red_hat_enterprise_linux/8/" not in c102
+
+    c104 = (PROJECT_ROOT / "docs/training/104-HAND-BUILT-MODULE.md").read_text(encoding="utf-8")
+    assert c104.count("--checkpoint") >= 3
+    assert "sudo mvn" not in c104
+    assert "shopapi_log_t:dir { search write add_name }" in c104
+    assert "shopapi_var_lib_t:dir { search write add_name }" in c104
+
+    c301 = (PROJECT_ROOT / "docs/demo/301-CUSTOMER.md").read_text(encoding="utf-8")
+    assert "[203]" not in c301
+    assert "ran **104**" in c301
+    assert "labs 5 and 6 of **104**" in c301
+    assert "JWS denies" in c301
+    assert "JWS tunes the host" in c301
+    assert "LAST_VERIFIED:** 2026-09-18" in c301
+
+    c401 = (PROJECT_ROOT / "docs/admin/401-OPERATIONS.md").read_text(encoding="utf-8")
+    assert "/var/lib/selinux-policy-ops/<app>/selinux_soak_last_fail.json" in c401
+    assert "/var/lib/<app>/" not in c401
+    assert "203 talk" not in c401
+
+    monitor = (PROJECT_ROOT / "scripts/monitor_avc.sh").read_text(encoding="utf-8")
+    assert "/var/lib/<app>" not in monitor
+    assert 'FAIL_DIR:-/var/lib/selinux-policy-ops/<app>' in monitor
+    assert '${fail_dir_shown}/selinux_soak_last_fail.json' in monitor
+
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    docs_readme = (PROJECT_ROOT / "docs/README.md").read_text(encoding="utf-8")
+    assert "(**204**)" not in readme
+    assert "API key" not in readme
+    assert "103-CONFIG-FILES.md" in readme
+    assert "104-HAND-BUILT-MODULE.md" in readme
+    assert "103-CONFIG-FILES.md" in docs_readme
+    assert "→ **202**" not in docs_readme
+
+    live = (PROJECT_ROOT / "docs/LIVE_CHECKS.md").read_text(encoding="utf-8")
+    assert "ls /var/lib/selinux/targeted/active/" in live
+    assert "ls -l /etc/selinux/targeted/contexts/files/" in live
+    assert (
+        "sha256sum /etc/selinux/targeted/policy/policy.33 "
+        "/var/lib/selinux/targeted/active/policy.kern"
+    ) in live
+
+
+def test_baseline_fixture_rerun_does_not_append() -> None:
+    """A baseline-only log writes no header and no version bump. A second run is byte-identical."""
+    case = PROJECT_ROOT / "docs/examples/fixtures/deterministic/05-baseline-covered"
+    gen = PROJECT_ROOT / "cli" / "deterministic_gen.py"
+    manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
+    te = PROJECT_ROOT / "selinux" / "myapp.te"
+    fc = PROJECT_ROOT / "selinux" / "myapp.fc"
+    original = te.read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        first = root / "first"
+        second = root / "second"
+        cmd = [
+            sys.executable,
+            str(gen),
+            "--avc-log",
+            str(case / "avc.log"),
+            "--manifest",
+            str(manifest),
+            "--existing-fc",
+            str(fc),
+            "--bump-version",
+        ]
+        one = subprocess.run(
+            [*cmd, "--existing-te", str(te), "--out-dir", str(first)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert one.returncode == 0, one.stderr
+        assert "No change" in one.stdout
+        written = (first / "myapp.te").read_bytes()
+        assert written == original
+        assert "Generated by" not in written.decode().split("policy_module(")[0]
+        assert not (first / "policy_version.txt").exists()
+        two = subprocess.run(
+            [*cmd, "--existing-te", str(first / "myapp.te"), "--out-dir", str(second)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert two.returncode == 0, two.stderr
+        assert "No change" in two.stdout
+        again = (second / "myapp.te").read_bytes()
+        assert again == written
+        assert again.decode().count("Generated by") == original.decode().count("Generated by")
+
+
 def test_deterministic_verdict_fixture_coverage() -> None:
     """Every classification verdict has at least one golden fixture row."""
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
@@ -2419,6 +2647,16 @@ def test_vm_check_reports_each_result() -> None:
             "  *integration-compile*)\n"
             "    if [ \"$VM_MODE\" = compile-fail ]; then echo 'SKIP integration-compile' >&2; exit 1; fi\n"
             "    ;;\n"
+            "  *sha256sum*)\n"
+            "    n=0\n"
+            "    if [ -f \"$VM_HASH_LOG\" ]; then n=$(wc -l < \"$VM_HASH_LOG\"); fi\n"
+            "    echo x >> \"$VM_HASH_LOG\"\n"
+            "    if [ \"$VM_MODE\" = policy-changed ] && [ \"$n\" -gt 0 ]; then\n"
+            "      printf '%s\\n' 'bbbb  /sys/fs/selinux/policy'\n"
+            "    else\n"
+            "      printf '%s\\n' 'aaaa  /sys/fs/selinux/policy'\n"
+            "    fi\n"
+            "    ;;\n"
             "esac\n"
             "exit 0\n",
             encoding="utf-8",
@@ -2433,6 +2671,7 @@ def test_vm_check_reports_each_result() -> None:
         env["PROD_HOST"] = "prod.example"
         env["SSH_USER"] = "ansible"
         env["VM_LOG"] = str(log)
+        env["VM_HASH_LOG"] = str(root / "hashes")
         env["VM_MODE"] = "ok"
         ok = subprocess.run(
             [BASH, str(script)],
@@ -2472,6 +2711,104 @@ def test_vm_check_reports_each_result() -> None:
         )
         assert broken.returncode != 0
         assert "FAIL integration-compile" in broken.stdout
+        env["VM_MODE"] = "policy-changed"
+        (root / "hashes").write_text("", encoding="utf-8")
+        changed = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert changed.returncode != 0
+        assert "FAIL host-unchanged" in changed.stdout
+        assert "sha256sum /sys/fs/selinux/policy" in text
+
+
+def test_audit_health_fails_closed() -> None:
+    """Monitor and the health script refuse unless auditd is enabled and lost did not grow."""
+    health = PROJECT_ROOT / "scripts" / "check_audit_health.sh"
+    enforce = (
+        PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/enforce.yml"
+    ).read_text(encoding="utf-8")
+    assert "check_audit_health.sh" in enforce
+    assert "not (force_enforce" in enforce
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("100\n", encoding="utf-8")
+        (marker.parent / "marker.audit_lost").write_text("1\n", encoding="utf-8")
+
+        def write_tools(active: str, enabled: str, lost: str) -> None:
+            (bindir / "systemctl").write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = is-active ]; then\n"
+                f"  [ {active!r} = active ] && exit 0\n"
+                "  exit 3\n"
+                "fi\nexit 1\n",
+                encoding="utf-8",
+            )
+            (bindir / "systemctl").chmod(0o755)
+            (bindir / "auditctl").write_text(
+                "#!/bin/sh\n"
+                f"printf '%s\\n' 'enabled {enabled}' 'lost {lost}'\n",
+                encoding="utf-8",
+            )
+            (bindir / "auditctl").chmod(0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}/usr/bin:/bin"
+        write_tools("inactive", "1", "1")
+        down = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert down.returncode != 0
+        assert "auditd is not active" in down.stderr
+        write_tools("active", "0", "1")
+        disabled = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert disabled.returncode != 0
+        assert "enabled" in disabled.stderr
+        write_tools("active", "1", "4")
+        grew = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert grew.returncode != 0
+        assert "lost records since the marker" in grew.stderr
+        write_tools("active", "1", "1")
+        ok = subprocess.run(
+            [BASH, str(health), str(marker)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ok.returncode == 0, ok.stderr
+
+        for rel in (
+            "scripts/validate_policy_semantics.sh",
+            "scripts/lib/policy_module_diff_side.sh",
+            "scripts/lib/blast_radius_collect.sh",
+        ):
+            text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if "semodule " in line and "-p " in line:
+                    assert " -n " in f" {line} ", line
 
 
 def test_runner_var_selects_rhel_host() -> None:
@@ -2495,6 +2832,47 @@ def test_runner_var_selects_rhel_host() -> None:
     assert "rhel-ci" in guide
     assert "rhel-qa" in guide and "rhel-prod" in guide
     assert "make vm-check" in guide
+
+
+def test_runner_container_expression_both_cases() -> None:
+    """rhel9-utm selects no container. Any other RUNNER value keeps Stream 9."""
+    expr = re.compile(
+        r"vars\.RUNNER != 'rhel9-utm' && '([^']+)' \|\| fromJSON\('null'\)"
+    )
+
+    def evaluate(runner: str, image: str):
+        # GitHub Actions && and || return the operand, and fromJSON('null') is null.
+        left = image if runner != "rhel9-utm" else False
+        return left if left else None
+
+    jobs = {
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml": "compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml": "app-compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml": "bypass-rejected",
+        PROJECT_ROOT / ".github" / "workflows" / "demo-estate.yml": "shopapi-policy",
+    }
+    import yaml
+
+    for path, job_id in jobs.items():
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        container = str(workflow["jobs"][job_id]["container"])
+        match = expr.search(container)
+        assert match, container
+        assert "vars.RUNNER == 'rhel9-utm'" not in container
+        image = match.group(1)
+        assert evaluate("rhel9-utm", image) is None
+        assert evaluate("", image) == "quay.io/centos/centos:stream9"
+        assert evaluate("ubuntu-latest", image) == "quay.io/centos/centos:stream9"
+        runs = "\n".join(
+            step.get("run") or "" for step in workflow["jobs"][job_id]["steps"]
+        )
+        assert "sudo dnf install" in runs
+        assert re.search(r"(?m)^dnf install", runs) is None
+    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
+    assert "github-runner ALL=(ALL) NOPASSWD: /usr/bin/dnf, /usr/bin/bash" in guide
+    ci = (PROJECT_ROOT / ".github/workflows/selinux-policy-ci.yml").read_text(encoding="utf-8")
+    assert "sudo bash scripts/validate_policy_semantics.sh" in ci
+    assert "sudo bash scripts/reject_compiled_bypasses.sh" in ci
 
 
 def test_soak_counts_every_domain_denial() -> None:
@@ -2530,6 +2908,7 @@ def test_soak_counts_every_domain_denial() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + " ".join(repr(line) for line in lines) + "\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("AUDIT_LOG", None)
@@ -2604,6 +2983,7 @@ def test_soak_ignore_is_explicit() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + repr(line) + "\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("AUDIT_LOG", None)
@@ -2898,6 +3278,7 @@ def test_tune_report_skip_no_selinux() -> None:
             if key.startswith("VENDOR_CHECK_"):
                 del env[key]
         env["PATH"] = str(bindir)
+        env["AUDIT_LOG"] = str(Path(tmp) / "no-such-audit.log")
         result = subprocess.run(
             [
                 BASH,
@@ -3328,6 +3709,102 @@ def test_collect_soak_facts_monitor_crash() -> None:
         assert facts["avc_count_since_marker"] == -1
 
 
+def test_skip_soak_days_and_break_glass_reason() -> None:
+    """skip_soak_days skips only the clock. force_enforce requires a recorded reason."""
+    import yaml
+
+    tasks = yaml.safe_load(
+        (PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/enforce.yml").read_text(encoding="utf-8")
+    )
+    by_name = {task["name"]: task for task in tasks if isinstance(task, dict) and "name" in task}
+    day = by_name["Fail when soak period not met"]["when"]
+    daily = by_name["Require consecutive passing daily soak results"]["when"]
+    marker = by_name["Fail when canary marker missing"]["when"]
+    net_new = by_name["Fail when net-new AVC needs too high"]["when"]
+    report_gate = by_name["Fail when deploy report gate not satisfied"]["when"]
+    for clause in (day, daily):
+        assert any("skip_soak_days" in str(item) for item in clause)
+        assert any("force_enforce" in str(item) for item in clause)
+    for clause in (marker, net_new, report_gate):
+        assert any("force_enforce" in str(item) for item in clause)
+        assert not any("skip_soak_days" in str(item) for item in clause)
+    reason = by_name["Require a reason for break-glass enforce"]
+    assert reason["ansible.builtin.fail"]
+    assert any("break_glass_reason" in str(item) for item in reason["when"])
+
+    guide_201 = (PROJECT_ROOT / "docs/tool/201-TOOL-COMMANDS.md").read_text(encoding="utf-8")
+    guide_302 = (PROJECT_ROOT / "docs/demo/302-TECHNICAL.md").read_text(encoding="utf-8")
+    for guide in (guide_201, guide_302):
+        assert "skips only the day count and the daily history" in guide
+        assert "skips the marker, the AVC gate, net-new, the report, the day count, and the daily history" in guide
+    assert "skip_soak_days=true" in guide_302
+    assert "break_glass_reason" in guide_302
+
+    report_script = PROJECT_ROOT / "scripts" / "post_deploy_report.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        skipped = root / "skipped.json"
+        run = subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(skipped),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+                "--skip-soak-days",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert skipped.is_file(), run.stderr
+        body = json.loads(skipped.read_text(encoding="utf-8"))
+        assert body["skip_soak_days"] is True
+        assert body["force_enforce"] is False
+        assert body["daily_history_bypassed"] is True
+        assert body["break_glass_reason"] is None
+        glass = root / "glass.json"
+        run = subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(glass),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+                "--force-enforce",
+                "--break-glass-reason",
+                "show the enforcing denial before the fix",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert glass.is_file(), run.stderr
+        body = json.loads(glass.read_text(encoding="utf-8"))
+        assert body["force_enforce"] is True
+        assert body["skip_soak_days"] is False
+        assert body["daily_history_bypassed"] is True
+        assert body["break_glass_reason"] == "show the enforcing denial before the fix"
+
+
 def test_stale_canary_marker_and_force_enforce_report() -> None:
     """An abandoned marker is reported, and force_enforce is written into the deploy report."""
     facts = PROJECT_ROOT / "scripts" / "collect_soak_facts.sh"
@@ -3561,6 +4038,7 @@ def test_new_canary_ignores_older_soak_files() -> None:
         ausearch = bindir / "ausearch"
         ausearch.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         ausearch.chmod(0o755)
+        _install_healthy_audit(bindir)
         env = os.environ.copy()
         env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
         env.pop("APP_MANIFEST", None)
@@ -3790,6 +4268,7 @@ def main() -> int:
     tests = [
         ("existing_execmem_rules_stay_baseline", test_existing_execmem_rules_stay_baseline),
         ("rpm_signing_tree_and_shopapi_ports", test_rpm_signing_tree_and_shopapi_ports),
+        ("signed_repo_published_on_qa", test_signed_repo_published_on_qa),
         ("selinux_ports_and_canary_refuses_modify", test_selinux_ports_and_canary_refuses_modify),
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
@@ -3815,6 +4294,7 @@ def main() -> int:
         ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
+        ("demo_outage_before_fix_dry_run", test_demo_outage_before_fix_dry_run),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),
@@ -3833,6 +4313,8 @@ def main() -> int:
         ("classify_fail_closed_json", test_classify_fail_closed_json),
         ("check_soak_auto_tier_fail_closed", test_check_soak_auto_tier_fail_closed),
         ("offline_fixture_sync", test_offline_fixture_sync),
+        ("docs_match_the_store", test_docs_match_the_store),
+        ("baseline_fixture_rerun_does_not_append", test_baseline_fixture_rerun_does_not_append),
         ("deterministic_verdict_fixture_coverage", test_deterministic_verdict_fixture_coverage),
         ("needs_review_hits", test_needs_review_hits),
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),
@@ -3840,7 +4322,9 @@ def main() -> int:
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
         ("init_uses_daemon_domain", test_init_uses_daemon_domain),
         ("vm_check_reports_each_result", test_vm_check_reports_each_result),
+        ("audit_health_fails_closed", test_audit_health_fails_closed),
         ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
+        ("runner_container_expression_both_cases", test_runner_container_expression_both_cases),
         ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),
         ("soak_counts_every_domain_denial", test_soak_counts_every_domain_denial),
         ("soak_ignore_is_explicit", test_soak_ignore_is_explicit),
@@ -3862,6 +4346,7 @@ def main() -> int:
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
         ("new_canary_ignores_older_soak_files", test_new_canary_ignores_older_soak_files),
+        ("skip_soak_days_and_break_glass_reason", test_skip_soak_days_and_break_glass_reason),
         ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
     ]
     for name, fn in tests:

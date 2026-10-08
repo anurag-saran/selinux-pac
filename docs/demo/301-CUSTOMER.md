@@ -11,22 +11,22 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 | | Audience | Setup | Length | Command |
 |---|----------|--------|--------|---------|
 | **This guide (301)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
-| **[203](302-TECHNICAL.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
+| **[302](302-TECHNICAL.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
-Use `--profile customer`. That is Acts 0, 1, 2, 3, and 6, about 20 minutes. Act 6 is last: it drops `shopapi_t` from the permissive list. `--profile technical` is Acts 0–5 (the pull request, then a pointer at the 203 talk). It does not run Act 6. Act 5 does not run the 203 talk.
+Use `--profile customer`. That is Acts 0, 1, 2, 3, and 6, about 20 minutes. Act 6 is last: it drops `shopapi_t` from the permissive list. `--profile technical` is Acts 0–5 (the pull request, then a pointer at the 302 talk). It does not run Act 6. Act 5 does not run the 302 talk.
 
 On a laptop, `--dry-run` prints this talk and runs nothing. `make check` runs the offline tests, including a dry-run of both talk scripts. The sample module in those tests is `selinux/myapp.te`. Nothing starts an application.
 
 ```mermaid
 flowchart LR
   act0["Act 0 Triage<br/>Who already has a vendor module?"]
-  act1["Act 1 App A :8080<br/>Nothing to author"]
-  act2["Act 2 App B :8090<br/>Tune the host, zero .te"]
+  act1["Act 1 App A :8080<br/>Distro leaks; JWS denies<br/>author nothing"]
+  act2["Act 2 App B :8090<br/>Distro skips; JWS tunes the host"]
   act3["Act 3 shopapi :8091<br/>Generate the module"]
   act6["Act 6 Enforcing<br/>/feature-spool fails"]
-  later["Not this meeting<br/>203 ship path"]
+  later["Not this meeting<br/>302 ship path"]
   act0 --> act1 --> act2 --> act3 --> act6
   act6 -.-> later
 ```
@@ -34,8 +34,8 @@ flowchart LR
 | Act | What you show | Where you stop |
 |-----|----------------|----------------|
 | **0** | Tomcat already has a Red Hat module. Shopapi does not. | You do not write a policy file for Tomcat. |
-| **1** | The normal page on port 8080 works. The forbidden page is the proof. | You do not change anything. |
-| **2** | A second Tomcat on port 8090, files in `/opt/appdata`, and a call out to a payment service. | You do not write a policy file. `git status` of `selinux/` stays empty. |
+| **1** | Distro Tomcat returns the forbidden page. JWS returns DENIED. | You do not write a policy file. |
+| **2** | Distro Tomcat has no denial, so the fixes are skipped. JWS needs the port, the file label, and the boolean. | You do not write a policy file. `git status` of `selinux/` stays empty. |
 | **3** | Shopapi on port 8091. Curl `/health`, `/state`, and `/log`, then generate the module from those denials. | You do not open `/feature-spool` in this act. |
 | **6** | Take `shopapi_t` off the permissive list. `/log` still works. `/feature-spool` fails, and the denial says `permissive=0`. `getenforce` still prints Enforcing. | Generate adds only the spool rule. This is the last act of the customer profile. |
 
@@ -49,8 +49,8 @@ Customers run Tomcat, JBoss, Python, Node, and Spring Boot. Red Hat already ship
 
 | App | The story you tell | What you do on screen |
 |-----|--------------------|------------------------|
-| **App A** | Tomcat installed the normal way, on port **8080**. | Show that it is already running. Change nothing. |
-| **App B** | A second Tomcat. Port 8080 was taken, so it listens on **8090**. Its files were dropped in `/opt/appdata`. It calls a payment service. | Fix the host with one command per problem, or say there was no denial. Write no policy file. |
+| **App A** | Tomcat on port **8080**. Distro `tomcat_t` is unconfined. JWS `jws6_tomcat_t` is confined. | Distro: the forbidden page leaks. JWS: the same page is DENIED. Write no policy file. |
+| **App B** | A second Tomcat. Port 8080 was taken, so it listens on **8090**. Its files were dropped in `/opt/appdata`. It calls a payment service. | Distro: say there was no denial. JWS: one command each for the port, the label, and the boolean. Write no policy file. |
 | **shopapi** | A Spring Boot service started by systemd. Red Hat does not ship a module for it. | This is the only app that gets a new `.te`. |
 
 App A and App B both run as `tomcat_t` (or both as `jws6_tomcat_t` on JWS). A second Tomcat instance does not get its own type ([`tomcat_domain_template(tomcat)`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te) declares one domain). SELinux treats them as the same kind of program. Separating them needs a distinct domain for each, or MCS categories, which is what containers use.
@@ -74,7 +74,7 @@ bash scripts/demo_present.sh --dry-run --profile customer --variant jws
 
 ### Order for the meeting
 
-**1. On the Mac**, only when this VM already ran **101**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, writes `/var/lib/selinux-pac-demo/ausearch-since`, and removes the App B port and file-label tunings so Act 2 still has something to show. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp.
+**1. On the Mac**, only when this VM already ran **104**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, writes `/var/lib/selinux-pac-demo/ausearch-since`, and removes the App B port and file-label tunings so Act 2 still has something to show. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp.
 
 ```bash
 bash scripts/reset_demo_vms.sh --dev-only
@@ -99,7 +99,7 @@ bash scripts/demo_present.sh --profile customer
 
 A second Act 2 on the same VM uses the same Mac reset as step 1, then `--preflight` again.
 
-The three-host generate/canary/soak talk is **[203](302-TECHNICAL.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
+The three-host generate/canary/soak talk is **[302](302-TECHNICAL.md)** (`demo_e2e_mac.sh` / `_rhel_qa.sh` / `_rhel_prod.sh`), not this script.
 
 ## What you say, command by command
 
@@ -351,13 +351,13 @@ sudo semanage port -a -t shopapi_port_t -p tcp 8091
 curl -sf http://127.0.0.1:8091/health && curl -sf http://127.0.0.1:8091/state && curl -sf http://127.0.0.1:8091/log
 ```
 
-`/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](302-TECHNICAL.md).
+`/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [302](302-TECHNICAL.md).
 
 ### Act 6 — Enforcing payoff
 
 Taught in [104 labs 5–6](../training/104-HAND-BUILT-MODULE.md#lab-5--a-new-url-fails) and [tool lab — the spool URL](../tool/202-TOOL-LAB.md#the-spool-url). [semanage permissive -d](../training/102-COMMANDS.md#semanage-permissive) takes `shopapi_t` off the log-only list. `getenforce` stays Enforcing.
 
-This is labs 5 and 6 of **101**, on the same host.
+This is labs 5 and 6 of **104**, on the same host.
 
 ```bash
 sudo semanage permissive -d shopapi_t

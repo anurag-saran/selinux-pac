@@ -42,3 +42,5 @@ all:
     soak_use_net_new: true
     rollback_dnf_version: ""
     http_probe_host: "127.0.0.1"
+    selinux_rpm_repo_baseurl: "http://rhel-qa.example.com:8765"
+    selinux_rpm_gpgkey: "http://rhel-qa.example.com:8765/RPM-GPG-KEY"

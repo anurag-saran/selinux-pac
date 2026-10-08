@@ -6,11 +6,11 @@ The **customer talk** is **301** — three applications (distro Tomcat loaded bu
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[301](docs/demo/301-CUSTOMER.md)** |
+| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[103](docs/training/103-CONFIG-FILES.md)** → **[104](docs/training/104-HAND-BUILT-MODULE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
 | **Application developer** | [Developers](#developers) and **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)** |
-| **Offline check (any laptop)** | `make check` (**204**) |
+| **Offline check (any laptop)** | `make check` (**303**) |
 
 ---
 
@@ -49,7 +49,7 @@ Those are complementary, not substitutes: his loop detects and routes; this tool
 - **Admins own production mutation.** The only control plane is AAP (same YAML on a laptop until the project is imported). Execution nodes SSH in; they never clone this repo onto prod.
 - **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship))
 - **Soak is evidence, not a calendar sticker.** Daily net-new vs the installed module. Fail closed if `sesearch` is missing (`setools-console` is an RPM require).
-- **Break-glass is still gated.** `force_enforce` defaults false and still needs `change_ticket`. Rollback does not require an API key.
+- **Break-glass is still gated.** `force_enforce` defaults false, still needs `change_ticket`, and needs `break_glass_reason`. `skip_soak_days` skips only the day count and the daily history.
 
 ---
 

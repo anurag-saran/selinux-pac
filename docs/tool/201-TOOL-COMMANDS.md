@@ -178,7 +178,7 @@ All of these run on the controller. The host does not clone git. Production inve
 
 **Replaces** 104 step 5.1 (`semanage permissive -d`) after the wait, not during a failed soak.
 
-**Commands, in order.** Refuse when `soak_min_days` is under 7 on the production group. Refuse when the day count has not elapsed. Refuse when the monitor is fail-closed or the net-new count is over the max. `semodule -B` via `semodule_restore_dontaudit.sh` unless another app is soaking. `selinux_permissive` state absent. `restorecon -Rv`. Smoke curls. `force_enforce=true` skips the day count and the AVC checks and is written in the deploy report. It is not a way past a failed soak.
+**Commands, in order.** Refuse when `soak_min_days` is under 7 on the production group. Refuse when the day count has not elapsed. Refuse when the monitor is fail-closed or the net-new count is over the max. `semodule -B` via `semodule_restore_dontaudit.sh` unless another app is soaking. `selinux_permissive` state absent. `restorecon -Rv`. Smoke curls. `skip_soak_days=true` skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run. `force_enforce=true` skips the marker, the AVC gate, net-new, the report, the day count, and the daily history. It requires `break_glass_reason`, and that reason is written in the deploy report.
 
 ### ansible/emergency_rollback.yml
 

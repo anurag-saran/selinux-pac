@@ -15,6 +15,7 @@ EXPECTED=(
     collect_soak_facts.sh
     check_soak_ready.sh
     check_soak_gate.sh
+    check_audit_health.sh
     check_soak_days.sh
     record_soak_day.sh
     semodule_restore_dontaudit.sh

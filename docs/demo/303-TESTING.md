@@ -170,7 +170,13 @@ Those four names are stable so branch protection can require them. `make check` 
 
 Repo variable `RUNNER` defaults to unset, which is `ubuntu-latest` plus the Stream 9 image for the SELinux jobs (`compiled-policy`, `app-compiled-policy`, `bypass-rejected`, and `shopapi-policy-compile`). Set `RUNNER` to `rhel9-utm` to run those jobs directly on that runner.
 
-Register the runner on a dedicated **rhel-ci** VM. Do not register it on rhel-qa or rhel-prod. On that VM, install the GitHub Actions runner, and give it the label `rhel9-utm`. The runner user needs passwordless `dnf` so the job can install `selinux-policy-devel` and `setools-console`. Then set the repository variable `RUNNER` to `rhel9-utm`.
+Register the runner on a dedicated **rhel-ci** VM. Do not register it on rhel-qa or rhel-prod. On that VM, install the GitHub Actions runner as user `github-runner`, and give it the label `rhel9-utm`. The job uses `sudo` for `dnf` and for the root-only scripts (`validate_policy_semantics.sh` and `reject_compiled_bypasses.sh`). Add this exact sudoers entry:
+
+```
+github-runner ALL=(ALL) NOPASSWD: /usr/bin/dnf, /usr/bin/bash
+```
+
+Then set the repository variable `RUNNER` to `rhel9-utm`. That value selects no container. Any other value, including unset, keeps `quay.io/centos/centos:stream9`.
 
 A public repository that uses a self-hosted runner must require approval before workflows from outside collaborators run, or the repository must be private. A pull request from a fork can otherwise run code on the VM.
 

@@ -38,20 +38,22 @@ jobs:
   compiled-policy:
     name: compiled-policy
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
-    container: ${{ vars.RUNNER == 'rhel9-utm' && fromJSON('null') || 'quay.io/centos/centos:stream9' }}
+    container: ${{ vars.RUNNER != 'rhel9-utm' && 'quay.io/centos/centos:stream9' || fromJSON('null') }}
     steps:
+      - name: Ensure sudo
+        run: command -v sudo >/dev/null 2>&1 || dnf install -y sudo
       - name: Install git for checkout
-        run: dnf install -y git
+        run: sudo dnf install -y git
       - uses: actions/checkout@v4
       - name: Install policy toolchain
-        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml audit
+        run: sudo dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml audit
       - name: Compiled policy semantics
         run: |
-          bash scripts/validate_policy_semantics.sh selinux
-          POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_policy_semantics.sh selinux/shopapi
-          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_policy_semantics.sh selinux/payments
+          sudo bash scripts/validate_policy_semantics.sh selinux
+          POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN bash scripts/validate_policy_semantics.sh selinux/shopapi
+          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN bash scripts/validate_policy_semantics.sh selinux/payments
       - name: Reject compiled review bypasses
-        run: bash scripts/reject_compiled_bypasses.sh
+        run: sudo bash scripts/reject_compiled_bypasses.sh
       - name: AVC epoch window sees denials after the marker
         env:
           AVC_REQUIRE_AUSEARCH: "1"

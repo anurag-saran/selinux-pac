@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lab_signing_setup.sh — Lab GPG key and a local dnf repo so 203 installs
+# lab_signing_setup.sh — Lab GPG key and a local dnf repo so 302 installs
 # with gpgcheck=1. Prints the public key path and the two variable names.
 # Never prints the private key. Do not commit the key or the repo.
 #
@@ -43,6 +43,13 @@ cat >"${ROOT}/dist/lab-rpmmacros" <<EOF
 %_gpg_name ${NAME}
 %_gpg_path ${GNUPGHOME}
 EOF
+
+cat >"${ROOT}/dist/lab-signing.env" <<EOF
+SELINUX_GPG_NAME=${NAME}
+SELINUX_RPM_REPO=${REPO}
+LAB_GNUPGHOME=${GNUPGHOME}
+EOF
+chmod 0644 "${ROOT}/dist/lab-signing.env"
 
 echo "SELINUX_GPG_NAME=${NAME}"
 echo "SELINUX_RPM_REPO=${REPO}"

@@ -110,9 +110,7 @@ Generic types from the base policy, before this app's own types are on the files
 
 The file on disk can still wear the generic type after the module names the shopapi type. The denial shows the type that is actually on the object. The allow you write names the shopapi type. Both facts are true until the file is relabeled. Relabeling is a later command.
 
-**`unconfined_t`** is your SSH shell. Commands you type by hand run as `unconfined_t`.
-
-**`unconfined_service_t`** and **`unconfined_java_t`** are what you see on Java when shopapi was not confined: systemd started a service with no domain, or Java started without a transition. Either one means the wrapper is not `shopapi_exec_t`, so the transition did not run.
+**`unconfined_t`** is your SSH shell. Commands you type by hand run as `unconfined_t`. Java started from that shell runs as **`unconfined_java_t`**. **`unconfined_service_t`** is a service systemd started with no domain of its own. Either label means the wrapper is not `shopapi_exec_t`, so the transition did not run.
 
 **`tomcat_t`** is Tomcat from the RHEL package. [`tomcat_domain_template(tomcat)`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te) declares a single `tomcat_t`. The same module contains `unconfined_domain(tomcat_t)`, so on this practice RHEL the process is not held to a tight allow list. A second instance does not get a second domain.
 

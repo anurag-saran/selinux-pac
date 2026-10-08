@@ -48,7 +48,7 @@ Spring Boot (shopapi) → show the enforcing payoff.
 
 Options:
   --profile customer|technical   customer = acts 0,1,2,3,6 (~20 min)
-                                 technical = 0–5 (PR and the 203 pointer; no enforcing payoff)
+                                 technical = 0–5 (PR and the 302 pointer; no enforcing payoff)
   --acts LIST                    Comma-separated act numbers (overrides --profile)
   --preflight                    Check the host and exit (pass/fail table)
   --dry-run                      Print narration + commands; execute nothing

@@ -126,7 +126,8 @@ Attach [`ansible/aap/survey_enforce.json`](../../ansible/aap/survey_enforce.json
 | `selinux_pac_package` | leave unset | The playbook reads `selinux/shopapi/policy_version.txt` on the controller and installs `shopapi-selinux-<that version>`. |
 | `soak_max_net_new` | `0` | Soak fails when a new access appears. |
 | `soak_min_days` | `7` on prod, `0` on the lab QA inventory | How long canary must run before enforce. |
-| `force_enforce` | `false` | Skips the soak gate, including the daily history files under `daily/`. Still needs a change ticket. The enforce deploy report records `daily_history_bypassed: true`. The 203 recording sets it true. A real shop leaves it false. |
+| `skip_soak_days` | `false` | Skips only the day count and the daily history files under `daily/`. The marker, the AVC gate, net-new, and the report still run. The 302 clean-soak enforce sets it true. |
+| `force_enforce` | `false` | Skips the marker, the AVC gate, net-new, the report, the day count, and the daily history. Requires `break_glass_reason`, which the deploy report records. Still needs a change ticket. The 302 outage sets it true. A real shop leaves it false. |
 | `rollback_dnf_version` | previous NVR | Optional RPM downgrade during rollback. |
 
 **Release canary** is the Canary job. **Promote to enforce** is Soak status, then approval, then Enforce. Attach an AAP notification to Soak monitor (job failed) so a new denial pages someone. The failed job does not change the host.
@@ -199,7 +200,7 @@ This playbook checks the soak gate itself: the canary marker exists, at least 7 
 
 Enforce removes `shopapi_t` from the permissive list and runs the smoke tests again. On the host, `semanage permissive -l` no longer shows that domain. `getenforce` is still `Enforcing`.
 
-Leave `force_enforce` false. The 203 talk sets `-e force_enforce=true` so a recording can continue the same day. That skips the day count, the net-new check, the canary marker, and the daily history files. It still writes the deploy report, with `daily_history_bypassed` set, and it still requires `change_ticket`.
+Leave both flags false on a real shop. The 302 clean-soak enforce sets `-e skip_soak_days=true`, which skips only the day count and the daily history. The outage sets `-e force_enforce=true` with `-e break_glass_reason=...`, which skips the marker, the AVC gate, net-new, the report, the day count, and the daily history, and records that reason. Both still require `change_ticket`.
 
 ## A denial after ship
 
@@ -216,8 +217,8 @@ flowchart TD
 
 Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe `audit2allow` into `semodule` on the server.
 
-1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [203](../demo/302-TECHNICAL.md) shows this after `/feature-spool` returns 500.
-2. Copy `/var/lib/<app>/selinux_soak_last_fail.json` and `selinux_soak_last_fail.avc` off the host.
+1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [302](../demo/302-TECHNICAL.md) enforces the first module with break-glass so `/feature-spool` returns 500, rolls back, and only then generates the fix. The talk ends enforcing.
+2. Copy `/var/lib/selinux-policy-ops/<app>/selinux_soak_last_fail.json` and `selinux_soak_last_fail.avc` off the host.
 3. On rhel-qa, run `bash scripts/dev_generate_policy.sh`. If the vendor check says the app is already covered, re-run with `--tune-report` and apply those host commands. Use `--force "reason"` only when the app really is not the vendor one.
 4. Open the pull request on the **app** repo. The reusable workflow runs forbidden-patterns, the source audit, version consistency, and the Stream 9 compiled check.
 5. Build the RPM and run **Release canary** again. The soak clock starts over.
@@ -241,7 +242,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 - [ ] Soak monitor is scheduled daily, with a notification on job failure.
 - [ ] Production hosts have `selinux-policy-ops` and `setools-console`, and no git clone.
 
-`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../tool/201-TOOL-COMMANDS.md#add-an-application). The two-VM rehearsal is [203](../demo/302-TECHNICAL.md).
+`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../tool/201-TOOL-COMMANDS.md#add-an-application). The two-VM rehearsal is [302](../demo/302-TECHNICAL.md).
 
 ## When something fails
 

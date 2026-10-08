@@ -59,7 +59,7 @@ store_prefix="$(isolated_store_create)"
 trap 'isolated_store_destroy "${store_prefix}"' EXIT
 kern="$(isolated_store_kern "${store_prefix}")"
 
-semodule -r "${MODULE_NAME}" -s targeted -p "${store_prefix}" 2>/dev/null || true
+semodule -n -r "${MODULE_NAME}" -s targeted -p "${store_prefix}" 2>/dev/null || true
 
 control_dir="$(mktemp -d)"
 cat >"${control_dir}/pac_control.te" <<'EOF'
@@ -74,10 +74,10 @@ EOF
 printf '%s\n' '/opt/pac_control -- gen_context(system_u:object_r:pac_control_exec_t,s0)' \
     >"${control_dir}/pac_control.fc"
 compile_policy_module "${control_dir}" pac_control "${control_dir}/pac_control.pp"
-semodule -s targeted -p "${store_prefix}" -i "${control_dir}/pac_control.pp"
+semodule -n -s targeted -p "${store_prefix}" -i "${control_dir}/pac_control.pp"
 rm -rf "${control_dir}"
 
-if ! semodule -s targeted -p "${store_prefix}" -i "${pp}"; then
+if ! semodule -n -s targeted -p "${store_prefix}" -i "${pp}"; then
     log_error "semodule rejected ${MODULE_NAME}"
     exit 1
 fi

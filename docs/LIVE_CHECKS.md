@@ -27,6 +27,7 @@ sesearch -A -s shopapi_t -t shopapi_log_t -c file -p write
 sesearch --dontaudit -s shopapi_t | head
 sudo ausearch -m avc -ts recent --subject shopapi_t
 sudo aureport -a
+sudo aureport -a --summary
 ```
 
 `ausearch -ts` with one argument `MM/DD/YYYY HH:MM:SS` prints `Invalid start time`. The date and the time are two arguments. Do not pass an epoch to `-ts`.
@@ -36,6 +37,9 @@ sudo aureport -a
 ```bash
 cat /etc/selinux/config
 ls -l /etc/selinux/targeted/policy/policy.33
+ls /var/lib/selinux/targeted/active/
+ls -l /etc/selinux/targeted/contexts/files/
+sha256sum /etc/selinux/targeted/policy/policy.33 /var/lib/selinux/targeted/active/policy.kern
 sudo ls /var/lib/selinux/targeted/active/modules
 sudo ls /var/lib/selinux/targeted/active/file_contexts /var/lib/selinux/targeted/active/file_contexts.local
 cat /sys/fs/selinux/enforce

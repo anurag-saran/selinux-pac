@@ -19,6 +19,10 @@ selinux_pac_package: "{{ app_name | default('myapp') }}-selinux-{{ policy_versio
 # Rollback via dnf (e.g. 1.1.1-1); empty skips downgrade.
 rollback_dnf_version: ""
 
+# Signed repo published on rhel-qa. Empty skips rpm_key and yum_repository.
+selinux_rpm_repo_baseurl: ""
+selinux_rpm_gpgkey: ""
+
 selinux_pac_phase: canary
 
 # Soak evidence lives outside the app var_dir. The app user owns var_dir, and
@@ -36,4 +40,8 @@ http_probe_host: "127.0.0.1"
 
 # Enforce / AAP survey. force_enforce never skips the change_ticket check.
 force_enforce: false
+# Required when force_enforce is true. Recorded in the deploy report.
+break_glass_reason: ""
+# Skips only the day count and the daily history. Marker, AVC, net-new, and the report still run.
+skip_soak_days: false
 change_ticket: ""

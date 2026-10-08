@@ -214,7 +214,8 @@ run_tune_report() {
     if [[ "${SKIP_EXPORT}" -eq 0 && -z "${AVC_LOG_ARG:-}" ]]; then
         # shellcheck source=lib/avc_query.sh
         source "${SCRIPT_DIR}/lib/avc_query.sh"
-        if command -v ausearch >/dev/null 2>&1 || [[ -f /var/log/audit/audit.log ]]; then
+        audit_log="${AUDIT_LOG:-/var/log/audit/audit.log}"
+        if command -v ausearch >/dev/null 2>&1 || [[ -f "${audit_log}" ]]; then
             log_info "Collecting denials for vendor domain ${domain} (read-only)..."
             export_vendor_domain_avcs_to_file "${AVC_LOG}" "${domain}" boot || true
         elif [[ ! -s "${AVC_LOG}" ]]; then
@@ -225,7 +226,8 @@ run_tune_report() {
             return 0
         fi
     elif [[ ! -s "${AVC_LOG}" ]]; then
-        if command -v ausearch >/dev/null 2>&1 || [[ -f /var/log/audit/audit.log ]]; then
+        audit_log="${AUDIT_LOG:-/var/log/audit/audit.log}"
+        if command -v ausearch >/dev/null 2>&1 || [[ -f "${audit_log}" ]]; then
             :
         else
             log_info "${skip_notice}"

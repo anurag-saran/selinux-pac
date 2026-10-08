@@ -100,12 +100,8 @@ part_rpms() {
     tlab_pause
     e2e_run "sudo dnf install -y policycoreutils policycoreutils-python-utils setools-console audit"
     tlab_explain "Leave the JVM unconfined until the Mac runs deploy_canary.yml. Do not install the RPM files by hand and do not restart shopapi here."
-    if [[ -z "${SELINUX_GPG_NAME:-}" ]]; then
-        echo "No signing key on this lab (SELINUX_GPG_NAME is unset). There is no gpgcheck=1 repo to install from. Say that on screen."
-        echo "Expected: spoken stop — no signing key"
-    else
-        echo "Expected: the Mac published a repo with gpgcheck=1; canary's dnf install is the next step"
-    fi
+    e2e_run "sudo dnf repolist"
+    e2e_run "rpm -q gpg-pubkey"
     e2e_run "getenforce"
     e2e_run "systemctl is-active shopapi.service"
     e2e_run "ps -o label=,comm= -C java | head"

@@ -6,6 +6,16 @@
       -e change_ticket=CHG123). force_enforce=true still needs a ticket.
   when: (change_ticket | default('') | trim | length) == 0
 
+- name: Require a reason for break-glass enforce
+  ansible.builtin.fail:
+    msg: >-
+      force_enforce=true skips the marker, the AVC gate, net-new, the report,
+      the day count, and the daily history. Pass
+      -e break_glass_reason='why this cannot wait for the soak'.
+  when:
+    - force_enforce | default(false) | bool
+    - (break_glass_reason | default('') | trim | length) == 0
+
 - name: Refuse lab soak window on production group
   ansible.builtin.fail:
     msg: >-
@@ -15,6 +25,12 @@
   when:
     - "'production' in group_names"
     - (soak_min_days | default(7) | int) < 7
+
+- name: Fail closed unless auditd is recording since the marker
+  ansible.builtin.command: >
+    {{ selinux_ops_dir }}/check_audit_health.sh {{ soak_marker_file }}
+  changed_when: false
+  when: not (force_enforce | default(false) | bool)
 
 - name: Collect soak gate facts on target
   ansible.builtin.command: >
@@ -47,6 +63,7 @@
       need {{ soak_min_days | default(7) }}.
   when:
     - not (force_enforce | default(false) | bool)
+    - not (skip_soak_days | default(false) | bool)
     - soak_facts.days_elapsed | int < (soak_min_days | default(7) | int)
 
 - name: Fail when soak AVC monitor failed closed
@@ -64,7 +81,9 @@
     --min-days {{ soak_min_days | default(7) }}
     --max-net-new {{ soak_max_net_new | default(0) }}
   changed_when: false
-  when: not (force_enforce | default(false) | bool)
+  when:
+    - not (force_enforce | default(false) | bool)
+    - not (skip_soak_days | default(false) | bool)
 
 - name: Fail when net-new AVC needs too high
   ansible.builtin.fail:
@@ -178,6 +197,9 @@
         --marker-file {{ soak_marker_file }}
         --policy-version {{ policy_version }}
         {{ '--force-enforce' if (force_enforce | default(false) | bool) else '' }}
+        {{ '--skip-soak-days' if (skip_soak_days | default(false) | bool) else '' }}
+      environment:
+        BREAK_GLASS_REASON: "{{ break_glass_reason | default('') if (force_enforce | default(false) | bool) else '' }}"
       register: deploy_report
       changed_when: deploy_report.rc == 0
       failed_when: deploy_report.rc != 0

@@ -11,8 +11,9 @@ source "${SCRIPT_DIR}/lib/avc_query.sh"
 # shellcheck source=lib/manifest_shell.sh
 source "${SCRIPT_DIR}/lib/manifest_shell.sh"
 
-# Ansible become shells often omit /usr/sbin; sesearch lives in /usr/bin or /bin.
-export PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+# Ansible become shells often omit /usr/sbin. Append those dirs so a caller
+# PATH (a test fake for systemctl or auditctl) is still found first.
+export PATH="${PATH:-}:/usr/sbin:/usr/bin:/sbin:/bin"
 
 DOMAIN="${SELINUX_DOMAIN:-}"
 PATHS="${MONITOR_PATHS:-}"
@@ -100,11 +101,19 @@ if [[ -z "${PATHS}" ]]; then
     exit 1
 fi
 
+audit_unhealthy=0
 if [[ -n "${MARKER_FILE}" && -f "${MARKER_FILE}" ]]; then
     deploy_epoch="$(tr -d '[:space:]' < "${MARKER_FILE}")"
     if [[ "${deploy_epoch}" =~ ^[0-9]+$ ]]; then
         SINCE="${deploy_epoch}"
     fi
+    audit_err="$(mktemp)"
+    if ! bash "${SCRIPT_DIR}/check_audit_health.sh" "${MARKER_FILE}" >"${audit_err}" 2>&1; then
+        audit_unhealthy=1
+        fail_closed_reason="$(tr '\n' ' ' <"${audit_err}")"
+        fail_closed_reason="${fail_closed_reason:-auditd is not recording}"
+    fi
+    rm -f "${audit_err}"
 fi
 
 DOMAINS_CSV="${DOMAIN}"
@@ -114,7 +123,9 @@ fi
 
 raw=""
 avc_fail_closed=0
-fail_closed_reason=""
+if [[ "${audit_unhealthy}" -eq 0 ]]; then
+    fail_closed_reason=""
+fi
 fetch_err="$(mktemp)"
 IFS=',' read -r -a domain_list <<< "${DOMAINS_CSV}"
 for d in "${domain_list[@]}"; do
@@ -204,6 +215,10 @@ if [[ ${#matches[@]} -gt 0 ]]; then
     fi
 fi
 
+if [[ "${audit_unhealthy}" -eq 1 ]]; then
+    avc_fail_closed=1
+fi
+
 fail=0
 if [[ "${avc_fail_closed}" -eq 1 ]]; then
     fail=1
@@ -277,7 +292,8 @@ fi
 
 NEXT_STEP=""
 if [[ "${fail}" -eq 1 ]]; then
-    NEXT_STEP="Copy ${FAIL_DIR:-/var/lib/<app>}/selinux_soak_last_fail.json and selinux_soak_last_fail.avc to rhel-qa. Run bash scripts/dev_generate_policy.sh. Open a PR, recanary, reset soak. Do not semodule -i or audit2allow on this host. See docs/admin/401-OPERATIONS.md#a-denial-after-ship."
+    fail_dir_shown="${FAIL_DIR:-/var/lib/selinux-policy-ops/<app>}"
+    NEXT_STEP="Copy ${fail_dir_shown}/selinux_soak_last_fail.json and selinux_soak_last_fail.avc to rhel-qa. Run bash scripts/dev_generate_policy.sh. Open a PR, recanary, reset soak. Do not semodule -i or audit2allow on this host. See docs/admin/401-OPERATIONS.md#a-denial-after-ship."
 fi
 
 if [[ "${fail}" -eq 1 && -n "${FAIL_DIR}" ]]; then
