@@ -1135,6 +1135,22 @@ def run(args: argparse.Namespace) -> int:
         print(f"\nWrote {args.out_dir}/findings.json (generation_blocked=true)\n", file=sys.stderr)
         return 1
 
+    if findings and all(f.verdict == VERDICT_BASELINE for f in findings):
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        out_te = existing_te if existing_te.endswith("\n") else existing_te + "\n"
+        out_fc = existing_fc if existing_fc.endswith("\n") else existing_fc + "\n"
+        (args.out_dir / f"{app_name}.te").write_text(out_te, encoding="utf-8")
+        (args.out_dir / f"{app_name}.fc").write_text(out_fc, encoding="utf-8")
+        write_findings_artifact(
+            args.out_dir,
+            findings,
+            artifact_ctx,
+            generation_blocked=False,
+            vendor_override=vendor_override,
+        )
+        print("No change")
+        return 0
+
     emit_degraded_warning(findings)
 
     drift_notes = [f for f in findings if f.verdict == VERDICT_FC_DRIFT]
