@@ -608,7 +608,7 @@ The suffix on a type name is a hint:
 | `_var_run_t` | Runtime files under `/run` that disappear on reboot. |
 | `_port_t` | A network port. |
 
-Each shopapi type is explained in [section 3](#3-the-context-string--four-parts). They are declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te).
+Each shopapi type is explained in [section 3](#3-the-context-string-four-parts). They are declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te).
 
 | Type | Used for |
 |------|----------|
