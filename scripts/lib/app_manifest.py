@@ -149,6 +149,7 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
             "backend": backend_http,
         },
         "selinux_ports": raw.get("selinux_ports") or [],
+        "selinux_booleans": raw.get("selinux_booleans") or [],
         "policy": {"module_dir": str(module_dir), "service_name": str(primary_unit)},
         "deploy": {
             "soak_marker_file": str(soak_marker),
@@ -246,6 +247,43 @@ def classify_port_assignment(listing: str, port: int, proto: str, want_type: str
     )
 
 
+def validate_selinux_booleans(booleans: Any, domain: str) -> list[str]:
+    """Optional persistent booleans. Names are identifiers, not free text.
+
+    tomcat_can_network_connect is not a tunable in RHEL 9 tomcat.te
+    (the connect tunable is tomcat_can_network_connect_db).
+    httpd_can_network_connect belongs to the apache module; do not set it
+    on tomcat_t or a JWS tomcat domain.
+    """
+    if booleans is None:
+        return []
+    if not isinstance(booleans, list):
+        return ["selinux_booleans must be a list"]
+    errors: list[str] = []
+    tomcat_domain = domain == "tomcat_t" or domain.endswith("_tomcat_t")
+    for index, entry in enumerate(booleans):
+        label = f"selinux_booleans[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} must be a mapping")
+            continue
+        name = str(entry.get("name") or "")
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+            errors.append(f"{label} name {name!r} is not a boolean identifier")
+        if name == "tomcat_can_network_connect":
+            errors.append(
+                f"{label} tomcat_can_network_connect is not a tunable in RHEL 9 tomcat.te"
+            )
+        if name == "httpd_can_network_connect" and tomcat_domain:
+            errors.append(
+                f"{label} httpd_can_network_connect is an apache boolean; do not set it for {domain}"
+            )
+        if "state" not in entry or not isinstance(entry["state"], bool):
+            errors.append(f"{label} state must be true or false")
+        if "persistent" in entry and not isinstance(entry["persistent"], bool):
+            errors.append(f"{label} persistent must be true or false")
+    return errors
+
+
 def validate_normalized(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key in REQUIRED_TOP:
@@ -271,6 +309,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     te = module_te_for_manifest(path, manifest)
     declared = port_types_declared(te.read_text(encoding="utf-8")) if te else None
     errors.extend(validate_selinux_ports(manifest["selinux_ports"], declared))
+    errors.extend(validate_selinux_booleans(manifest["selinux_booleans"], str(manifest["domain"])))
     if errors:
         raise ValueError(f"{path}: " + "; ".join(errors))
     return manifest

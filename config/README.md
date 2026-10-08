@@ -48,6 +48,7 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 | `http.backend.port` | if backend | Backend health port |
 | `http.backend.health_path` | if backend | Default `/health` |
 | `selinux_ports` | recommended | Port → type for canary `semanage port -a` (stable across env) |
+| `selinux_booleans` | no | List of `{name, state, persistent}`. Canary applies each with `ansible.posix.seboolean` before the service starts. `tomcat_can_network_connect` is rejected. `httpd_can_network_connect` is rejected on a Tomcat domain. |
 | `policy.module_dir` | no | Default `selinux` |
 | `deploy.soak_marker_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_canary_deployed_at` |
 | `deploy.deploy_report_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_deploy_report.json` |

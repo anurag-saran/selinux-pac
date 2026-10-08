@@ -35,11 +35,32 @@ The host stays **Enforcing** the whole time. Canary makes only the app domain lo
 | **rhel-qa** | The app build, the audit log, and `dev_generate_policy.sh`. Compile here. |
 | **Production** | RPMs and AAP. No git clone. |
 
-Copy [`.github/workflows/selinux-policy-ci.yml`](../../.github/workflows/selinux-policy-ci.yml) into the app repo. It runs `forbidden-patterns` and `version-consistency` on changes under `selinux/`. Compile and canary stay on rhel-qa and AAP. GitHub does not deploy.
+Policy CI for an app repo calls this repo's workflow. Copying [`.github/workflows/selinux-policy-ci.yml`](../../.github/workflows/selinux-policy-ci.yml) into the app repo does not work: `make test` and the validators live here, not next to the app.
+
+Put this in the app repo as `.github/workflows/selinux-policy.yml`. `OWNER/selinux-pac` is the fork you trust, and `REF` is a commit or tag on that fork. The app repo's token must be able to read it. GitHub does not deploy.
+
+```yaml
+name: SELinux policy
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  policy:
+    uses: OWNER/selinux-pac/.github/workflows/selinux-policy-ci.yml@REF
+    with:
+      policy_dir: selinux/shopapi
+      module: shopapi
+      domain: shopapi_t
+```
+
+`policy_dir` is the directory that contains `shopapi.te` and `policy_version.txt`. The called jobs check out the app and this repo, then run forbidden-patterns, `cli/policy_audit.py`, version consistency, and the Stream 9 compiled check against that directory. Canary stays on AAP.
 
 ## Vendor module already exists
 
-Before anyone generates a module for Tomcat, JBoss, httpd, named, or PostgreSQL, check whether Red Hat already ships that domain. A second module that half-copies `jws6_tomcat` or `jboss_t` is worse than no custom policy. The generator refuses that path unless you pass `--force "reason"`. The reason is written on the pull request. Bare `--force` is rejected.
+Before anyone generates a module for Tomcat, JBoss, Apache httpd, BIND, or PostgreSQL, check whether Red Hat already ships that domain. A second module that half-copies `jws6_tomcat` or `jboss_t` is worse than no custom policy. The generator refuses that path unless you pass `--force "reason"`. The reason is written on the pull request. Bare `--force` is rejected.
+
+RHEL 9 base policy module names are the `policy_module()` argument, which is what `semodule -l` prints. [apache.te](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/apache.te) is `apache` (domain `httpd_t`). [bind.te](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/bind.te) is `bind` (domain `named_t`). There is no `policy/modules/contrib/jboss.te` on the `c9s` branch. Confined JBoss/EAP comes from `eap7-selinux` or `eap8-selinux`, not from a base module named `jboss`.
 
 ```bash
 sudo semodule -l
@@ -49,7 +70,7 @@ ps -eZ | grep -E 'unconfined_java_t|unconfined_service_t'
 
 | What you find | What you do |
 |---------------|-------------|
-| The vendor module is already loaded (`jws6_tomcat`, `jboss`, `httpd`, `named`, `postgresql`) | `dev_generate_policy.sh --tune-report`. Run the printed `semanage` and `setsebool` commands. Do not generate. |
+| The vendor module is already loaded (`jws6_tomcat`, `apache`, `bind`, `postgresql`) | `dev_generate_policy.sh --tune-report`. Run the printed `semanage` and `setsebool` commands. Do not generate. `apache` confines `httpd_t`. `bind` confines `named_t`. |
 | Module `tomcat` is loaded and `seinfo -t tomcat_t -x` shows `unconfined_domain_type` | This is the Tomcat that comes with RHEL. The type name exists and the rules do not deny. Do not generate a second module. Do not expect a denial to tune. The confined package is `jws6-tomcat-selinux`. |
 | Loaded vendor module whose domain is unconfined (`situation=loaded_unconfined`, `action=confine`) | Install the vendor's confining package, or generate with `--force "reason"`. Do not tune denials this domain will not produce. |
 | The vendor SELinux RPM is installed and the module is not loaded | Enable that package. Do not generate. |
@@ -58,6 +79,18 @@ ps -eZ | grep -E 'unconfined_java_t|unconfined_service_t'
 | No vendor module (Spring Boot, Node, shopapi) | Generate. |
 
 JWS and EAP policy is a separate package. It is not installed with the server. Until it is, the JVM runs `unconfined_java_t`. That is not confinement.
+
+## Booleans
+
+A boolean the app needs goes in the manifest. Canary applies each entry with `ansible.posix.seboolean` after the module is installed and before the service starts. `state` is `true` or `false`. `persistent` defaults to true.
+
+```yaml
+selinux_booleans:
+  - name: tomcat_read_rpm_db
+    state: true
+```
+
+`tomcat_read_rpm_db` is a tunable in [tomcat.te](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te). The same file has `tomcat_can_network_connect_db` and `tomcat_use_execmem`. It does not have `tomcat_can_network_connect`. The manifest check rejects that name. It also rejects `httpd_can_network_connect` when the domain is `tomcat_t` or a `*_tomcat_t` domain. That boolean belongs to the apache module.
 
 ## The jobs
 
@@ -143,7 +176,7 @@ Before you enforce, confirm:
 
 - [ ] Canary has run at least 7 days (`soak_min_days` on the production inventory)
 - [ ] Soak monitor has been clean across a business cycle, including a weekend
-- [ ] `verify_file_contexts.sh` passed after the last canary
+- [ ] `/usr/libexec/selinux-policy-ops/verify_file_contexts.sh` passed after the last canary
 - [ ] The service is active and the health URL returns 200
 - [ ] `semanage permissive -l` still lists the app domain
 - [ ] `setools-console` is installed (`sesearch` is present)
@@ -191,7 +224,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 |------------|--------------------|-----------------------------------------------|
 | A file path | `.fc`, then `restorecon` from the canary | A one-off `semanage fcontext` on the box |
 | A port bind | `selinux_ports` in the manifest | A one-off `semanage port -a` on the box |
-| A boolean | `setsebool` on the host, documented in the ticket | A raw allow that copies the boolean into the `.te` |
+| A boolean | `selinux_booleans` in the manifest. Canary applies it with `ansible.posix.seboolean` before the service starts. | A raw allow that copies the boolean into the `.te`, or `httpd_can_network_connect` on Tomcat |
 | A new permission | An `allow` in the `.te`, after forbidden-patterns | `audit2allow` piped to `semodule -i` |
 
 `generate_emergency_patch.yml` runs on the controller, in a git checkout. It writes `policy_out/` for that pull request. It does not install a module on a production host.
@@ -202,7 +235,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 - [ ] CODEOWNERS (or a required check) covers `selinux/` so an app-only merge cannot skip forbidden-patterns.
 - [ ] `bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …`, then `ping` and `doctor`.
 - [ ] Signed RPM repo: `cp packaging/internal.env.example packaging/internal.env` and `bash packaging/publish_internal.sh`.
-- [ ] AAP project points at `ansible/`. Job templates and workflows come from [`ansible/aap/`](../../ansible/aap/).
+- [ ] AAP project points at `ansible/`. Click-create from [`ansible/aap/`](../../ansible/aap/), or apply [`ansible/aap/aap_configuration.yml`](../../ansible/aap/aap_configuration.yml) with `infra.aap_configuration`. That file creates the job templates, both workflows, the enforce survey, and the daily soak schedule.
 - [ ] Soak monitor is scheduled daily, with a notification on job failure.
 - [ ] Production hosts have `selinux-policy-ops` and `setools-console`, and no git clone.
 
@@ -214,7 +247,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 |--------------|------------|
 | `Soak not met` | Wait. The message prints days elapsed and the number it wanted. Do not set `force_enforce` to skip the clock without a ticket that says so. |
 | `Net-new access needs` exceed the threshold | Follow [A denial after ship](#a-denial-after-ship). Recanary resets the clock. |
-| `verify_file_contexts.sh` names a path | On the host: `restorecon -Rv` on `/opt/shopapi`, `/var/lib/shopapi`, `/var/log/shopapi`, and `/run/shopapi`, then run the check again. |
+| `/usr/libexec/selinux-policy-ops/verify_file_contexts.sh` names a path | On the host: `restorecon -Rv` on `/opt/shopapi`, `/var/lib/shopapi`, `/var/log/shopapi`, and `/run/shopapi`, then run that same packaged script again. There is no `scripts/` tree on production. |
 | `Canary marker missing` | Run `deploy_canary.yml`. The marker is `/var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at`. |
 | `Soak daily history not met` | A day under `/var/lib/selinux-policy-ops/shopapi/daily/` is missing or failed. Wait for the next Soak monitor, or fix the denial and recanary. |
 | `Soak AVC monitor failed closed` | The monitor crashed or could not count net-new access. Install `setools-console` and `audit`. Do not enforce on a count of zero. |

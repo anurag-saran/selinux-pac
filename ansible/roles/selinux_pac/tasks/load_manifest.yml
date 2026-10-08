@@ -108,6 +108,7 @@
     http_probe_host: "{{ pac_manifest.http.host | default(http_probe_host) }}"
     soak_marker_file: "{{ pac_manifest.deploy.soak_marker_file | default('/var/lib/selinux-policy-ops/' ~ pac_manifest.app_name ~ '/selinux_canary_deployed_at') }}"
     selinux_ports_list: "{{ pac_manifest.selinux_ports | default([]) }}"
+    selinux_booleans_list: "{{ pac_manifest.selinux_booleans | default([]) }}"
     selinux_repo_dir: >-
       {{
         policy_artifact_dir ~ '/' ~ (pac_manifest.policy.module_dir | default('selinux'))

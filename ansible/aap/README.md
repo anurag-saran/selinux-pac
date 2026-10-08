@@ -16,4 +16,6 @@ When a file or port is denied after ship: [301-ANSIBLE_OPERATIONS.md#a-denial-af
    - **SELinux – Promote to enforce** — Soak status → approval → Enforce.
 7. **SELinux – Rollback** stays a standalone template. Never add it to the promote graph.
 
+To create those objects from a controller that has `infra.aap_configuration`, load [`aap_configuration.yml`](aap_configuration.yml). It defines `controller_templates`, `controller_workflows` (Release canary, Promote to enforce), the enforce survey, and a daily schedule on **SELinux – Soak monitor**. The project and the production inventory must already exist. `aap_hostname` and the token stay in vault.
+
 Laptop equivalent (same YAML): `ansible-playbook -i ansible/inventory.production.yml ansible/<playbook>.yml`. Extra-vars: [301-ANSIBLE_OPERATIONS.md](../../docs/admin/301-ANSIBLE_OPERATIONS.md).

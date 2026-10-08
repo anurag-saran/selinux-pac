@@ -870,6 +870,26 @@ def test_vendor_policy_check() -> None:
     assert "confining package" in refused_out
     assert '--force "reason"' in refused_out or "--force" in refused_out
 
+    # c9s policy_module names: apache (httpd_t) and bind (named_t), not httpd/named.
+    apache = run(
+        ["--app-name", "httpd", "--report"],
+        {"VENDOR_CHECK_SEMODULE_L": "apache\t1.0.0\n"},
+    )
+    apache_out = apache.stdout + apache.stderr
+    assert apache.returncode == 0, apache_out
+    assert "TRIAGE situation=loaded" in apache_out
+    assert "module=apache" in apache_out
+    assert "domain=httpd_t" in apache_out
+    bind = run(
+        ["--app-name", "named", "--report"],
+        {"VENDOR_CHECK_SEMODULE_L": "bind\t1.0.0\n"},
+    )
+    bind_out = bind.stdout + bind.stderr
+    assert bind.returncode == 0, bind_out
+    assert "TRIAGE situation=loaded" in bind_out
+    assert "module=bind" in bind_out
+    assert "domain=named_t" in bind_out
+
 
 def test_demo_present_dry_run() -> None:
     script = PROJECT_ROOT / "scripts" / "demo_present.sh"
@@ -1148,6 +1168,95 @@ def test_soak_net_new_empty_manifest() -> None:
     data = json.loads(proc.stdout)
     assert data["raw_count"] == 0
     assert data["net_new_count"] == 0
+
+
+def test_selinux_booleans_and_app_ci() -> None:
+    """Manifest booleans, packaged verify path, and app-repo CI call."""
+    import yaml
+
+    guide = (PROJECT_ROOT / "docs" / "admin" / "301-ANSIBLE_OPERATIONS.md").read_text(
+        encoding="utf-8"
+    )
+    assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
+    assert "uses: OWNER/selinux-pac/.github/workflows/selinux-policy-ci.yml@REF" in guide
+    assert "module `jboss`" not in guide
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_call:" in workflow
+    assert "app-forbidden-patterns:" in workflow
+    assert "app-compiled-policy:" in workflow
+    canary = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "canary.yml"
+    ).read_text(encoding="utf-8")
+    assert "ansible.posix.seboolean" in canary
+    aap = (PROJECT_ROOT / "ansible" / "aap" / "aap_configuration.yml").read_text(encoding="utf-8")
+    assert "controller_templates:" in aap
+    assert "controller_workflows:" in aap
+    assert "SELinux – Promote to enforce" in aap
+    assert "change_ticket" in aap
+    assert "FREQ=DAILY" in aap
+    vpc = (PROJECT_ROOT / "scripts" / "lib" / "vendor_policy_check.sh").read_text(encoding="utf-8")
+    assert "echo '^apache$'" in vpc
+    assert "echo '^bind$'" in vpc
+
+    loader = PROJECT_ROOT / "scripts" / "lib" / "app_manifest.py"
+    shop = yaml.safe_load(
+        (PROJECT_ROOT / "config" / "shopapi.manifest.yml").read_text(encoding="utf-8")
+    )
+
+    def validate_copy(mutate) -> subprocess.CompletedProcess[str]:
+        payload = yaml.safe_load(yaml.safe_dump(shop))
+        mutate(payload)
+        with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as handle:
+            yaml.safe_dump(payload, handle)
+            path = handle.name
+        return subprocess.run(
+            ["python3", str(loader), "validate", path],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+
+    missing = validate_copy(
+        lambda payload: payload.__setitem__(
+            "selinux_booleans",
+            [{"name": "tomcat_can_network_connect", "state": True}],
+        )
+    )
+    assert missing.returncode != 0, missing.stdout
+    assert "tomcat_can_network_connect" in (missing.stdout + missing.stderr)
+
+    tomcat = validate_copy(
+        lambda payload: payload.update(
+            {
+                "domain": "tomcat_t",
+                "selinux_booleans": [{"name": "httpd_can_network_connect", "state": True}],
+            }
+        )
+    )
+    assert tomcat.returncode != 0, tomcat.stdout
+    assert "httpd_can_network_connect" in (tomcat.stdout + tomcat.stderr)
+
+    allowed = validate_copy(
+        lambda payload: payload.__setitem__(
+            "selinux_booleans",
+            [{"name": "tomcat_read_rpm_db", "state": True}],
+        )
+    )
+    assert allowed.returncode == 0, allowed.stderr or allowed.stdout
+
+    env = os.environ.copy()
+    env["SELINUX_ROOT"] = str(PROJECT_ROOT / "selinux" / "shopapi")
+    env["POLICY_APP"] = "shopapi"
+    version = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts" / "validate_version_consistency.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert version.returncode == 0, version.stderr
 
 
 def test_app_manifest() -> None:
@@ -2648,6 +2757,7 @@ def main() -> int:
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),
         ("soak_net_new_empty_manifest", test_soak_net_new_empty_manifest),
         ("app_manifest", test_app_manifest),
+        ("selinux_booleans_and_app_ci", test_selinux_booleans_and_app_ci),
         ("rpm_ops_parity", test_rpm_ops_parity),
         ("version_consistency", test_version_consistency),
         ("version_consistency_fails_on_drift", test_version_consistency_fails_on_drift),

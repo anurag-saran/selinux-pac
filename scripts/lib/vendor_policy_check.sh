@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # vendor_policy_check.sh — Refuse to generate a module that duplicates
-# vendor or base policy (JWS/Tomcat, EAP/JBoss, httpd, named, postgresql).
+# vendor or base policy. RHEL 9 base module names (c9s): apache, bind.
+# There is no policy/modules/contrib/jboss.te on c9s. EAP ships its own package.
 #
 # JWS and EAP ship SELinux in a separate RPM that is not installed by default
 # (jws6-tomcat-selinux, eap7-selinux / eap8-selinux). Until that RPM is
@@ -81,9 +82,12 @@ vendor_pkgs_for_class() {
 vendor_module_grep_for_class() {
     case "$1" in
         tomcat) echo '^(tomcat|jws[0-9]*_tomcat|jws[0-9]+)$' ;;
+        # jboss is not a base-policy module. Keep the name for an EAP package that loads one.
         eap) echo '^(jboss|eap[0-9]+|eap|wildfly)$' ;;
-        httpd) echo '^httpd$' ;;
-        named) echo '^named$' ;;
+        # policy_module(apache) in policy/modules/contrib/apache.te; the domain is httpd_t.
+        httpd) echo '^apache$' ;;
+        # policy_module(bind) in policy/modules/contrib/bind.te; the domain is named_t.
+        named) echo '^bind$' ;;
         postgresql) echo '^(postgresql|postgres)$' ;;
         python) echo '^(python|python3)$' ;;
         *) echo '^$' ;;
@@ -247,8 +251,8 @@ _vpc_domain() {
     case "${module}" in
         jws6_tomcat) echo jws6_tomcat_t; return ;;
         tomcat) echo tomcat_t; return ;;
-        httpd) echo httpd_t; return ;;
-        named) echo named_t; return ;;
+        httpd|apache) echo httpd_t; return ;;
+        named|bind) echo named_t; return ;;
         postgresql) echo postgresql_t; return ;;
         jboss|eap7|eap8) echo jboss_t; return ;;
     esac

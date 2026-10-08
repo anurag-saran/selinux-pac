@@ -79,6 +79,14 @@
         permissive: true
       when: semanage_bin.stat.exists
 
+    - name: Apply manifest SELinux booleans before the service starts
+      ansible.posix.seboolean:
+        name: "{{ item.name }}"
+        state: "{{ item.state | bool }}"
+        persistent: "{{ item.persistent | default(true) | bool }}"
+      loop: "{{ selinux_booleans_list | default([]) }}"
+      when: (selinux_booleans_list | default([])) | length > 0
+
     - name: Ensure persistent application directories exist
       ansible.builtin.file:
         path: "{{ item.path }}"
