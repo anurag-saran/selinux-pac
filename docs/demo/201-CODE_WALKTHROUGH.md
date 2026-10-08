@@ -79,7 +79,7 @@ flowchart TD
   D --> E[deterministic_gen.py]
   E --> F[Files in policy_out/]
   F --> G[Human review + PR to selinux/]
-  G --> H[GitHub CI: forbidden-patterns]
+  G --> H[GitHub CI: offline-tests, forbidden-patterns, compiled-policy, version-consistency]
   H --> I[Merge]
   I --> J[Ansible canary deploy]
   J --> K[Soak: soak_monitor.yml clean first-ship]
@@ -96,7 +96,7 @@ flowchart TD
 3. **Export AVCs** — `scripts/dev_generate_policy.sh --app-name shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
 4. **Generate policy** — **`cli/deterministic_gen.py`** classifies each denial and writes the `.te` / `.fc` updates. It runs offline, from rules in the repo.
 5. **Review** — Output lands in **`policy_out/`** (`.te`, `.fc`, `pr_summary.md`, `findings.json`). You compare to **`selinux/`** and open a PR.
-6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `forbidden-patterns` and `version-consistency`. The generator already ran the same forbidden-pattern check, so these jobs should pass.
+6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls that workflow. The generator already ran the same forbidden-pattern check, so `forbidden-patterns` should pass.
 7. **Deploy** — Admins use **AAP** ([`ansible/aap/`](../../ansible/aap/)): workflow **Release canary**, daily **Soak monitor**, then **Promote to enforce**. Soak fail: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). See [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
 
 **Golden rule:** committed policy lives in **`selinux/`**. **`policy_out/`** is disposable local output.
@@ -218,10 +218,10 @@ Most scripts expect your shell’s **current directory** to be the **repo root**
 | **`dev_generate_policy.sh`** | Main command: vendor-policy pre-flight → export AVCs → generate → diff → optional copy into `selinux/`. `--tune-report` for vendor-covered apps (commands only). `--force "reason"` only if the app genuinely differs. |
 | **`selinux_pac_adopt.sh`** | `doctor` + `init APP` — print manifest and **Ansible** next steps. |
 | **`setup_rhel_hosts.sh`** | Write `inventory.dev.yml` / `inventory.production.yml`; ping; doctor; bootstrap hints. |
-| **`demo_present.sh`** | Customer talk (~20 min, one host): Act 0 triage, App A (vendor, already enforcing), App B (tune, no `.te`), shopapi generate. `--profile customer` = 0–3; `technical` adds PR + a pointer at `demo_e2e_mac.sh`. `--preflight` FAILs if App B is already tuned. |
+| **`demo_present.sh`** | Customer talk (~20 min, one host): Act 0 triage, App A (distro Tomcat loaded but unconfined), App B (tune, no `.te`), shopapi generate, then Act 6 (drop permissive; `/feature-spool` fails). `--profile customer` = `0,1,2,3,6`; `technical` adds the PR and a pointer at `demo_e2e_mac.sh`. `--preflight` FAILs if App B is already tuned. |
 | **`demo_bootstrap.sh`** / **`make demo-bootstrap`** | Idempotent three-app estate on RHEL. JWS if the repo is reachable, else distro Tomcat + `tomcat_t`. |
 | **`demo_e2e_mac.sh`** / **`demo_e2e_rhel_qa.sh`** / **`demo_e2e_rhel_prod.sh`** | Three-host **shopapi** pipeline (~45 min): generate → PR on `selinux/shopapi/` → clean soak → enforce; `/feature-spool` fails on prod; admin rollback. Not the first customer conversation. `demo_e2e_rhel_dev.sh` is a deprecated name for the QA script (remove after 2026-12-31). |
-| **`reset_demo_vms.sh`** | Between rehearsals: unload leftover `shopapi` modules and prod RPMs; **untune App B** (port 8090, `/opt/appdata` fcontext, connect boolean). JVM stays. Then start the Mac conductor or `demo_present.sh --preflight`. Not `reset_host_state.yml`. |
+| **`reset_demo_vms.sh`** | Between rehearsals: unload leftover `shopapi` modules and prod RPMs; **untune App B** (port 8090 and the `/opt/appdata` fcontext). Writes an `ausearch` timestamp. Does not stop `auditd` or rewrite `/var/log/audit`. JVM stays. Then start the Mac conductor or `demo_present.sh --preflight`. Not `reset_host_state.yml`. |
 | **`demo_open_generated_pr.sh`** | Open a GitHub PR from live generated `selinux/` (Mac, after scp from rhel-qa). |
 | **`assemble_pr_body.sh`** | Builds GitHub PR description from template + summary + optional rule diff. |
 | **`compile_and_validate.sh`** | Compile `.te`/`.fc` to `.pp` and run basic checks. |
@@ -434,9 +434,9 @@ Review checklist for a policy PR:
 - Interfaces, not a raw `audit2allow` dump
 - Dedicated port types, not `unreserved_port_t`
 - `.fc` uses FHS paths and has no `--` on directories
-- `forbidden-patterns` and `version-consistency` are green
+- `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency` are green
 - `selinux/policy_version.txt` matches `policy_module()` in the `.te`
-- Compile happened on RHEL (`compile_and_validate.sh`), not on a laptop
+- `compiled-policy` ran on Stream 9. A laptop compile uses `compile_and_validate.sh` on RHEL.
 - A denial after ship is a new PR ([301](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)), not `semodule -i` on prod
 
 ## The other guides

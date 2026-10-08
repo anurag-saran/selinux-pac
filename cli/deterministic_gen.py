@@ -478,7 +478,7 @@ def classify(
         if port is not None:
             note += (
                 f" Add to the app manifest selinux_ports "
-                f"(port {port}/{proto}, type {ptype}); canary seport registers it."
+                f"(port {port}/{proto}, type {ptype}); canary runs semanage port -a."
             )
         return Finding(
             need,
@@ -862,7 +862,7 @@ def write_pr_summary(findings: list[Finding], app_name: str, meta: dict | None =
             if f.verdict == VERDICT_PORT and f.bind_port is not None:
                 lines.append(
                     f"- `{f.next_action}` — add to `config/{app_name}.manifest.yml` `selinux_ports` "
-                    "(canary seport registers it):"
+                    "(canary runs semanage port -a):"
                 )
                 lines.append("  ```yaml")
                 lines.append(f"  - port: {f.bind_port}")

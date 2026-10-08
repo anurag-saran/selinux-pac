@@ -4,7 +4,7 @@ Each application onboarded to the SELinux Policy-as-Code pipeline declares an **
 
 **Why manifests exist:** scripts and Ansible need one place for app name, paths, domains, **bind ports**, and HTTP probes — so nothing silently assumes **`myapp`**.
 
-**Ports vs IPs:** keep **bind port numbers** in the committed manifest (`http.port`, `selinux_ports`) so they stay the same in every environment. Change **probe host / VIP** per env (`http.host` or Ansible `http_probe_host`). Do not retune listen ports when promoting code between staging and production unless you also update policy and `seport`.
+**Ports vs IPs:** keep **bind port numbers** in the committed manifest (`http.port`, `selinux_ports`) so they stay the same in every environment. Change **probe host / VIP** per env (`http.host` or Ansible `http_probe_host`). Do not retune listen ports when promoting code between staging and production unless you also update policy and the canary `semanage port -a` step.
 
 **Where you edit files:** `config/<app>.manifest.yml` in your **git clone** (repo root). **Where validation runs:** same machine as your shell at repo root (`validate_app_manifest.sh`, CI).
 

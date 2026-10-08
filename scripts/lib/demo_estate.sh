@@ -194,7 +194,7 @@ demo_install_shopapi_wrapper() {
     echo "shopapi wrapper ${root}/bin/shopapi execs /usr/bin/java" >&2
 }
 
-# After shopapi_port_t exists (seed or generated module). Canary seport also does this.
+# After shopapi_port_t exists (seed or generated module). Canary uses semanage port -a.
 demo_register_shopapi_port() {
     local port="${1:-}"
     if [[ -z "${port}" ]]; then

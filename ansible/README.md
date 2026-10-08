@@ -46,7 +46,7 @@ pip install ansible
 ansible-galaxy collection install -r ansible/requirements.yml
 ```
 
-Collections: `community.general` (`selinux_permissive`, `seport`), `ansible.posix`.
+Collections: `community.general` (`selinux_permissive`), `ansible.posix` (`seboolean`). Ports use `semanage port -a`, not `seport`.
 
 ### Inventory
 
@@ -150,10 +150,11 @@ Implements role phase **`canary`** ([`roles/selinux_pac/tasks/canary.yml`](roles
 | 3 | `semodule -DB` | Host-wide dontaudit off for soak |
 | 4 | Register `selinux_ports` | `semanage port -a` only when the port is free. If `semanage port -l` already assigns it to a different type, the canary fails. It does not run `semanage port -m`. |
 | 5 | Permissive domain | `semanage permissive` on the app domain only. Canary fails if `semanage` is missing. It does not install a permissive overlay. |
-| 6 | Ensure `var_dir` + `log_dir`; `restorecon` (no pre-restart `/run/myapp`) | |
-| 7 | `{{ selinux_ops_dir }}/verify_file_contexts.sh` | |
-| 8 | Soak marker; restart services; `restorecon` on `runtime_dir` | |
-| 9 | `wait_for_endpoints.sh`, `monitor_avc.sh`, `post_deploy_report.sh` | All under `selinux_ops_dir` |
+| 6 | `selinux_booleans` | `ansible.posix.seboolean` before the service starts. Empty list is a no-op. |
+| 7 | Ensure `var_dir` + `log_dir`; `restorecon` (no pre-restart `/run/myapp`) | |
+| 8 | `{{ selinux_ops_dir }}/verify_file_contexts.sh` | On production this is `/usr/libexec/selinux-policy-ops/verify_file_contexts.sh`. |
+| 9 | Soak marker; restart services; `restorecon` on `runtime_dir` | The policy RPM `%post` must not restart the service before this. |
+| 10 | `wait_for_endpoints.sh`, `monitor_avc.sh`, `post_deploy_report.sh` | All under `selinux_ops_dir` |
 | **rescue** | `semodule -B` unless another app is still soaking, then fail | |
 
 ### Example
@@ -166,7 +167,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml \
 
 (Production inventory uses RPMs; staging/example passes `policy_pp_src` — see inventory files.)
 
-Preferred admin UI: [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md). PR review CI: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selinux-policy-ci.yml) (`forbidden-patterns`, `version-consistency`).
+Preferred admin UI: [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md). PR review CI: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selinux-policy-ci.yml) (`offline-tests`, `forbidden-patterns`, `compiled-policy`, `version-consistency`).
 
 ---
 
@@ -249,7 +250,9 @@ Workflow: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selin
 
 | Job | Script |
 |-----|--------|
-| `forbidden-patterns` | `validate_forbidden_patterns.sh` (generator already ran this) |
+| `offline-tests` | `make test` |
+| `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments` (generator already ran this) |
+| `compiled-policy` | `validate_policy_semantics.sh` for myapp, shopapi, and payments on Stream 9 |
 | `version-consistency` | `validate_version_consistency.sh` |
 
 Canary / enforce / rollback are AAP (or `ansible-playbook` from the Mac), not GitHub runners.

@@ -1,6 +1,6 @@
 ### Policy access delta (sesearch)
 
-> Static sample (1.1.0 baseline → current `generated/`, now 1.1.3). Live runs use `policy_module_diff.sh` in the compile container.
+> Static sample (1.1.0 baseline → current `generated/`, now 1.1.3). Live runs use `policy_module_diff.sh`, which compiles each side and installs it into an isolated policy store.
 
 **Rules ADDED** (app domains, excerpt):
 

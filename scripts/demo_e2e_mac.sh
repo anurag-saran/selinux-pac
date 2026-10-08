@@ -66,7 +66,7 @@ mac_open_policy_pr() {
 }
 
 mac_policy_best_practices() {
-    tlab_explain "Admin gate #2: forbidden-patterns on shopapi. The generator already ran this script."
+    tlab_explain "Admin gate #2: forbidden-patterns on shopapi. The generator already ran this script. The pull request also runs offline-tests, compiled-policy, and version-consistency."
     e2e_run "POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi"
     e2e_run_allow_fail "command -v gh >/dev/null && gh pr checks || echo 'gh not logged in or no PR yet — local forbidden-patterns already passed'"
 }

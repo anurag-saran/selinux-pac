@@ -74,7 +74,7 @@ Generated \`shopapi\` SELinux policy on **rhel-qa** from AVC denials (types-only
 ## Admin checklist
 
 - [ ] CODEOWNERS review on \`selinux/\`
-- [ ] CI \`forbidden-patterns\` (generator already ran the same check — should pass)
+- [ ] CI \`offline-tests\`, \`forbidden-patterns\`, \`compiled-policy\`, and \`version-consistency\` (forbidden-patterns already ran at generate time)
 - [ ] Canary on staging, then soak / enforce with a change ticket
 
 Label: \`pending-admin-review\`

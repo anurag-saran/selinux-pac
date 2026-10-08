@@ -4,7 +4,7 @@
 #
 # sediff(1) requires a binary kernel policy, not standalone .pp module packages
 # (see: "Invalid policy ... A binary policy must be specified"). We compile each
-# side from .te/.fc, install with semodule -i in a fresh container run per side,
+# side from .te/.fc, install with semodule -i into an isolated policy store per side,
 # dump sorted sesearch --allow lines for app domains, then comm (option b).
 #
 set -euo pipefail

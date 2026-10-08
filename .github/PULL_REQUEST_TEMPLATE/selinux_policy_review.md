@@ -66,10 +66,12 @@ labels:
 
 **CI checks (must pass before merge):**
 
+- [ ] `offline-tests` — `make test`
 - [ ] `forbidden-patterns` — generator already ran `validate_forbidden_patterns.sh`; this job should be green
+- [ ] `compiled-policy` — Stream 9 `validate_policy_semantics.sh` for myapp, shopapi, and payments
 - [ ] `version-consistency`
 
-Compile and semantics are on **rhel-qa** (`compile_and_validate.sh`, `validate_policy_semantics.sh`), not GitHub.
+A laptop without `selinux-policy-devel` does not compile. The Stream 9 job does.
 
 ---
 

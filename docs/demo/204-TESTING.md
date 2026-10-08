@@ -171,7 +171,7 @@ Compiled `selinux/myapp.pp` is **not** committed to Git.
 
 ## 5. Shell gate scripts (staging / production)
 
-These run on **SELinux hosts** (Ansible playbooks call them; admins can run manually).
+These run on **SELinux hosts** (Ansible playbooks call them; admins can run manually). On production the copy is `/usr/libexec/selinux-policy-ops/`, not a git `scripts/` tree. The links below are the sources in this repo.
 
 | Script | When | Pass criteria |
 |--------|------|---------------|

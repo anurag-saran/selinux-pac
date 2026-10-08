@@ -84,7 +84,9 @@ type=AVC msg=audit(1730000006.106:506): avc: denied { connectto } for pid=4421 c
 
 **CI checks (must pass before merge):**
 
+- [x] `offline-tests` (`make test`)
 - [x] `forbidden-patterns` (generator already ran the same script)
+- [x] `compiled-policy` (Stream 9)
 - [x] `version-consistency`
 
 
