@@ -180,6 +180,8 @@ def test_rpm_signing_tree_and_shopapi_ports() -> None:
         assert "dirty git tree" in dirty.stderr
 
         env["FAKE_GIT_STATUS"] = ""
+        # Hide a host rpmbuild. The assertion is the missing-tool refusal.
+        env["PATH"] = str(bindir)
         missing = subprocess.run(
             [BASH, str(build)],
             cwd=PROJECT_ROOT,
@@ -2395,7 +2397,11 @@ def test_boolean_hint_yaml_still_documents_patterns() -> None:
 
     hints = load_boolean_hints(PROJECT_ROOT / "config" / "boolean_hints.yml")
     assert hints and hints[0].get("boolean") == "httpd_can_network_connect"
-    assert "src_type" not in (hints[0].get("match") or {})
+    match = hints[0].get("match") or {}
+    assert match.get("src_type") == "httpd_t"
+    assert match.get("tgt_type") == "http_port_t"
+    assert match.get("tclass") == "tcp_socket"
+    assert match.get("perms") == ["name_connect"]
 
 
 def test_fc_labeling_drift_detection() -> None:
