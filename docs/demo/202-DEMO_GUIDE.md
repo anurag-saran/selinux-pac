@@ -333,7 +333,17 @@ sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name
 
 `--apply` copies the result onto `selinux/shopapi/`. The module name stays `shopapi`. If `execmem` had not been in the log, we would not add the flag.
 
-The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](203-RHEL_TWO_HOST.md).
+This is the QA host. Compile and load the module here. Production does not `semodule -i`.
+
+```bash
+sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+sudo semodule -i selinux/shopapi/shopapi.pp
+sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+sudo semanage port -a -t shopapi_port_t -p tcp 8091
+curl -sf http://127.0.0.1:8091/health && curl -sf http://127.0.0.1:8091/state && curl -sf http://127.0.0.1:8091/log
+```
+
+`/health`, `/state`, and `/log` still return 200. The checkpoint on screen is: this is the first time we authored policy. We declined twice first. The customer meeting then does Act 6. Acts 4 and 5 are the technical profile. The ship path is [203](203-RHEL_TWO_HOST.md).
 
 ### Act 6 — Enforcing payoff
 
@@ -353,7 +363,18 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
 ```
 
-`execmem` and the `/log` allow are already in the `.te`, so their verdict is `baseline`. The new lines are the spool rule only.
+`execmem` and the `/log` allow are already in the `.te`, so their verdict is `baseline`. The new lines are the spool rule only. Compile and load that module on this QA host, relabel `/var/spool/shopapi`, and curl `/feature-spool` again.
+
+```bash
+sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+sudo semodule -i selinux/shopapi/shopapi.pp
+sudo restorecon -Rv /var/spool/shopapi
+curl -sf http://127.0.0.1:8091/feature-spool
+getenforce
+sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissive'
+```
+
+`/feature-spool` returns 200. `getenforce` still prints `Enforcing`. `shopapi_t` is not on the permissive list.
 
 ## Remember while you talk
 

@@ -533,7 +533,14 @@ act3_generate() {
     tlab_explain "execmem is memory that is both writable and executable. The generator recorded the denial and refused to write the allow. The log showed it, so the next command opts in."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
     demo_expect "second run writes the reviewed execmem allow; findings.json lists observed verdicts"
-    tlab_checkpoint "This is the first time we authored policy. We declined twice first."
+    tlab_explain "This is the QA host. Compile and load the module here. Production does not semodule -i."
+    e2e_run "sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi"
+    e2e_run "sudo semodule -i selinux/shopapi/shopapi.pp"
+    e2e_run "sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi"
+    e2e_run "sudo semanage port -a -t shopapi_port_t -p tcp ${shop_port} 2>/dev/null || sudo semanage port -l | grep shopapi_port_t"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/health && curl -sf http://127.0.0.1:${shop_port}/state && curl -sf http://127.0.0.1:${shop_port}/log"
+    demo_expect "HTTP 200 on /health /state /log after the module is loaded"
+    tlab_checkpoint "This is the first time we authored policy. We declined twice first. The loaded module still serves the first-ship URLs."
     tlab_pause
 }
 
@@ -554,6 +561,16 @@ act6_enforce_payoff() {
     tlab_explain "Generate again. execmem and the /log allow are baseline. The new lines are the spool rule only."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"
     demo_expect "spool rule is new; execmem appears once"
+    tlab_explain "This is the QA host. Load the spool rule. shopapi_t stays off the permissive list."
+    e2e_run "sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi"
+    e2e_run "sudo semodule -i selinux/shopapi/shopapi.pp"
+    e2e_run "sudo restorecon -Rv /var/spool/shopapi"
+    e2e_run "curl -sf http://127.0.0.1:${shop_port}/feature-spool"
+    demo_expect "HTTP 200. shopapi_t is still enforcing."
+    e2e_run "getenforce"
+    demo_expect "Enforcing"
+    e2e_run "sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissive'"
+    demo_expect "shopapi_t is not permissive"
     tlab_pause
 }
 

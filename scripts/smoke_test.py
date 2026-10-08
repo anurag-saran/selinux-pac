@@ -957,6 +957,17 @@ def test_demo_present_dry_run() -> None:
     assert "/feature-spool" in out
     assert "permissive=0" in out
     assert out.find("Act 3") < out.find("Act 6")
+    blocked = out.find("--apply --app-name shopapi")
+    review1 = out.find("--allow-needs-review")
+    load1 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp")
+    perm = out.find("semanage permissive -d shopapi_t")
+    fail_curl = out.find("/feature-spool || true")
+    review2 = out.find("--allow-needs-review", perm)
+    load2 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp", load1 + 1)
+    payoff = out.find("HTTP 200. shopapi_t is still enforcing.", load2)
+    assert -1 not in (blocked, review1, load1, perm, fail_curl, review2, load2, payoff), out
+    assert blocked < review1 < load1 < perm < fail_curl < review2 < load2 < payoff, out
+    assert "This is the QA host" in out
     tech = subprocess.run(
         [BASH, str(script), "--dry-run", "--no-type", "--auto", "--profile", "technical"],
         cwd=PROJECT_ROOT,
