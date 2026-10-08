@@ -30,6 +30,7 @@ from policy_rules import (  # noqa: E402
     FORBIDDEN_TARGET_TYPES,
     GENERIC_FILE_TYPES,
     GENERIC_PORT_TYPES,
+    STALE_ENTRYPOINT_TYPES,
     PATTERN_MACROS,
     VERDICT_BASELINE,
     VERDICT_DIRECT,
@@ -380,6 +381,46 @@ def classify(
             VERDICT_BASELINE,
             "",
             "Covered by dev_read_urand in reviewed baseline block.",
+            paths,
+        )
+
+    if (
+        tclass == "file"
+        and "entrypoint" in perms
+        and tgt in STALE_ENTRYPOINT_TYPES
+    ):
+        for path in paths:
+            want = suggest_fc_type(path, manifest)
+            if not want:
+                continue
+            if existing_fc_covers(path, want, existing_fc):
+                return Finding(
+                    need,
+                    VERDICT_FC_DRIFT,
+                    "",
+                    f"{path} is already covered by the .fc as {want}, but the denial "
+                    f"names {tgt}. The label on disk is stale. No allow is written. "
+                    f"Run: restorecon -Rv {path}",
+                    paths,
+                )
+            fc = (
+                f"{fc_regex_for_app_path(path, manifest)}    "
+                f"gen_context(system_u:object_r:{want},s0)"
+            )
+            return Finding(
+                need,
+                VERDICT_FC,
+                fc,
+                f"{path} is an entrypoint labeled {tgt}. Label it {want}. "
+                f"Do not allow {tgt}.",
+                paths,
+            )
+        return Finding(
+            need,
+            VERDICT_FC_DRIFT,
+            "",
+            f"entrypoint on shared type {tgt} is a stale label. "
+            f"Do not allow {tgt}. restorecon the module's exec type.",
             paths,
         )
 

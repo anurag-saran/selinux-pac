@@ -35,6 +35,18 @@ GENERIC_FILE_TYPES = frozenset(
     }
 )
 
+# Shared executable types. An entrypoint denial on one of these, at a path
+# this module's .fc already covers, is a stale label (restorecon), not an allow.
+STALE_ENTRYPOINT_TYPES = frozenset(
+    {
+        "bin_t",
+        "java_exec_t",
+        "usr_t",
+        "lib_t",
+        "shell_exec_t",
+    }
+)
+
 GENERIC_PORT_TYPES = frozenset(
     {
         "unreserved_port_t",

@@ -55,26 +55,24 @@ if sesearch --direct --allow -s "${DOMAIN}" -t unlabeled_t "${kern}" 2>/dev/null
     log_error "unexpected allow ${DOMAIN} -> unlabeled_t"
     fail=1
 fi
-if sesearch --direct --allow -s "${DOMAIN}" -c file -p entrypoint "${kern}" 2>/dev/null \
-    | awk '{print $3}' | cut -d: -f1 | grep -qv "^${MODULE_NAME}_"; then
-    log_error "entrypoint allow on a type outside ${MODULE_NAME}_*"
-    fail=1
-fi
-
 allows_file="$(mktemp)"
+declared_file="$(mktemp)"
 seinfo_file="$(mktemp)"
 perm_file="$(mktemp)"
 sesearch --allow -s "${DOMAIN}" "${kern}" >"${allows_file}" 2>/dev/null || true
 seinfo -x -t "${DOMAIN}" "${kern}" >"${seinfo_file}" 2>/dev/null || true
 seinfo --permissive "${kern}" >"${perm_file}" 2>/dev/null || true
+awk '/^[[:space:]]*type[[:space:]]+/ { gsub(/;/,"",$2); print $2 }' \
+    "${POLICY_DIR}/${MODULE_NAME}.te" >"${declared_file}"
 if ! python3 "${PROJECT_ROOT}/cli/policy_audit.py" \
     --allows-file "${allows_file}" \
     --seinfo-file "${seinfo_file}" \
     --permissive-file "${perm_file}" \
+    --declared-types-file "${declared_file}" \
     --domain "${DOMAIN}"; then
     fail=1
 fi
-rm -f "${allows_file}" "${seinfo_file}" "${perm_file}"
+rm -f "${allows_file}" "${seinfo_file}" "${perm_file}" "${declared_file}"
 
 if [[ "${fail}" -ne 0 ]]; then
     log_error "Semantic policy check failed"

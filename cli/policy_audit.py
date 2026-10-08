@@ -131,6 +131,24 @@ def audit_allow_text(text: str, domain: str) -> list[str]:
     return errors
 
 
+def audit_foreign_entrypoint(text: str, domain: str, declared_types: set[str]) -> list[str]:
+    """Reject file entrypoint allows whose target this module does not declare."""
+    compact = re.sub(r"\s*:\s*", ":", re.sub(r"\s+", " ", join_policy_lines(text)))
+    errors: list[str] = []
+    pattern = re.compile(
+        rf"\ballow\s+{re.escape(domain)}\s+(\S+):file\b([^;]*);",
+    )
+    for match in pattern.finditer(compact):
+        target, rest = match.group(1), match.group(2)
+        if not re.search(r"\bentrypoint\b", rest):
+            continue
+        if target not in declared_types:
+            errors.append(
+                f"compiled entrypoint {domain} -> {target} is not declared by this module"
+            )
+    return errors
+
+
 def audit_type_attributes(seinfo_text: str, domain: str) -> list[str]:
     if "unconfined_domain_type" in seinfo_text or re.search(
         rf"\bunconfined_domain\s*\(\s*{re.escape(domain)}\s*\)", seinfo_text
@@ -189,6 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seinfo-file", type=Path)
     parser.add_argument("--permissive-file", type=Path)
     parser.add_argument("--domain", default="")
+    parser.add_argument("--declared-types-file", type=Path)
     args = parser.parse_args(argv)
     repo = Path(__file__).resolve().parents[1]
     errors: list[str] = []
@@ -198,7 +217,15 @@ def main(argv: list[str] | None = None) -> int:
         if not args.domain:
             print("policy_audit: --domain is required with --allows-file", file=sys.stderr)
             return 2
-        errors.extend(audit_allow_text(args.allows_file.read_text(encoding="utf-8"), args.domain))
+        allows_text = args.allows_file.read_text(encoding="utf-8")
+        errors.extend(audit_allow_text(allows_text, args.domain))
+        if args.declared_types_file:
+            declared = {
+                line.strip()
+                for line in args.declared_types_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+            errors.extend(audit_foreign_entrypoint(allows_text, args.domain, declared))
     if args.seinfo_file and args.domain:
         errors.extend(audit_type_attributes(args.seinfo_file.read_text(encoding="utf-8"), args.domain))
     if args.permissive_file and args.domain:

@@ -1717,6 +1717,14 @@ def test_deterministic_fixture_classify() -> None:
                     assert allow_findings.get("generation_blocked") is False
             continue
 
+        if case == "14-stale-entrypoint":
+            out_te = (case_dir / "_out" / "myapp.te").read_text(encoding="utf-8")
+            for stale in ("bin_t", "java_exec_t", "usr_t"):
+                assert f"{stale}:file" not in out_te, f"{case}: must not allow {stale}"
+                assert not any(
+                    row.get("tgt") == stale and "allow" in (row.get("rendered") or "")
+                    for row in rows
+                ), f"{case}: rendered an allow for {stale}"
         if case == "13-cgroup-omit":
             out_te = (case_dir / "_out" / "myapp.te").read_text(encoding="utf-8")
             assert "cgroup_t" not in out_te, f"{case}: must not emit cgroup_t in the .te"
@@ -2182,6 +2190,51 @@ def test_force_reason_recorded() -> None:
         assert "<!-- AUTO:VENDOR_OVERRIDE -->" not in body
 
 
+def test_compiled_policy_rejects_foreign_entrypoint() -> None:
+    """entrypoint on a type this module does not declare fails the compiled check."""
+    fixture = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-policy"
+    audit = PROJECT_ROOT / "cli" / "policy_audit.py"
+    declared = fixture / "declared-types.txt"
+    foreign = subprocess.run(
+        [
+            sys.executable,
+            str(audit),
+            "--allows-file",
+            str(fixture / "foreign-entrypoint.txt"),
+            "--declared-types-file",
+            str(declared),
+            "--domain",
+            "shopapi_t",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert foreign.returncode != 0, foreign.stdout
+    for stale in ("bin_t", "java_exec_t", "usr_t"):
+        assert stale in foreign.stderr, foreign.stderr
+    own = subprocess.run(
+        [
+            sys.executable,
+            str(audit),
+            "--allows-file",
+            str(fixture / "own-entrypoint.txt"),
+            "--declared-types-file",
+            str(declared),
+            "--domain",
+            "shopapi_t",
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert own.returncode == 0, own.stderr
+    semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "--declared-types-file" in semantics
+
+
 def test_policy_audit_rejects_review_bypasses() -> None:
     from policy_audit import (
         allowed_fc_roots,
@@ -2500,6 +2553,7 @@ def main() -> int:
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),
         ("force_reason_recorded", test_force_reason_recorded),
+        ("compiled_policy_rejects_foreign_entrypoint", test_compiled_policy_rejects_foreign_entrypoint),
         ("policy_audit_rejects_review_bypasses", test_policy_audit_rejects_review_bypasses),
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
