@@ -1,8 +1,9 @@
 # Root Makefile — single entry point for local verification (see `make help`).
 .DEFAULT_GOAL := help
 
-PYTHON ?= python3
-PIP ?= pip3
+VENV ?= .venv
+PYTHON := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
 
 .PHONY: help deps test check lint fixtures test-smoke test-static test-manifest \
 	test-rpm test-forbidden test-version test-fixtures test-blast-radius \
@@ -17,7 +18,8 @@ help: ## List targets (default)
 	@echo ""
 	@echo "Quick start:  make deps && make check"
 
-deps: ## Install Python deps for offline tests (no network after first run)
+deps: ## Install Python deps into .venv (works where system pip is blocked)
+	python3 -m venv $(VENV)
 	$(PIP) install -q -r cli/requirements.txt
 
 test: deps test-fixtures test-static test-smoke ## Offline health check (no SELinux host required)

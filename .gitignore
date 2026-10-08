@@ -19,6 +19,7 @@ ansible/inventory.dev.yml
 ansible/inventory.staging.yml
 ansible/inventory.production.yml
 packaging/internal.env
+.venv/
 __pycache__/
 *.pyc
 .DS_Store

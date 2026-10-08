@@ -48,6 +48,16 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_make_deps_uses_venv() -> None:
+    """make deps must not pip-install into the system interpreter."""
+    text = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
+    deps = text.split("deps:", 1)[1].split("\n\n", 1)[0]
+    assert "python3 -m venv" in deps
+    assert ".venv" in text
+    assert "pip3 install" not in deps
+    assert "$(PIP) install" in deps
+
+
 def test_prompts() -> None:
     avc = (
         'type=AVC msg=audit(123): avc: denied { write } for pid=1 comm="python3" '
@@ -662,19 +672,22 @@ def test_demo_e2e_scripts_dry_run() -> None:
     reset = PROJECT_ROOT / "scripts" / "reset_demo_vms.sh"
     setup = PROJECT_ROOT / "scripts" / "setup_rhel_hosts.sh"
 
-    mac_run = subprocess.run(
-        [BASH, str(mac), "--dry-run", "--no-type", "--auto"],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    mac_out = mac_run.stdout + mac_run.stderr
-    assert mac_run.returncode == 0, mac_out
-    assert_mentions(
-        mac_out, "shopapi", "/feature-spool", "demo_e2e_rhel_qa.sh", "selinux/shopapi"
-    )
-    assert "LAB ONLY" in mac_out
-    assert "soak_min_days" in mac_out
+    # demo_e2e_mac.sh calls e2e_require_mac and exits 1 on Linux. Skip the
+    # dry-run there; do not treat that refusal as a failed suite.
+    if sys.platform == "darwin":
+        mac_run = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        mac_out = mac_run.stdout + mac_run.stderr
+        assert mac_run.returncode == 0, mac_out
+        assert_mentions(
+            mac_out, "shopapi", "/feature-spool", "demo_e2e_rhel_qa.sh", "selinux/shopapi"
+        )
+        assert "LAB ONLY" in mac_out
+        assert "soak_min_days" in mac_out
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,
@@ -2156,6 +2169,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("make_deps_uses_venv", test_make_deps_uses_venv),
         ("prompts", test_prompts),
         ("avc_parsing", test_avc_parsing),
         ("perm_merge", test_perm_merge),
