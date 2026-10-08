@@ -986,10 +986,10 @@ def run(args: argparse.Namespace) -> int:
 
     entries, path_map, port_map = parse_avc_file(args.avc_log, domains)
     merged = merge_avc_entries(entries)
-    net_new, _covered = subtract_covered(merged, parse_existing_allows(existing_te))
+    net_new, covered = subtract_covered(merged, parse_existing_allows(existing_te))
 
     findings: list[Finding] = []
-    for need in net_new:
+    for need in [*net_new, *covered]:
         paths = tuple(sorted(path_map.get(need.key, set())))
         bind_ports = tuple(sorted(port_map.get(need.key, set())))
         findings.append(

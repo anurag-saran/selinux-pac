@@ -48,6 +48,88 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_existing_execmem_rules_stay_baseline() -> None:
+    """self and unbraced allows are already present; a second run must not copy them."""
+    forms = (
+        "allow shopapi_t self:process execmem;",
+        "allow shopapi_t self:process { execmem };",
+        "allow shopapi_t shopapi_t:process execmem;",
+        "allow shopapi_t shopapi_t:process { execmem };",
+    )
+    avc = (
+        "type=AVC msg=audit(1): avc:  denied  { execmem } for  pid=1 comm=\"java\" "
+        "scontext=system_u:system_r:shopapi_t:s0 "
+        "tcontext=system_u:system_r:shopapi_t:s0 tclass=process permissive=1\n"
+    )
+    gen = PROJECT_ROOT / "cli" / "deterministic_gen.py"
+    manifest = PROJECT_ROOT / "config" / "shopapi.manifest.yml"
+    fc = PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.fc"
+    version = PROJECT_ROOT / "selinux" / "shopapi" / "policy_version.txt"
+    for rule in forms:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            te = root / "shopapi.te"
+            te.write_text(f"policy_module(shopapi, 1.0.0)\n\n{rule}\n", encoding="utf-8")
+            log = root / "avc.log"
+            log.write_text(avc, encoding="utf-8")
+            out1 = root / "out1"
+            first = subprocess.run(
+                [
+                    sys.executable,
+                    str(gen),
+                    "--avc-log",
+                    str(log),
+                    "--manifest",
+                    str(manifest),
+                    "--existing-te",
+                    str(te),
+                    "--existing-fc",
+                    str(fc),
+                    "--version-file",
+                    str(version),
+                    "--out-dir",
+                    str(out1),
+                    "--allow-needs-review",
+                ],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            assert first.returncode == 0, f"{rule}\n{first.stderr}{first.stdout}"
+            payload = json.loads((out1 / "findings.json").read_text(encoding="utf-8"))
+            assert any(
+                row.get("verdict") == "baseline" and row.get("tgt") == "shopapi_t"
+                for row in payload["findings"]
+            ), payload
+            written = (out1 / "shopapi.te").read_text(encoding="utf-8")
+            assert written.count("execmem") == 1, written
+            out2 = root / "out2"
+            second = subprocess.run(
+                [
+                    sys.executable,
+                    str(gen),
+                    "--avc-log",
+                    str(log),
+                    "--manifest",
+                    str(manifest),
+                    "--existing-te",
+                    str(out1 / "shopapi.te"),
+                    "--existing-fc",
+                    str(fc),
+                    "--version-file",
+                    str(version),
+                    "--out-dir",
+                    str(out2),
+                    "--allow-needs-review",
+                ],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            assert second.returncode == 0, f"{rule} second\n{second.stderr}"
+            assert (out2 / "shopapi.te").read_text(encoding="utf-8").count("execmem") == 1
+
+
 def test_rpm_signing_tree_and_shopapi_ports() -> None:
     publish = PROJECT_ROOT / "packaging" / "publish_internal.sh"
     build = PROJECT_ROOT / "packaging" / "build_rpms.sh"
@@ -2364,6 +2446,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("existing_execmem_rules_stay_baseline", test_existing_execmem_rules_stay_baseline),
         ("rpm_signing_tree_and_shopapi_ports", test_rpm_signing_tree_and_shopapi_ports),
         ("selinux_ports_and_canary_refuses_modify", test_selinux_ports_and_canary_refuses_modify),
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),

@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from selinux_gen import AvcEntry
 
+# Braced `{ read write }` and a single permission without braces (`execmem`).
 ALLOW_RULE_RE = re.compile(
-    r"^\s*allow\s+(\S+)\s+(\S+):(\S+)\s+\{([^}]+)\}\s*;?\s*$",
+    r"^\s*allow\s+(\S+)\s+(\S+):(\S+)\s+(?:\{([^}]+)\}|([^{}\s;]+))\s*;\s*$",
     re.MULTILINE,
 )
 
@@ -68,12 +69,24 @@ def merge_avc_entries(entries: list[AvcEntry]) -> list[AccessNeed]:
 
 
 def parse_existing_allows(te_text: str) -> dict[tuple[str, str, str], frozenset[str]]:
-    """Parse allow rules from existing .te source into a lookup table."""
+    """Parse allow rules from existing .te source into a lookup table.
+
+    `self` is the source domain, so an AVC whose target type is that domain
+    matches `allow domain self:class perm`.
+    """
     allows: dict[tuple[str, str, str], set[str]] = {}
+
+    def add(src_type: str, tgt_type: str, tclass: str, perms: frozenset[str]) -> None:
+        allows.setdefault((src_type, tgt_type, tclass), set()).update(perms)
+
     for match in ALLOW_RULE_RE.finditer(te_text):
-        src_type, tgt_type, tclass, perm_block = match.groups()
-        key = (src_type, tgt_type, tclass)
-        allows.setdefault(key, set()).update(normalize_perms(perm_block))
+        src_type, tgt_type, tclass, braced, single = match.groups()
+        perms = normalize_perms(braced if braced is not None else single or "")
+        if not perms:
+            continue
+        add(src_type, tgt_type, tclass, perms)
+        if tgt_type == "self":
+            add(src_type, src_type, tclass, perms)
     return {key: frozenset(perms) for key, perms in allows.items()}
 
 
