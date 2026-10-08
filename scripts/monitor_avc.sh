@@ -215,6 +215,66 @@ if [[ "${MAX_NET_NEW}" -ge 0 && "${net_new_count}" -ge 0 && "${avc_fail_closed}"
     fail=1
 fi
 
+ignored_stale_daily='[]'
+ignored_stale_fail='[]'
+if [[ -n "${MARKER_FILE}" && -f "${MARKER_FILE}" && -n "${FAIL_DIR}" && -d "${FAIL_DIR}" ]]; then
+    stale_out="$(python3 - "${MARKER_FILE}" "${FAIL_DIR}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+marker_path, fail_dir = Path(sys.argv[1]), Path(sys.argv[2])
+raw = marker_path.read_text(encoding="utf-8").strip()
+if not raw.isdigit():
+    print(json.dumps({"daily": [], "fail": []}))
+    raise SystemExit(0)
+marker = int(raw)
+
+
+def record_epoch(path: Path, record: dict) -> int:
+    for key in ("marker_epoch", "since"):
+        value = record.get(key)
+        if isinstance(value, int) or (isinstance(value, str) and str(value).isdigit()):
+            return int(value)
+    return int(path.stat().st_mtime)
+
+
+daily = []
+daily_dir = fail_dir / "daily"
+if daily_dir.is_dir():
+    for path in sorted(daily_dir.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                record = {}
+        except (json.JSONDecodeError, OSError):
+            record = {}
+        if record_epoch(path, record) < marker:
+            daily.append(path.name)
+
+fail_names = []
+fail_json = fail_dir / "selinux_soak_last_fail.json"
+fail_avc = fail_dir / "selinux_soak_last_fail.avc"
+if fail_json.is_file():
+    try:
+        record = json.loads(fail_json.read_text(encoding="utf-8"))
+        if not isinstance(record, dict):
+            record = {}
+    except (json.JSONDecodeError, OSError):
+        record = {}
+    if record_epoch(fail_json, record) < marker:
+        fail_names.append(fail_json.name)
+        if fail_avc.is_file():
+            fail_names.append(fail_avc.name)
+elif fail_avc.is_file() and int(fail_avc.stat().st_mtime) < marker:
+    fail_names.append(fail_avc.name)
+print(json.dumps({"daily": daily, "fail": fail_names}))
+PY
+)"
+    ignored_stale_daily="$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])["daily"]))' "${stale_out}")"
+    ignored_stale_fail="$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])["fail"]))' "${stale_out}")"
+fi
+
 NEXT_STEP=""
 if [[ "${fail}" -eq 1 ]]; then
     NEXT_STEP="Copy ${FAIL_DIR:-/var/lib/<app>}/selinux_soak_last_fail.json and selinux_soak_last_fail.avc to rhel-qa. Run bash scripts/dev_generate_policy.sh. Open a PR, recanary, reset soak. Do not semodule -i or audit2allow on this host. See docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship."
@@ -234,6 +294,7 @@ if [[ "${fail}" -eq 1 && -n "${FAIL_DIR}" ]]; then
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
         MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
+        MON_STALE_DAILY="${ignored_stale_daily}" MON_STALE_FAIL="${ignored_stale_fail}" \
         MON_NEXT_STEP="${NEXT_STEP}" MON_FAIL_DIR="${FAIL_DIR}" \
         python3 - "${net_new_json}" "${FAIL_DIR}/selinux_soak_last_fail.json" "${avc_excerpt}" <<'PY'
 import json, os, sys
@@ -253,6 +314,8 @@ payload = {
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
     "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
     "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
+    "ignored_stale_daily": json.loads(os.environ.get("MON_STALE_DAILY", "[]")),
+    "ignored_stale_fail": json.loads(os.environ.get("MON_STALE_FAIL", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": "fail",
     "next_step": os.environ.get("MON_NEXT_STEP", ""),
@@ -270,6 +333,7 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
         MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
+        MON_STALE_DAILY="${ignored_stale_daily}" MON_STALE_FAIL="${ignored_stale_fail}" \
         MON_STATUS="$([[ "${fail}" -eq 1 ]] && echo fail || echo pass)" \
         MON_NEXT_STEP="${NEXT_STEP}" \
         python3 - "${net_new_json}" <<'PY'
@@ -291,6 +355,8 @@ out = {
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
     "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
     "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
+    "ignored_stale_daily": json.loads(os.environ.get("MON_STALE_DAILY", "[]")),
+    "ignored_stale_fail": json.loads(os.environ.get("MON_STALE_FAIL", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": os.environ.get("MON_STATUS", "pass"),
 }

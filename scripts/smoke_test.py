@@ -3431,6 +3431,156 @@ def test_soak_gate_negative_net_new() -> None:
     assert ok.returncode == 0, ok.stderr
 
 
+def test_new_canary_ignores_older_soak_files() -> None:
+    """A new canary marker drops daily files and fail files from the previous marker."""
+    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    ops = "/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc"
+    assert ops in prod and ops in mac
+    assert "/var/lib/shopapi/selinux_soak_last_fail" not in prod
+    assert "rm -f ${SOAK_FAIL_JSON}" not in prod
+    check = PROJECT_ROOT / "scripts" / "check_soak_days.sh"
+    monitor = PROJECT_ROOT / "scripts" / "monitor_avc.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "shopapi"
+        daily = state / "daily"
+        daily.mkdir(parents=True)
+        (state / "selinux_canary_deployed_at").write_text("9000\n", encoding="utf-8")
+        old_fail = {
+            "status": "fail",
+            "avc_fail_closed": False,
+            "net_new_count": 3,
+            "count": 3,
+            "since": "1000",
+        }
+        new_pass = {
+            "status": "pass",
+            "avc_fail_closed": False,
+            "net_new_count": 0,
+            "count": 0,
+            "since": "9000",
+        }
+        (daily / "2026-10-06.json").write_text(json.dumps(old_fail), encoding="utf-8")
+        (daily / "2026-10-07.json").write_text(json.dumps(new_pass), encoding="utf-8")
+        one_day = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "1",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert one_day.returncode == 0, one_day.stderr
+        short = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "2",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert short.returncode == 1
+        assert "missing 2026-10-06" in short.stderr
+        assert "did not pass" not in short.stderr
+        for day in range(1, 8):
+            (daily / f"2026-10-{day:02d}.json").write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "avc_fail_closed": False,
+                        "net_new_count": 0,
+                        "since": "1000",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        inherited = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "7",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert inherited.returncode == 1
+        assert "no daily results" in inherited.stderr
+
+        token = "OLD_CANARY_DENIAL"
+        (state / "selinux_soak_last_fail.json").write_text(
+            json.dumps({"since": "1000", "count": 9, "status": "fail"}),
+            encoding="utf-8",
+        )
+        (state / "selinux_soak_last_fail.avc").write_text(token + "\n", encoding="utf-8")
+        (daily / "2026-10-01.json").write_text(
+            json.dumps({"since": "1000", "status": "fail", "count": 9}),
+            encoding="utf-8",
+        )
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("APP_MANIFEST", None)
+        env.pop("AUDIT_LOG", None)
+        ran = subprocess.run(
+            [
+                BASH,
+                str(monitor),
+                "--domain",
+                "shopapi_t",
+                "--paths",
+                "/opt/shopapi",
+                "--manifest",
+                str(Path(tmp) / "missing.yml"),
+                "--marker-file",
+                str(state / "selinux_canary_deployed_at"),
+                "--fail-dir",
+                str(state),
+                "--format",
+                "json",
+                "--max-avc",
+                "0",
+                "--skip-if-unavailable",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ran.returncode == 0, ran.stdout + ran.stderr
+        assert token not in (ran.stdout + ran.stderr)
+        payload = json.loads(ran.stdout)
+        assert payload["count"] == 0
+        assert payload["status"] == "pass"
+        assert "2026-10-01.json" in payload["ignored_stale_daily"]
+        assert "selinux_soak_last_fail.json" in payload["ignored_stale_fail"]
+        assert "selinux_soak_last_fail.avc" in payload["ignored_stale_fail"]
+        assert token in (state / "selinux_soak_last_fail.avc").read_text(encoding="utf-8")
+
+
 def test_soak_daily_history_and_other_app_guard() -> None:
     record = PROJECT_ROOT / "scripts" / "record_soak_day.sh"
     check = PROJECT_ROOT / "scripts" / "check_soak_days.sh"
@@ -3691,6 +3841,7 @@ def main() -> int:
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
+        ("new_canary_ignores_older_soak_files", test_new_canary_ignores_older_soak_files),
         ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
     ]
     for name, fn in tests:

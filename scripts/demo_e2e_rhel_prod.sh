@@ -39,8 +39,8 @@ fi
 TLAB_PS1='[ansible@rhel-prod ~]$'
 APP_BUNDLE="${HOME}/e2e-demo"
 AVC_EXPORT="/tmp/prod-feature-spool.avc"
-SOAK_FAIL_AVC="/var/lib/shopapi/selinux_soak_last_fail.avc"
-SOAK_FAIL_JSON="/var/lib/shopapi/selinux_soak_last_fail.json"
+SOAK_FAIL_AVC="/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc"
+SOAK_FAIL_JSON="/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.json"
 SHOP_PORT="${SHOPAPI_PORT:-8091}"
 
 usage() {
@@ -115,8 +115,7 @@ part_rpms() {
 part_soak() {
     e2e_banner "PROD VM — soak: /feature-spool is not in this module"
     tlab_why "Canary left shopapi_t permissive, so the request can still return 200. The denial is in the audit log. soak_monitor reads that log."
-    e2e_run "sudo rm -f ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
-    tlab_explain "Curl /health /state /log, then /feature-spool."
+    tlab_explain "Curl /health /state /log, then /feature-spool. Fail files already in /var/lib/selinux-policy-ops/shopapi/ stay there. This canary's marker is what the monitor counts."
     e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sS -o /dev/null -w \"%{http_code}\\n\" \"http://127.0.0.1:${SHOP_PORT}\${path}\" || true; done"
     e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 || echo "No shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "No shopapi AVC in recent log"; fi'
     e2e_run "sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null; sudo chmod a+r ${AVC_EXPORT}; wc -l ${AVC_EXPORT}"
@@ -132,8 +131,7 @@ part_soak_avc() {
 part_soak_clean() {
     e2e_banner "PROD VM — clean soak after the spool allow"
     tlab_why "The new module allows /var/spool/shopapi. shopapi_t is still permissive until enforce."
-    e2e_run "sudo rm -f ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
-    tlab_explain "Curl /health /state /log /feature-spool. Each should be HTTP 200, and ausearch should show no new shopapi denial since this canary."
+    tlab_explain "Curl /health /state /log /feature-spool. Each should be HTTP 200, and ausearch should show no new shopapi denial since this canary. Older fail files stay on disk."
     e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\" >/dev/null && echo 200; done"
     e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
     tlab_checkpoint "HTTP 200 including /feature-spool, and a clean AVC log. Go back to the Mac. soak_monitor should pass."

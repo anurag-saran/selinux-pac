@@ -183,7 +183,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml -
 
 On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. The domain is permissive, so the page can still return 200. `ausearch` shows a `shopapi_t` denial for `/var/spool/shopapi`. The lines are saved in `/tmp/prod-feature-spool.avc`.
 
-The Mac then runs `soak_monitor.yml`. It must fail. `--part soak-avc` shows `/var/lib/shopapi/selinux_soak_last_fail.avc`.
+The Mac then runs `soak_monitor.yml`. It must fail. `--part soak-avc` shows `/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc`. That directory is where `soak_monitor.yml` writes the fail files. Leave them in place. A later canary writes a new marker, and daily files and fail files older than that marker do not count.
 
 Enforce omits `force_enforce`. That flag would skip the AVC failure and the seven-day count. The playbook refuses. `shopapi_t` stays permissive.
 

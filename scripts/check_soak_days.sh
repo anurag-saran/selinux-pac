@@ -46,6 +46,22 @@ if min_days <= 0:
     print("soak daily history not required (min-days 0)")
     raise SystemExit(0)
 
+marker = None
+marker_path = state_dir / "selinux_canary_deployed_at"
+if marker_path.is_file():
+    raw_marker = marker_path.read_text(encoding="utf-8").strip()
+    if raw_marker.isdigit():
+        marker = int(raw_marker)
+
+
+def record_epoch(path: Path, record: dict) -> int:
+    for key in ("marker_epoch", "since"):
+        value = record.get(key)
+        if isinstance(value, int) or (isinstance(value, str) and str(value).isdigit()):
+            return int(value)
+    return int(path.stat().st_mtime)
+
+
 files = {}
 daily = state_dir / "daily"
 if daily.is_dir():
@@ -55,9 +71,14 @@ if daily.is_dir():
         except ValueError:
             continue
         try:
-            files[day] = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            files[day] = {"status": "fail", "avc_fail_closed": True, "net_new_count": -1}
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                raise ValueError("not an object")
+        except (json.JSONDecodeError, ValueError):
+            record = {"status": "fail", "avc_fail_closed": True, "net_new_count": -1}
+        if marker is not None and record_epoch(path, record) < marker:
+            continue
+        files[day] = record
 
 if not files:
     print("Soak daily history not met: no daily results", file=sys.stderr)
