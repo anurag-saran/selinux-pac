@@ -31,6 +31,19 @@ sudo aureport -a
 
 `ausearch -ts` with one argument `MM/DD/YYYY HH:MM:SS` prints `Invalid start time`. The date and the time are two arguments. Do not pass an epoch to `-ts`.
 
+## Config files
+
+```bash
+cat /etc/selinux/config
+ls -l /etc/selinux/targeted/policy/policy.33
+sudo ls /var/lib/selinux/targeted/active/modules
+sudo ls /var/lib/selinux/targeted/active/file_contexts /var/lib/selinux/targeted/active/file_contexts.local
+cat /sys/fs/selinux/enforce
+grep -E 'max_log_file|num_logs|space_left_action|admin_space_left_action|disk_full_action|disk_error_action' /etc/audit/auditd.conf
+ls /usr/share/selinux/devel/Makefile /usr/share/selinux/packages
+sudo semanage export
+```
+
 ## Process label
 
 The unit has no `SELinuxContext` line. The java process type is `shopapi_t`.
