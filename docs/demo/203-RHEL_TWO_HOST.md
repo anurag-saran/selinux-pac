@@ -2,7 +2,7 @@
 
 This is the meeting after [202](202-DEMO_GUIDE.md). 202 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 202.
 
-**LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`192.168.64.6`) + rhel-prod (`192.168.64.5`). The host stayed Enforcing the whole way.
+**LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`$QA_HOST`) + rhel-prod (`$PROD_HOST`). The host stayed Enforcing the whole way.
 
 The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
 
@@ -24,11 +24,11 @@ Press Enter when a window says `Press Enter`. Look at the prompt before you past
 
 | Window | Prompt you must see | Start |
 |--------|---------------------|--------|
-| **Mac** | `asaran@… selinux-pac %` | `cd` to this repo, then `bash scripts/demo_e2e_mac.sh` |
-| **QA** | `[ansible@rhel-qa ~]$` | `ssh ansible@192.168.64.6` |
-| **Prod** | `[ansible@rhel-prod ~]$` | `ssh ansible@192.168.64.5` |
+| **Mac** | `$USER@… selinux-pac %` | `cd` to this repo, then `bash scripts/demo_e2e_mac.sh` |
+| **QA** | `[ansible@rhel-qa ~]$` | `ssh $SSH_USER@$QA_HOST` |
+| **Prod** | `[ansible@rhel-prod ~]$` | `ssh $SSH_USER@$PROD_HOST` |
 
-Those addresses are this Mac’s UTM network. If `ping` fails after a VM was recreated, use the new addresses. If the prompt already says `rhel-qa` or `rhel-prod`, you are on that VM. Do not `ssh` again.
+`$QA_HOST` and `$PROD_HOST` are the addresses in the inventory this laptop uses. If `ping` fails after a VM was recreated, put the new addresses in those variables. If the prompt already says `rhel-qa` or `rhel-prod`, you are on that VM. Do not `ssh` again.
 
 A second run on the same VMs starts on the **Mac**:
 
@@ -36,7 +36,7 @@ A second run on the same VMs starts on the **Mac**:
 bash scripts/reset_demo_vms.sh
 ```
 
-That unloads leftover shopapi modules and prod RPMs, puts the types-only seed back, and clears the audit log so the first generate does not pick up an old `/feature-spool` denial. It does not remove Java.
+That unloads leftover shopapi modules and prod RPMs, puts the types-only seed back, and writes `/var/lib/selinux-pac-demo/ausearch-since`. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp. It does not remove Java.
 
 To read the narration on a laptop without the VMs: `bash scripts/demo_e2e_mac.sh --dry-run`.
 
@@ -52,7 +52,7 @@ flowchart LR
 Say: this laptop is the remote control. QA is where we discover denials. Prod never gets a git clone.
 
 ```bash
-bash scripts/setup_rhel_hosts.sh write --qa-host 192.168.64.6 --prod-host 192.168.64.5 --user ansible
+bash scripts/setup_rhel_hosts.sh write --qa-host "$QA_HOST" --prod-host "$PROD_HOST" --user "$SSH_USER"
 bash scripts/setup_rhel_hosts.sh ping
 bash scripts/setup_rhel_hosts.sh doctor
 ```
@@ -117,7 +117,7 @@ flowchart LR
 
 Say: the module was written on QA. The pull request is on this laptop’s checkout. Prod still does not generate policy.
 
-The script copies `shopapi.te`, `shopapi.fc`, `policy_version.txt`, and `shopapi.pp` from QA into `selinux/shopapi/`. `validate_forbidden_patterns.sh` reads that module. `demo_open_generated_pr.sh` opens the PR when `gh` is logged in. Merging can wait. The `.pp` is already on the Mac, and the next step ships that file.
+The script copies `shopapi.te`, `shopapi.fc`, `policy_version.txt`, and `shopapi.pp` from QA into `selinux/shopapi/`. `validate_forbidden_patterns.sh` reads that module. `demo_open_generated_pr.sh` opens the PR when `gh` is logged in. Do not build RPMs until that PR is merged to `main`. The next ship checks out that commit.
 
 ## Part 5 — Mac: canary, then enforce on QA
 
@@ -147,25 +147,27 @@ After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permi
 
 ```mermaid
 flowchart TD
-  rpm["Mac builds two RPMs and scp's them"] --> inst["Prod: --part rpms"]
-  inst --> canary["Mac: canary on prod"]
+  rpm["Mac builds RPMs from merged main"] --> repo["dnf repo, gpgcheck=1"]
+  repo --> canary["Mac: deploy_canary.yml installs them"]
   canary --> soak["Prod: /health /state /log return 200"]
   soak --> mon["Mac: soak_monitor failed=0"]
   mon --> empty["Prod: no soak-fail file"]
   empty --> enf["Mac: enforce with force_enforce and ticket DEMO"]
 ```
 
-Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`.
+Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`, and only after the pull request is on `main`.
 
-On the Mac the script runs `bash packaging/build_rpms.sh` and copies `dist/*.rpm` to the prod home directory. Switch to prod:
+On the Mac the script checks out merged `main`, runs `bash packaging/build_rpms.sh`, and publishes a dnf repo with `gpgcheck=1`. If `SELINUX_GPG_NAME` is unset, it says so and does not install anything. There is no `rpm -Uvh`.
+
+Switch to prod:
 
 ```bash
 bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
 ```
 
-`rpm -q selinux-policy-ops shopapi-selinux` prints two versions. The unit then starts in `shopapi_t`. Until this step, Java on prod was unconfined.
+That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. If this lab has no signing key, say that out loud and stop.
 
-Back on the Mac, canary uses the production inventory:
+Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only then restarts the service:
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary

@@ -126,6 +126,9 @@
       changed_when: false
       failed_when: false
 
+    # shopapi_t is already permissive. This restart is the first start in that
+    # domain. The policy RPM %post must not systemctl restart; that would
+    # start the service enforcing before this task.
     - name: Restart application services via systemd
       ansible.builtin.systemd:
         name: "{{ item }}"

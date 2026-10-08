@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# demo_e2e_rhel_qa.sh — Typewriter talk track for the QA VM (192.168.64.6).
+# demo_e2e_rhel_qa.sh — Typewriter talk track for the QA VM ($QA_HOST).
 #
 # Run ON rhel-qa, not on the Mac. Demo app is Spring Boot shopapi.
 # This is one window of the ~45 min three-host walkthrough (see demo_e2e_mac.sh).

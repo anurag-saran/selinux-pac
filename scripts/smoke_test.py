@@ -1021,6 +1021,16 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "ausearch-since" in reset_text
     assert "auditd stop" not in reset_text
     assert "/var/log/audit/audit.log" not in reset_text
+    mac_text = mac.read_text(encoding="utf-8")
+    prod_text = prod.read_text(encoding="utf-8")
+    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    assert "git checkout main" in mac_text
+    assert "gpgcheck=1" in mac_text
+    assert "No signing key" in mac_text
+    assert "rpm -Uvh" not in mac_text
+    assert "rpm -Uvh" not in prod_text
+    assert "192.168.64." not in guide_203
+    assert "/Users/" not in guide_203
 
     qa_run = subprocess.run(
         [BASH, str(qa), "--dry-run", "--no-type", "--auto", "--part", "app"],

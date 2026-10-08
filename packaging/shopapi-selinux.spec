@@ -35,6 +35,8 @@ install -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/doc/%{name}-%{version}/shopap
 %selinux_relabel_pre -s targeted
 
 %post
+# Install the module only. Do not start the service. Canary sets the domain
+# permissive and then restarts it.
 %selinux_modules_install -s targeted %{_datadir}/selinux/packages/shopapi.pp
 
 %postun

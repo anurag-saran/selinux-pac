@@ -19,7 +19,7 @@ source "${SCRIPT_DIR}/lib/training_lab_runner.sh"
 # shellcheck source=lib/e2e_demo.sh
 source "${SCRIPT_DIR}/lib/e2e_demo.sh"
 
-TLAB_PS1='asaran@mac selinux-pac %'
+TLAB_PS1='${USER}@mac selinux-pac %'
 DEMO_PROD_FORCE_ENFORCE="${DEMO_PROD_FORCE_ENFORCE:-true}"
 
 usage() {
@@ -60,7 +60,7 @@ mac_scp_generated_from_dev() {
 mac_open_policy_pr() {
     tlab_explain "Admin gate #1: a GitHub PR on selinux-pac for selinux/shopapi/. CODEOWNERS review selinux/."
     e2e_run_allow_fail "bash scripts/demo_open_generated_pr.sh"
-    tlab_checkpoint "If gh is logged in, a PR URL printed. Merge is optional for the rest of this talk — we already have the .pp on this laptop."
+    tlab_checkpoint "If gh is logged in, a PR URL printed. Do not build RPMs until this PR is merged to main."
     tlab_pause
     mac_policy_best_practices
 }
@@ -85,19 +85,29 @@ mac_canary_enforce_dev() {
 
 mac_ship_prod() {
     local mode="${1:-soak_demo}"
-    tlab_explain "Production must not git clone this repo. We ship installer files (RPMs)."
+    tlab_explain "Ship only after the PR is merged. Build the RPMs from merged main, not from the unmerged checkout."
+    e2e_run "git fetch origin main && git checkout main && git pull --ff-only origin main"
     e2e_run "bash packaging/build_rpms.sh"
     e2e_run "ls dist/*.rpm"
     tlab_pause
 
-    e2e_run "scp dist/selinux-policy-ops-*.rpm dist/shopapi-selinux-*.rpm ${E2E_SSH_USER}@${PROD_HOST}:~/"
+    tlab_explain "Prod installs from a dnf repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand."
+    if [[ -z "${SELINUX_GPG_NAME:-}" ]]; then
+        echo "No signing key: SELINUX_GPG_NAME is unset. This lab cannot publish a repository prod will trust. Say that on screen."
+        echo "Expected: spoken stop — no signing key; do not install unsigned RPMs on prod"
+    else
+        e2e_run "bash packaging/publish_internal.sh"
+        echo "Expected: repo snippet with gpgcheck=1"
+    fi
+    tlab_explain "deploy_canary.yml installs the RPMs with dnf and sets shopapi_t permissive before it restarts the service."
 
     e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
-Press Enter here when rpm -q selinux-policy-ops shopapi-selinux succeeds." \
+The service stays the unconfined JVM. This window does not install the policy RPM.
+Press Enter here when that is what you showed." \
         "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms $(e2e_auto_flags)'"
 
-    tlab_explain "Same canary idea, but inventory.production.yml talks to ${PROD_HOST} and uses RPMs."
+    tlab_explain "inventory.production.yml talks to ${PROD_HOST}. Canary is the install."
     e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary"
     tlab_pause
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# demo_e2e_rhel_prod.sh — Typewriter talk track for the PROD VM (192.168.64.5).
+# demo_e2e_rhel_prod.sh — Typewriter talk track for the PROD VM ($PROD_HOST).
 #
 # Run ON rhel-prod, not on the Mac. Do not git clone this repo onto prod.
 # Demo app is Spring Boot shopapi.
@@ -92,39 +92,22 @@ part_app() {
 }
 
 part_rpms() {
-    e2e_banner "PROD VM — pretend production (${PROD_HOST})"
-    tlab_why "Real shops do not git clone policy onto prod. Helpers come from RPMs."
+    e2e_banner "PROD VM — policy arrives from the canary, not from a hand-installed RPM (${PROD_HOST})"
+    tlab_why "The dnf repo has gpgcheck=1. deploy_canary.yml installs the RPMs and sets shopapi_t permissive before it restarts the service. This window does not start the service in the new domain."
     e2e_run "hostname"
     tlab_pause
-
     e2e_run "sudo dnf install -y policycoreutils policycoreutils-python-utils setools-console audit"
-    tlab_pause
-
-    if compgen -G "${HOME}/selinux-policy-ops-*.rpm" >/dev/null && compgen -G "${HOME}/shopapi-selinux-*.rpm" >/dev/null; then
-        newest_ops="$(ls -1 "${HOME}"/selinux-policy-ops-*.rpm | sort -V | tail -1)"
-        newest_app="$(ls -1 "${HOME}"/shopapi-selinux-*.rpm | sort -V | tail -1)"
-        e2e_run "sudo rpm -Uvh --force ${newest_ops} ${newest_app}"
-    elif rpm -q selinux-policy-ops shopapi-selinux >/dev/null 2>&1; then
-        tlab_explain "Both RPMs are already installed."
+    tlab_explain "Leave the JVM unconfined until the Mac runs deploy_canary.yml. Do not install the RPM files by hand and do not restart shopapi here."
+    if [[ -z "${SELINUX_GPG_NAME:-}" ]]; then
+        echo "No signing key on this lab (SELINUX_GPG_NAME is unset). There is no gpgcheck=1 repo to install from. Say that on screen."
+        echo "Expected: spoken stop — no signing key"
     else
-        if [[ "${TLAB_AUTO}" -eq 1 ]]; then
-            echo "RPMs are not in ${HOME} and not installed. On the Mac, finish packaging/build_rpms.sh and scp, then re-run --part rpms." >&2
-            exit 1
-        fi
-        tlab_pause
-        newest_ops="$(ls -1 "${HOME}"/selinux-policy-ops-*.rpm | sort -V | tail -1)"
-        newest_app="$(ls -1 "${HOME}"/shopapi-selinux-*.rpm | sort -V | tail -1)"
-        e2e_run "sudo rpm -Uvh --force ${newest_ops} ${newest_app}"
+        echo "Expected: the Mac published a repo with gpgcheck=1; canary's dnf install is the next step"
     fi
-
-    tlab_explain "Types now exist. Switch the unit to SELinuxContext=shopapi_t and restart."
-    if [[ -f "${APP_BUNDLE}/scripts/demo_bootstrap.sh" ]]; then
-        e2e_run "sudo DEMO_SHOPAPI_CONFINED=1 bash ${APP_BUNDLE}/scripts/demo_bootstrap.sh --shopapi-only --no-seed"
-    fi
-    e2e_run "rpm -q selinux-policy-ops shopapi-selinux"
     e2e_run "getenforce"
-    e2e_run "command -v ausearch; command -v sesearch"
-    tlab_checkpoint "Both RPMs print a version. Enforcing. Go back to the Mac for canary."
+    e2e_run "systemctl is-active shopapi.service"
+    e2e_run "ps -o label=,comm= -C java | head"
+    tlab_checkpoint "The process is still unconfined. Go back to the Mac for deploy_canary.yml."
 }
 
 part_soak() {
