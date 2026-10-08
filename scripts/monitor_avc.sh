@@ -43,8 +43,8 @@ Options:
   --domain NAME         SELinux domain (or use --manifest)
   --paths CSV           Path filter substring list (or use --manifest)
   --manifest PATH       Load domain and paths from app manifest
-  --since TS            ausearch -ts value or 'recent' (default: recent; ~10 min window)
-  --marker-file PATH    Use canary deploy epoch as ausearch start (overrides --since)
+  --since TS            ausearch keyword (recent, boot) or an epoch (default: recent)
+  --marker-file PATH    Keep records whose msg=audit epoch is >= this file (overrides --since)
   --max-avc N           Fail if raw count > N (-1 = report only, default)
   --max-net-new N       Fail if net-new access needs > N (-1 = report only, default)
   --policy-kern PATH    Kernel policy for sesearch net-new (-1 default)
@@ -103,7 +103,7 @@ fi
 if [[ -n "${MARKER_FILE}" && -f "${MARKER_FILE}" ]]; then
     deploy_epoch="$(tr -d '[:space:]' < "${MARKER_FILE}")"
     if [[ "${deploy_epoch}" =~ ^[0-9]+$ ]]; then
-        SINCE="$(avc_epoch_to_ts "${deploy_epoch}")"
+        SINCE="${deploy_epoch}"
     fi
 fi
 
@@ -113,15 +113,26 @@ if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
 fi
 
 raw=""
+avc_fail_closed=0
+fail_closed_reason=""
+fetch_err="$(mktemp)"
 IFS=',' read -r -a domain_list <<< "${DOMAINS_CSV}"
 for d in "${domain_list[@]}"; do
     d="${d// /}"
     [[ -z "${d}" ]] && continue
-    chunk="$(fetch_domain_avc_raw "${d}" "${SINCE}")"
-    if [[ -n "${chunk}" ]]; then
+    set +e
+    chunk="$(fetch_domain_avc_raw "${d}" "${SINCE}" 2>"${fetch_err}")"
+    fetch_rc=$?
+    set -e
+    if [[ "${fetch_rc}" -ne 0 ]]; then
+        avc_fail_closed=1
+        fail_closed_reason="$(tr '\n' ' ' <"${fetch_err}")"
+        fail_closed_reason="${fail_closed_reason:-ausearch failed}"
+    elif [[ -n "${chunk}" ]]; then
         raw+="${chunk}"$'\n'
     fi
 done
+rm -f "${fetch_err}"
 
 if [[ -z "${raw}" ]] && ! command -v ausearch >/dev/null 2>&1 && [[ ! -f /var/log/audit/audit.log ]]; then
     if [[ "${SKIP_IF_UNAVAILABLE}" -eq 1 ]]; then
@@ -142,8 +153,6 @@ count="${#matches[@]}"
 
 net_new_json="$(mktemp)"
 net_new_count=0
-avc_fail_closed=0
-fail_closed_reason=""
 if [[ ${#matches[@]} -gt 0 ]]; then
     soak_py=""
     if [[ -f "${PROJECT_ROOT}/cli/soak_net_new.py" ]]; then
@@ -156,13 +165,16 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         avc_fail_closed=1
         fail_closed_reason="soak_net_new.py missing on this host"
     else
-        manifest_arg=()
-        [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]] && manifest_arg=(--manifest "${MANIFEST}")
-        if printf '%s\n' "${matches[@]}" | python3 "${soak_py}" \
-            "${manifest_arg[@]}" --policy-kern "${POLICY_KERN}" --json-out "${net_new_json}" >/dev/null 2>&1; then
+        soak_cmd=(python3 "${soak_py}" --policy-kern "${POLICY_KERN}" --json-out "${net_new_json}")
+        if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
+            soak_cmd+=(--manifest "${MANIFEST}")
+        fi
+        if printf '%s\n' "${matches[@]}" | "${soak_cmd[@]}" >/dev/null 2>&1; then
             net_new_count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("net_new_count",-1))' "${net_new_json}")"
-            avc_fail_closed="$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("fail_closed") else 0)' "${net_new_json}")"
-            fail_closed_reason="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("fail_closed_reason",""))' "${net_new_json}")"
+            if [[ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("fail_closed") else 0)' "${net_new_json}")" -eq 1 ]]; then
+                avc_fail_closed=1
+                fail_closed_reason="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("fail_closed_reason",""))' "${net_new_json}")"
+            fi
         else
             net_new_count=-1
             avc_fail_closed=1
@@ -172,6 +184,9 @@ if [[ ${#matches[@]} -gt 0 ]]; then
 fi
 
 fail=0
+if [[ "${avc_fail_closed}" -eq 1 ]]; then
+    fail=1
+fi
 if [[ "${MAX_AVC}" -ge 0 && "${count}" -gt "${MAX_AVC}" ]]; then
     fail=1
 fi

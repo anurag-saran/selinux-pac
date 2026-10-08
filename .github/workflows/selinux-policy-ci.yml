@@ -61,7 +61,7 @@ jobs:
         run: dnf install -y git
       - uses: actions/checkout@v4
       - name: Install policy toolchain
-        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml
+        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml audit
       - name: Compiled policy semantics
         run: |
           bash scripts/validate_policy_semantics.sh selinux
@@ -69,6 +69,10 @@ jobs:
           POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_policy_semantics.sh selinux/payments
       - name: Reject compiled review bypasses
         run: bash scripts/reject_compiled_bypasses.sh
+      - name: AVC epoch window sees denials after the marker
+        env:
+          AVC_REQUIRE_AUSEARCH: "1"
+        run: bash scripts/test_avc_epoch_window.sh
 
   version-consistency:
     name: version-consistency

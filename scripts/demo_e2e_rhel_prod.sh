@@ -116,7 +116,7 @@ part_soak() {
     e2e_run "sudo rm -f ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
     tlab_explain "Curl /health /state /log only. Do not call /feature-spool yet."
     e2e_run "for path in /health /state /log; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\"; echo; done"
-    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ -n "${marker}" ]]; then ts=$(date -d "@${marker}" "+%m/%d/%Y %H:%M:%S" 2>/dev/null || date -r "${marker}" "+%m/%d/%Y %H:%M:%S"); echo "canary marker ${ts}"; sudo ausearch -m avc -ts "${ts}" 2>/dev/null | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
+    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
     tlab_checkpoint "HTTP 200 on first-ship URLs and a clean AVC log. Go back to the Mac for soak_monitor."
 }
 

@@ -713,6 +713,29 @@ def test_check_soak_ready_gate() -> None:
         assert old.returncode == 0, old.stderr
 
 
+def test_avc_epoch_window() -> None:
+    """Formatted ausearch -ts dates are not used. Denials after an epoch marker count."""
+    query = subprocess.run(
+        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_query_epoch.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert query.returncode == 0, query.stdout + query.stderr
+    window = subprocess.run(
+        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_epoch_window.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert window.returncode == 0, window.stdout + window.stderr
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "test_avc_epoch_window.sh" in workflow
+    assert "AVC_REQUIRE_AUSEARCH" in workflow
+
+
 def test_monitor_avc_skip() -> None:
     script = PROJECT_ROOT / "scripts" / "monitor_avc.sh"
     manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
@@ -3158,6 +3181,7 @@ def main() -> int:
         ("assemble_pr_body", test_assemble_pr_body),
         ("verify_file_contexts_skip", test_verify_file_contexts_skip),
         ("check_soak_ready_gate", test_check_soak_ready_gate),
+        ("avc_epoch_window", test_avc_epoch_window),
         ("monitor_avc_skip", test_monitor_avc_skip),
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
