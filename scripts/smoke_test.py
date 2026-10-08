@@ -48,6 +48,21 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_codeowners_covers_policy_surface() -> None:
+    text = (PROJECT_ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    for path in (
+        "/selinux/",
+        "/ansible/",
+        "/scripts/",
+        "/.github/",
+        "/packaging/",
+        "/config/",
+        "/cli/policy_rules.py",
+    ):
+        assert path in text, path
+        assert "@anurag-saran" in text.split(path, 1)[1].splitlines()[0]
+
+
 def test_ci_runs_full_suite_with_stable_names() -> None:
     """Every PR runs make test, and check names stay stable for branch protection."""
     import yaml
@@ -2193,6 +2208,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
         ("make_deps_uses_venv", test_make_deps_uses_venv),
         ("prompts", test_prompts),
