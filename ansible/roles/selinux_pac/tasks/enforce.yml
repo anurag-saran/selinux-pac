@@ -22,7 +22,7 @@
     --domain {{ domain }}
     --manifest {{ app_manifest_path }}
     --marker-file {{ soak_marker_file }}
-    --report-file {{ pac_manifest.deploy.deploy_report_file | default(var_dir ~ '/selinux_deploy_report.json') }}
+    --report-file {{ pac_manifest.deploy.deploy_report_file | default('/var/lib/selinux-policy-ops/' ~ app_name ~ '/selinux_deploy_report.json') }}
     --var-dir {{ var_dir }}
   register: soak_facts_raw
   changed_when: false
@@ -49,6 +49,23 @@
     - not (force_enforce | default(false) | bool)
     - soak_facts.days_elapsed | int < (soak_min_days | default(7) | int)
 
+- name: Fail when soak AVC monitor failed closed
+  ansible.builtin.command: >
+    {{ selinux_ops_dir }}/check_soak_gate.sh
+    --fail-closed {{ soak_facts.avc_fail_closed | bool | ternary('true', 'false') }}
+    --net-new {{ soak_facts.avc_net_new_count }}
+  changed_when: false
+  when: not (force_enforce | default(false) | bool)
+
+- name: Require consecutive passing daily soak results
+  ansible.builtin.command: >
+    {{ selinux_ops_dir }}/check_soak_days.sh
+    --state-dir {{ soak_marker_file | dirname }}
+    --min-days {{ soak_min_days | default(7) }}
+    --max-net-new {{ soak_max_net_new | default(0) }}
+  changed_when: false
+  when: not (force_enforce | default(false) | bool)
+
 - name: Fail when net-new AVC needs too high
   ansible.builtin.fail:
     msg: >-
@@ -67,7 +84,7 @@
       (max {{ soak_max_avc | default(0) }}).
   when:
     - not (force_enforce | default(false) | bool)
-    - soak_facts.avc_fail_closed | default(false) | bool or not (soak_use_net_new | default(true) | bool)
+    - not (soak_use_net_new | default(true) | bool)
     - soak_facts.avc_count_since_marker | int > (soak_max_avc | default(0) | int)
 
 - name: Fail when deploy report gate not satisfied
@@ -83,9 +100,10 @@
   when: force_enforce | default(false) | bool
 
 - name: Re-enable dontaudit baseline before enforce
-  ansible.builtin.command: semodule -B
+  ansible.builtin.command: >
+    {{ selinux_ops_dir }}/semodule_restore_dontaudit.sh --app {{ app_name }}
   register: semodule_b_enforce
-  changed_when: semodule_b_enforce.rc == 0
+  changed_when: "'skip semodule -B' not in (semodule_b_enforce.stderr | default(''))"
 
 - name: Detect semanage availability
   ansible.builtin.stat:
@@ -195,4 +213,4 @@
       ansible.builtin.fail:
         msg: >-
           Enforce failed; {{ domain }} restored to permissive.
-          Inspect deploy report at {{ var_dir }}/selinux_deploy_report.json.
+          Inspect deploy report at {{ pac_manifest.deploy.deploy_report_file | default('/var/lib/selinux-policy-ops/' ~ app_name ~ '/selinux_deploy_report.json') }}.

@@ -35,9 +35,10 @@ test-fixtures: ## Golden deterministic, payments + blast-radius + tune-report fi
 
 test-static: test-forbidden test-version test-rpm test-manifest ## Shell validators (offline)
 
-test-forbidden: ## Forbidden-pattern grep on selinux/
+test-forbidden: ## Forbidden-pattern grep plus source audit (dontaudit, .fc paths)
 	bash scripts/validate_forbidden_patterns.sh selinux
 	POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
+	$(PYTHON) cli/policy_audit.py --selinux-dir selinux
 
 test-manifest: deps ## App manifest YAML validation
 	bash scripts/validate_app_manifest.sh config/myapp.manifest.yml

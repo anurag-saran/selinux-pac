@@ -119,8 +119,9 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
         backend_http = {"port": 8081, "health_path": "/health"}
 
     deploy_in = raw.get("deploy") or {}
-    soak_marker = deploy_in.get("soak_marker_file", f"{var_dir}/selinux_canary_deployed_at")
-    deploy_report = deploy_in.get("deploy_report_file", f"{var_dir}/selinux_deploy_report.json")
+    ops_dir = f"/var/lib/selinux-policy-ops/{app_name}"
+    soak_marker = deploy_in.get("soak_marker_file", f"{ops_dir}/selinux_canary_deployed_at")
+    deploy_report = deploy_in.get("deploy_report_file", f"{ops_dir}/selinux_deploy_report.json")
 
     policy_in = raw.get("policy") or {}
     module_dir = policy_in.get("module_dir", "selinux")

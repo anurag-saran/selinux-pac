@@ -4,7 +4,8 @@ policy_rules.py — Shared house rules for deterministic generation and CI align
 
 from __future__ import annotations
 
-# High-privilege / sensitive targets (align with validate_forbidden_patterns.sh)
+# High-privilege / sensitive targets. Compiled-policy CI enforces these
+# in scripts/validate_policy_semantics.sh via cli/policy_audit.py.
 FORBIDDEN_TARGET_TYPES = frozenset(
     {
         "shadow_t",

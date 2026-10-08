@@ -59,7 +59,7 @@ If any term is fuzzy, open [102-SELINUX_BASICS.md](../training/102-SELINUX_BASIC
 
 1. A **reference app** runs on a Linux host with SELinux on. The customer talk uses Tomcat App A/B plus Spring Boot `demo/shopapi/` (swap in your service). Offline `make check` classifies golden AVCs against `selinux/myapp.te` — it does not start an app.
 2. While the app domain is **permissive**, the kernel **logs** denials (AVCs) instead of blocking everything.
-3. Scripts **collect** those logs and **generate** updates to `.te` / `.fc` (deterministic engine; optional LLM summary).
+3. Scripts **collect** those logs and **generate** updates to `.te` / `.fc` with the deterministic engine.
 4. **CI** checks forbidden patterns and version consistency (generator already ran the same forbidden-pattern script). Compile and semantics run on **rhel-qa**.
 5. **Ansible Automation Platform (AAP)** deploys a new module (**Release canary**), runs **Soak monitor** (net-new vs installed policy), then **Promote to enforce**. A denial after ship is a **PR**, not a live host patch ([301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)).
 
@@ -94,7 +94,7 @@ flowchart TD
 1. **Staging** — `scripts/demo_bootstrap.sh --shopapi-only` installs Spring Boot and puts `shopapi_t` in permissive mode so you can collect denials safely.
 2. **Trigger the app** — curl first-ship `/health` `/state` `/log` on :8091. See [102-SELINUX_BASICS.md §9](../training/102-SELINUX_BASICS.md) for the mapping.
 3. **Export AVCs** — `scripts/dev_generate_policy.sh --app shopapi` calls `lib/avc_query.sh` with paths and domains from **`config/shopapi.manifest.yml`**.
-4. **Generate policy** — Default engine is **`cli/deterministic_gen.py`** (offline, rule-based). Optional: **`cli/summarize_pr.py`** polishes `pr_summary.md` only. Legacy all-in-one LLM: **`cli/selinux_gen.py --legacy-full-policy`**.
+4. **Generate policy** — **`cli/deterministic_gen.py`** classifies each denial and writes the `.te` / `.fc` updates. It runs offline, from rules in the repo.
 5. **Review** — Output lands in **`policy_out/`** (`.te`, `.fc`, `pr_summary.md`, `findings.json`). You compare to **`selinux/`** and open a PR.
 6. **CI** — Workflow **`selinux-policy-ci.yml`** runs `forbidden-patterns` and `version-consistency`. The generator already ran the same forbidden-pattern check, so these jobs should pass.
 7. **Deploy** — Admins use **AAP** ([`ansible/aap/`](../../ansible/aap/)): workflow **Release canary**, daily **Soak monitor**, then **Promote to enforce**. Soak fail: [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship). See [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
@@ -172,7 +172,7 @@ Scripts like **`monitor_avc.sh`** and **`export_app_avcs_to_file`** in **`lib/av
 
 ## Python CLI (`cli/`) — turning AVC logs into policy edits
 
-Two engines share the same **first steps**: read the log, merge duplicate lines, subtract permissions already in `.te`.
+Generation starts the same way every time: read the log, merge duplicate lines, subtract permissions already in `.te`.
 
 ### Shared preprocessing — `avc_preprocess.py`
 
@@ -183,9 +183,9 @@ Two engines share the same **first steps**: read the log, merge duplicate lines,
 | Subtract existing | Drop permissions already allowed in current `myapp.te`. |
 | **Net-new** | What is left is what generation must address. |
 
-### Default: `deterministic_gen.py` (offline)
+### `deterministic_gen.py`
 
-No API key. For each net-new denial it assigns a **verdict** (fix file labeling, use a boolean, add a safe allow via sepolgen, refuse dangerous allows, etc.) and writes:
+For each net-new denial it assigns a **verdict** (fix file labeling, use a boolean, add a safe allow via sepolgen, refuse dangerous allows, etc.) and writes:
 
 - Updated **`policy_out/myapp.te`** / **`.fc`**
 - **`findings.json`** — machine-readable record of each decision
@@ -194,10 +194,6 @@ No API key. For each net-new denial it assigns a **verdict** (fix file labeling,
 Run golden tests: **`bash scripts/run_deterministic_fixtures.sh`**. Payments must not leak `myapp` strings: **`bash scripts/run_deterministic_payments_check.sh`**.
 
 Details: [Generate a module](#generate-a-module).
-
-### Optional: `selinux_gen.py` (LLM)
-
-Same AVC preprocessing, then sends a structured prompt (`prompt_templates.py`) to an OpenAI-compatible API. Requires **`OPENAI_API_KEY`**. Still runs validation similar to CI.
 
 ### Other CLI modules (short)
 
@@ -232,7 +228,6 @@ Most scripts expect your shell’s **current directory** to be the **repo root**
 
 **Environment tips:**
 
-- **`POLICY_ENGINE=deterministic`** (default) or **`llm`**
 - **`APP_MANIFEST`** / **`POLICY_APP`** — pick which manifest drives paths and names
 ### Safety gates (soak and production)
 
@@ -350,7 +345,7 @@ PR checklist template: [`.github/PULL_REQUEST_TEMPLATE/selinux_policy_review.md`
 
 ## Generate a module
 
-`dev_generate_policy.sh` is the default engine. It does not call an LLM. CI uses the same classifier.
+`dev_generate_policy.sh` classifies each denial with the house rules in `cli/policy_rules.py`. CI uses the same classifier.
 
 ```mermaid
 flowchart TD
@@ -452,7 +447,7 @@ Review checklist for a policy PR:
 | [102](../training/102-SELINUX_BASICS.md) | Read the words |
 | [202](202-DEMO_GUIDE.md) | The 20-minute customer talk |
 | [203](203-RHEL_TWO_HOST.md) | The three-host ship talk |
-| [205](205-TESTING.md) | `make check` |
+| [204](204-TESTING.md) | `make check` |
 | [301](../admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce |
 
 If this guide disagrees with the code, trust the repository and send a PR to update the doc.

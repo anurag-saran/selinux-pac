@@ -185,6 +185,8 @@ if command -v service >/dev/null 2>&1; then
     service auditd start >/dev/null 2>&1 || true
 fi
 
+rm -rf /var/lib/selinux-policy-ops/shopapi \
+       /var/lib/selinux-policy-ops/myapp
 rm -f /var/lib/shopapi/selinux_soak_last_fail.avc \
       /var/lib/shopapi/selinux_soak_last_fail.json \
       /var/lib/shopapi/selinux_canary_deployed_at \

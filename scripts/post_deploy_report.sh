@@ -13,8 +13,8 @@ DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
 APP_DOMAIN="${SELINUX_APP_DOMAIN:-myapp_t}"
 BACKEND_DOMAIN="${SELINUX_BACKEND_DOMAIN:-myapp_backend_t}"
 VAR_DIR="${VAR_DIR:-/var/lib/myapp}"
-MARKER_FILE="${SOAK_MARKER_FILE:-${VAR_DIR}/selinux_canary_deployed_at}"
-REPORT_FILE="${DEPLOY_REPORT_FILE:-${VAR_DIR}/selinux_deploy_report.json}"
+MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at}"
+REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json}"
 MANIFEST=""
 APP_NAME="myapp"
 POLICY_VERSION_FILE="${PROJECT_ROOT}/selinux/policy_version.txt"
@@ -252,6 +252,8 @@ print(json.dumps(report, indent=2))
 PY
 
 rm -f "${endpoint_tmp}"
+chmod 0755 "$(dirname "${REPORT_FILE}")" 2>/dev/null || true
+chmod 0644 "${REPORT_FILE}" 2>/dev/null || true
 
 log_info "Wrote deploy report: ${REPORT_FILE} (status=${overall_status})"
 

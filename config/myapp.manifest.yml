@@ -50,5 +50,5 @@ policy:
   service_name: myapp.service
 
 deploy:
-  soak_marker_file: /var/lib/myapp/selinux_canary_deployed_at
-  deploy_report_file: /var/lib/myapp/selinux_deploy_report.json
+  soak_marker_file: /var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at
+  deploy_report_file: /var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json

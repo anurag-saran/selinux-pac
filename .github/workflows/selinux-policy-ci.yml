@@ -1,14 +1,16 @@
-# Policy best-practices on every PR that touches selinux/.
-# The deterministic generator already ran validate_forbidden_patterns.sh, so
-# these jobs are expected to pass. They are a review gate, not a fail-on-purpose
-# demo step. Compile stays on rhel-qa (selinux-policy-devel).
+# Source grep is a fast check. The security boundary is the Stream 9 job,
+# which compiles myapp, shopapi, and payments and searches the module.
 name: SELinux Policy CI
 
 on:
   pull_request:
     paths:
       - 'selinux/**'
+      - 'config/**'
+      - 'cli/policy_rules.py'
+      - 'cli/policy_audit.py'
       - 'scripts/validate_forbidden_patterns.sh'
+      - 'scripts/validate_policy_semantics.sh'
       - 'scripts/validate_version_consistency.sh'
       - '.github/workflows/selinux-policy-ci.yml'
   push:
@@ -16,7 +18,11 @@ on:
       - main
     paths:
       - 'selinux/**'
+      - 'config/**'
+      - 'cli/policy_rules.py'
+      - 'cli/policy_audit.py'
       - 'scripts/validate_forbidden_patterns.sh'
+      - 'scripts/validate_policy_semantics.sh'
       - 'scripts/validate_version_consistency.sh'
       - '.github/workflows/selinux-policy-ci.yml'
 
@@ -30,6 +36,26 @@ jobs:
         run: |
           bash scripts/validate_forbidden_patterns.sh selinux
           POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
+      - name: Audit dontaudit rules and file-context paths
+        run: |
+          pip install pyyaml
+          python3 cli/policy_audit.py --selinux-dir selinux
+
+  compiled-policy:
+    name: compiled-policy
+    runs-on: ubuntu-latest
+    container: quay.io/centos/centos:stream9
+    steps:
+      - name: Install git for checkout
+        run: dnf install -y git
+      - uses: actions/checkout@v4
+      - name: Install policy toolchain
+        run: dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml
+      - name: Compiled policy semantics
+        run: |
+          bash scripts/validate_policy_semantics.sh selinux
+          POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_policy_semantics.sh selinux/shopapi
+          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_policy_semantics.sh selinux/payments
 
   version-consistency:
     name: version-consistency

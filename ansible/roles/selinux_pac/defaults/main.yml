@@ -19,7 +19,7 @@ selinux_pac_package: "{{ app_name | default('myapp') }}-selinux-{{ policy_versio
 # Rollback via dnf (e.g. 1.1.1-1); empty skips downgrade.
 rollback_dnf_version: ""
 
-# FCOS overlay when semanage absent — compiled <app>_canary.pp under policy module dir.
+# Name of a leftover permissive overlay. Canary no longer installs it.
 selinux_repo_dir: >-
   {{
     (policy_artifact_dir | dirname) ~ '/selinux'
@@ -32,6 +32,11 @@ ports_cil_src: "{{ selinux_repo_dir }}/{{ app_name | default('myapp') }}_ports.c
 ports_cil_staging: /var/lib/selinux-policy-staging/{{ app_name | default('myapp') }}_ports.cil"
 
 selinux_pac_phase: canary
+
+# Soak evidence lives outside the app var_dir. The app user owns var_dir, and
+# the domain is permissive during soak, so a marker there can be rewritten.
+soak_state_root: /var/lib/selinux-policy-ops
+soak_marker_file: "{{ soak_state_root }}/{{ app_name | default('myapp') }}/selinux_canary_deployed_at"
 
 # Soak gates (enforce + soak_monitor playbook).
 soak_min_days: 7

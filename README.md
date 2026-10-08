@@ -10,7 +10,7 @@ The **customer talk** is **202** — three applications (vendor Tomcat already e
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
 | **Application developer** | [Developers](#developers) and **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)** |
-| **Offline check (any laptop)** | `make check` (**205**) |
+| **Offline check (any laptop)** | `make check` (**204**) |
 
 ---
 
@@ -224,7 +224,7 @@ ansible/      selinux_pac role + aap/ Controller workflows
 packaging/    selinux-policy-ops + <app>-selinux; publish_internal.sh
 scripts/      setup_rhel_hosts.sh (admins), demo_e2e_*.sh (three-window lab talk track)
 docs/training/    101 labs, 102 basics
-docs/demo/        202 customer talk, 203 ship talk, 201 how the tool works, 205 tests
+docs/demo/        202 customer talk, 203 ship talk, 201 how the tool works, 204 tests
 docs/admin/       301 ship
 ```
 

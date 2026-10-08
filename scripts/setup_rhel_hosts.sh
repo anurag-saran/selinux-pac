@@ -84,7 +84,7 @@ all:
     policy_pp_src: "{{ policy_artifact_dir }}/selinux/shopapi/shopapi.pp"
     app_manifest_path: ${checkout}/config/shopapi.manifest.yml
     ansible_env_path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    soak_marker_file: "{{ var_dir }}/selinux_canary_deployed_at"
+    soak_marker_file: "/var/lib/selinux-policy-ops/{{ app_name }}/selinux_canary_deployed_at"
     soak_min_days: 0
     soak_max_avc: 0
     soak_max_net_new: 0
@@ -124,7 +124,7 @@ all:
     policy_artifact_dir: "{{ playbook_dir }}/.."
     policy_pp_src: ""
     ansible_env_path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    soak_marker_file: "{{ var_dir }}/selinux_canary_deployed_at"
+    soak_marker_file: "/var/lib/selinux-policy-ops/{{ app_name }}/selinux_canary_deployed_at"
     soak_min_days: 7
     soak_max_avc: 0
     soak_max_net_new: 0

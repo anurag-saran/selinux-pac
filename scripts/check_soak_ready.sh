@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/avc_query.sh"
 
 DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
-MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/myapp/selinux_canary_deployed_at}"
-REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/myapp/selinux_deploy_report.json}"
+MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at}"
+REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json}"
 MIN_DAYS="${SOAK_MIN_DAYS:-7}"
 MAX_AVC="${SOAK_MAX_AVC:-0}"
 SKIP_SELINUX="${SKIP_SELINUX:-0}"
@@ -40,7 +40,7 @@ and last deploy report shows endpoint coverage.
 Options:
   --domain NAME         SELinux domain (default: myapp_t)
   --marker-file PATH    Canary deploy timestamp file (epoch seconds)
-  --report-file PATH    Deploy report JSON (default: /var/lib/myapp/selinux_deploy_report.json)
+  --report-file PATH    Deploy report JSON (default: /var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json)
   --min-days N          Minimum soak days (default: 7)
   --max-avc N           Maximum allowed AVC events since canary (default: 0)
   --auto-tier           Set minimum soak from classify_policy_blast_radius.sh (requires base + candidate policy paths)

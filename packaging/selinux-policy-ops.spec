@@ -30,6 +30,14 @@ install -m 0755 %{_builddir}/selinux-policy-ops-src/collect_soak_facts.sh \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/
 install -m 0755 %{_builddir}/selinux-policy-ops-src/check_soak_ready.sh \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/
+install -m 0755 %{_builddir}/selinux-policy-ops-src/check_soak_gate.sh \
+    %{buildroot}%{_libexecdir}/selinux-policy-ops/
+install -m 0755 %{_builddir}/selinux-policy-ops-src/check_soak_days.sh \
+    %{buildroot}%{_libexecdir}/selinux-policy-ops/
+install -m 0755 %{_builddir}/selinux-policy-ops-src/record_soak_day.sh \
+    %{buildroot}%{_libexecdir}/selinux-policy-ops/
+install -m 0755 %{_builddir}/selinux-policy-ops-src/semodule_restore_dontaudit.sh \
+    %{buildroot}%{_libexecdir}/selinux-policy-ops/
 install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/avc_query.sh \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/
 install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/manifest_shell.sh \
@@ -50,6 +58,10 @@ install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/pac_cli/*.py \
 %{_libexecdir}/selinux-policy-ops/post_deploy_report.sh
 %{_libexecdir}/selinux-policy-ops/collect_soak_facts.sh
 %{_libexecdir}/selinux-policy-ops/check_soak_ready.sh
+%{_libexecdir}/selinux-policy-ops/check_soak_gate.sh
+%{_libexecdir}/selinux-policy-ops/check_soak_days.sh
+%{_libexecdir}/selinux-policy-ops/record_soak_day.sh
+%{_libexecdir}/selinux-policy-ops/semodule_restore_dontaudit.sh
 %{_libexecdir}/selinux-policy-ops/lib/avc_query.sh
 %{_libexecdir}/selinux-policy-ops/lib/manifest_shell.sh
 %{_libexecdir}/selinux-policy-ops/lib/app_manifest.py
@@ -58,6 +70,9 @@ install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/pac_cli/*.py \
 %{_libexecdir}/selinux-policy-ops/lib/pac_cli/*
 
 %changelog
+* Wed Oct 07 2026 SELinux PaC maintainers <maintainer@example.com> - 1.1.0-2
+- Soak gate fails closed, stores daily results, and skips host-wide semodule -B
+
 * Wed Sep 16 2026 SELinux PaC maintainers <maintainer@example.com> - 1.1.0-2
 - monitor_avc: net-new stays 0 when there are no matching AVCs (same-NVR lab reinstalls)
 

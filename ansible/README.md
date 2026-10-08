@@ -26,7 +26,7 @@ Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on real R
 
 Playbooks delegate to role [`roles/selinux_pac/`](roles/selinux_pac/). The old `myapp_selinux` role is gone — do not restore it. Target scripts live in RPM **`selinux-policy-ops`** at **`/usr/libexec/selinux-policy-ops`** (inventory: `selinux_ops_dir`). Checkout (no ops RPM) sets `selinux_ops_from_package: false` and points `selinux_ops_dir` at the **target** checkout `scripts/` tree (not `playbook_dir` on a laptop).
 
-**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/203-RHEL_TWO_HOST.md`](../docs/demo/203-RHEL_TWO_HOST.md). Testing matrix: [`docs/demo/205-TESTING.md`](../docs/demo/205-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
+**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/203-RHEL_TWO_HOST.md`](../docs/demo/203-RHEL_TWO_HOST.md). Testing matrix: [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
 
 ---
 
@@ -100,7 +100,7 @@ Set in inventory `vars` or pass with `-e`. Role defaults live in [`roles/selinux
 | `policy_staging_path` | `/var/lib/selinux-policy-staging/myapp.pp` | Target path for `semodule -i` |
 | `app_manifest_path` | `/etc/myapp/selinux-manifest.yml` (prod) or `/home/<user>/selinux-pac/config/*.manifest.yml` (lab) | **Target** path passed to `--manifest` ops scripts; role **loads ports, units, paths**. Not `playbook_dir` |
 | `http_probe_host` | `127.0.0.1` or canary VIP | Curl target; **not** the bind port (ports stay in `selinux_ports`) |
-| `soak_marker_file` | `{{ var_dir }}/selinux_canary_deployed_at` | Epoch file for soak clock |
+| `soak_marker_file` | `/var/lib/selinux-policy-ops/{{ app_name }}/selinux_canary_deployed_at` | Epoch file for soak clock (root-owned, outside the app var dir) |
 | `soak_min_days` | `7` | Minimum soak days (enforce gate) |
 | `soak_max_avc` | `0` | Max raw AVCs since marker (used when net-new fail-closed) |
 | `soak_max_net_new` | `0` | Max **net-new** access needs vs installed policy |
@@ -149,12 +149,12 @@ Implements role phase **`canary`** ([`roles/selinux_pac/tasks/canary.yml`](roles
 | 2 | Stage `.pp` from controller → `semodule -i` | When `policy_pp_src` set |
 | 3 | `semodule -DB` | Host-wide dontaudit off for soak |
 | 4 | `seport` from manifest `selinux_ports` | When semanage available; loop `item.port` / `item.proto` / `item.type` |
-| 5 | Permissive domain (+ FCOS overlay if needed) | RHEL: `semanage permissive`. FCOS (no `semanage`): install compiled **`{{ app_name }}_canary.pp`** from controller (`stub_policy_src`, not under `policy_out/`). FCOS also loads **`{{ app_name }}_ports.cil`** (packaged or templated from manifest) when `seport` is skipped. |
+| 5 | Permissive domain | `semanage permissive` on the app domain only. Canary fails if `semanage` is missing. It does not install a permissive overlay. |
 | 6 | Ensure `var_dir` + `log_dir`; `restorecon` (no pre-restart `/run/myapp`) | |
 | 7 | `{{ selinux_ops_dir }}/verify_file_contexts.sh` | |
 | 8 | Soak marker; restart services; `restorecon` on `runtime_dir` | |
 | 9 | `wait_for_endpoints.sh`, `monitor_avc.sh`, `post_deploy_report.sh` | All under `selinux_ops_dir` |
-| **rescue** | `semodule -B` + fail | |
+| **rescue** | `semodule -B` unless another app is still soaking, then fail | |
 
 ### Example
 
@@ -296,7 +296,7 @@ Parity guard: [`scripts/validate_rpm_ops_parity.sh`](../scripts/validate_rpm_ops
 | Recursive template error on `log_dir` | Set `log_dir` in inventory only — not `log_dir: "{{ log_dir \| default… }}"` in play vars |
 | Canary fails on AVC count | `ausearch --subject myapp_t -m AVC -ts recent` |
 | `wait_for_endpoints` exit **4** | `ps -eZ \| grep myapp` — domain mismatch |
-| Enforce rescue | Deploy report at `{{ var_dir }}/selinux_deploy_report.json` |
+| Enforce rescue | Deploy report at `/var/lib/selinux-policy-ops/{{ app_name }}/selinux_deploy_report.json` |
 | Host noisy after failed canary | Run `reset_host_state.yml` or `semodule -B` + clear permissive |
 
 See [`301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md#when-something-fails).

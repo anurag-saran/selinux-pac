@@ -42,5 +42,5 @@ policy:
   service_name: shopapi.service
 
 deploy:
-  soak_marker_file: /var/lib/shopapi/selinux_canary_deployed_at
-  deploy_report_file: /var/lib/shopapi/selinux_deploy_report.json
+  soak_marker_file: /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at
+  deploy_report_file: /var/lib/selinux-policy-ops/shopapi/selinux_deploy_report.json

@@ -38,5 +38,5 @@ policy:
   service_name: payments.service
 
 deploy:
-  soak_marker_file: /var/lib/payments/selinux_canary_deployed_at
-  deploy_report_file: /var/lib/payments/selinux_deploy_report.json
+  soak_marker_file: /var/lib/selinux-policy-ops/payments/selinux_canary_deployed_at
+  deploy_report_file: /var/lib/selinux-policy-ops/payments/selinux_deploy_report.json

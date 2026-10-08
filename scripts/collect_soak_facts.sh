@@ -11,8 +11,10 @@ source "${SCRIPT_DIR}/lib/avc_query.sh"
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
 DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
-MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/myapp/selinux_canary_deployed_at}"
-REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/myapp/selinux_deploy_report.json}"
+MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at}"
+REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json}"
+# Tests point this at a stub. Production leaves it unset.
+MONITOR_BIN="${MONITOR_AVC_BIN:-${SCRIPT_DIR}/monitor_avc.sh}"
 MANIFEST=""
 VAR_DIR="${VAR_DIR:-/var/lib/myapp}"
 
@@ -60,12 +62,47 @@ if [[ -f "${MARKER_FILE}" ]]; then
 fi
 
 avc_count=-1
-avc_json='{"count":0,"net_new_count":0,"avc_fail_closed":false}'
+avc_net_new_count=-1
+avc_fail_closed=0
 if [[ -f "${MARKER_FILE}" ]]; then
     MONITOR_ARGS=(--domain "${DOMAIN}" --marker-file "${MARKER_FILE}" --max-avc -1 --show-lines 0 --format json)
     [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]] && MONITOR_ARGS+=(--manifest "${MANIFEST}")
-    avc_json="$(bash "${SCRIPT_DIR}/monitor_avc.sh" "${MONITOR_ARGS[@]}" 2>/dev/null || echo '{"count":0}')"
-    avc_count="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("count",0))' <<< "${avc_json}" 2>/dev/null || echo 0)"
+    set +e
+    avc_json="$(bash "${MONITOR_BIN}" "${MONITOR_ARGS[@]}" 2>/dev/null)"
+    mon_rc=$?
+    set -e
+    parsed="$(python3 -c '
+import json, sys
+raw = sys.stdin.read()
+try:
+    data = json.loads(raw)
+except Exception:
+    print("BAD")
+    raise SystemExit(0)
+if not isinstance(data, dict) or "count" not in data:
+    print("BAD")
+    raise SystemExit(0)
+try:
+    count = int(data.get("count"))
+except (TypeError, ValueError):
+    print("BAD")
+    raise SystemExit(0)
+try:
+    net = int(data.get("net_new_count", -1))
+except (TypeError, ValueError):
+    net = -1
+fail = 1 if data.get("avc_fail_closed") or net < 0 else 0
+print(f"{count} {net} {fail}")
+' <<< "${avc_json}" 2>/dev/null || echo BAD)"
+    # Exit 1 with JSON is a threshold failure. Any other non-zero exit, or
+    # unparseable JSON, is a crash. Do not substitute count 0.
+    if [[ "${parsed}" == "BAD" || ( "${mon_rc}" -ne 0 && "${mon_rc}" -ne 1 ) ]]; then
+        avc_count=-1
+        avc_net_new_count=-1
+        avc_fail_closed=1
+    else
+        read -r avc_count avc_net_new_count avc_fail_closed <<< "${parsed}"
+    fi
 fi
 
 report_ok=0
@@ -99,13 +136,6 @@ else:
     print(1 if ok else 0)
 PY
 )"
-fi
-
-avc_net_new_count=-1
-avc_fail_closed=0
-if [[ -f "${MARKER_FILE}" ]]; then
-    avc_net_new_count="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("net_new_count",-1))' <<< "${avc_json}" 2>/dev/null || echo -1)"
-    avc_fail_closed="$(python3 -c 'import json,sys; print(1 if json.loads(sys.stdin.read()).get("avc_fail_closed") else 0)' <<< "${avc_json}" 2>/dev/null || echo 0)"
 fi
 
 python3 - <<PY

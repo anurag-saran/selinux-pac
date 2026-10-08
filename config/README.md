@@ -50,8 +50,8 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 | `selinux_ports` | recommended | Port → type for canary `seport` / RPM (stable across env) |
 | `integration_tests.command` | no | Documented soak/discovery test command (demo: shopapi curls) |
 | `policy.module_dir` | no | Default `selinux` |
-| `deploy.soak_marker_file` | no | Default `{var_dir}/selinux_canary_deployed_at` |
-| `deploy.deploy_report_file` | no | Default `{var_dir}/selinux_deploy_report.json` |
+| `deploy.soak_marker_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_canary_deployed_at` |
+| `deploy.deploy_report_file` | no | Default `/var/lib/selinux-policy-ops/{app}/selinux_deploy_report.json` |
 
 ## What reads the manifest
 
@@ -75,7 +75,7 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 3. Always include `services.primary` and real health path(s).
 4. Run staging permissive → export AVCs → generate policy (`bash scripts/dev_generate_policy.sh`; default **`deterministic_gen.py`**, optional `--engine llm`).
 
-See [`docs/demo/205-TESTING.md`](../docs/demo/205-TESTING.md) for the full test-layer model.
+See [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md) for the full test-layer model.
 
 ## Ansible inventory
 

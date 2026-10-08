@@ -20,6 +20,12 @@ flowchart LR
 
 The host stays **Enforcing** the whole time. Canary makes only the app domain log-only. Enforce removes that. A denial after ship becomes another pull request. It does not become `semodule -i` typed on the server.
 
+| Command | Where you type it |
+|---------|-------------------|
+| `ansible-playbook` | The controller: your laptop, or an AAP job. The inventory file is on this machine. |
+| `dev_generate_policy.sh` | **rhel-qa**, in a git checkout. |
+| `verify_file_contexts.sh`, `semanage`, `getenforce` | The **production** host. Use `/usr/libexec/selinux-policy-ops/`. There is no git checkout there. |
+
 ## Where policy lives
 
 | Place | What it holds |
@@ -43,7 +49,8 @@ ps -eZ | grep -E 'unconfined_java_t|unconfined_service_t'
 
 | What you find | What you do |
 |---------------|-------------|
-| The vendor module is already loaded (`jws6_tomcat`, `jboss`, `httpd`) | `dev_generate_policy.sh --tune-report`. Run the printed `semanage` and `setsebool` commands. Do not generate. |
+| The vendor module is already loaded (`jws6_tomcat`, `jboss`, `httpd`, `named`, `postgresql`) | `dev_generate_policy.sh --tune-report`. Run the printed `semanage` and `setsebool` commands. Do not generate. |
+| Module `tomcat` is loaded and `seinfo -t tomcat_t -x` shows `unconfined_domain_type` | This is the Tomcat that comes with RHEL. The type name exists and the rules do not deny. Do not generate a second module. Do not expect a denial to tune. The confined package is `jws6-tomcat-selinux`. |
 | The vendor SELinux RPM is installed and the module is not loaded | Enable that package. Do not generate. |
 | The RPM is available and not installed | `dnf install` it (`jws6-tomcat-selinux`, `eap7-selinux`, or `eap8-selinux`). Do not generate. |
 | Tomcat or JBoss is `unconfined_java_t` | The vendor package was never enabled. Install it. Do not generate. |
@@ -79,11 +86,11 @@ Attach [`ansible/aap/survey_enforce.json`](../../ansible/aap/survey_enforce.json
 |----------|-------------|--------------|
 | `change_ticket` | `CHG123` | Required. Enforce fails when this is empty. |
 | `app_name` | `shopapi` | Also read from the manifest. |
-| `app_manifest_path` | `/etc/shopapi/selinux-manifest.yml` | Shipped in the app RPM. |
-| `selinux_pac_package` | `shopapi-selinux-1.0.1` | Version from `policy_version.txt`. |
+| `app_manifest_path` | `/etc/shopapi/selinux-manifest.yml` | Installed by the `shopapi-selinux` RPM, on the production host. |
+| `selinux_pac_package` | leave unset | The playbook reads `selinux/shopapi/policy_version.txt` on the controller and installs `shopapi-selinux-<that version>`. |
 | `soak_max_net_new` | `0` | Soak fails when a new access appears. |
 | `soak_min_days` | `7` on prod, `0` on the lab QA inventory | How long canary must run before enforce. |
-| `force_enforce` | `false` | Skips the day count. Still needs a change ticket. The 203 recording sets it true. A real shop leaves it false. |
+| `force_enforce` | `false` | Skips the whole soak gate: the day count, the net-new check, the canary marker, and the deploy report. Still needs a change ticket. The 203 recording sets it true. A real shop leaves it false. |
 | `rollback_dnf_version` | previous NVR | Optional RPM downgrade during rollback. |
 
 **Release canary** is the Canary job. **Promote to enforce** is Soak status, then approval, then Enforce. Attach an AAP notification to Soak monitor (job failed) so a new denial pages someone. The failed job does not change the host.
@@ -92,7 +99,15 @@ Production inventory (`ansible/inventory.production.example.yml`) sets `selinux_
 
 ## Soak
 
-Canary installs the module, writes `/var/lib/<app>/selinux_canary_deployed_at`, and adds only that domain to the permissive list. The operating system stays Enforcing. `semodule -DB` turns off dontaudit rules for the **whole host** so soak can see every denial. Enforce and rollback run `semodule -B` to put dontaudit back. If you canary and never enforce, `-DB` stays until you do.
+Do these once, on the controller, before the first playbook. `inventory.production.yml` is gitignored. The example host name is `rhel-prod.example.com`. Change `ansible_host` to the real address. The `canary` group is what `--limit canary` selects. The `shopapi-selinux` RPM and `selinux-policy-ops` must already be in the dnf repo the host uses ([Roll this out](#roll-this-out)).
+
+```bash
+cp ansible/inventory.production.example.yml ansible/inventory.production.yml
+```
+
+Canary installs the module, writes `/var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at`, and adds only `shopapi_t` to the permissive list. The operating system stays Enforcing. That directory is `root:root` mode `0755`. The app cannot rewrite the marker while its domain is permissive. `semodule -DB` turns off dontaudit rules for the **whole host** so soak can see every denial. Enforce and rollback run `semodule -B` to put dontaudit back, unless another app still has a marker under `/var/lib/selinux-policy-ops/`. If you canary and never enforce, `-DB` stays until you do. Each Soak monitor run stores that day's JSON in `/var/lib/selinux-policy-ops/shopapi/daily/`. Enforce needs that many consecutive passing days, and the newest file has to be from today or yesterday. A later clean reading of `audit.log` does not erase a stored failure.
+
+Type this on the controller:
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
@@ -100,28 +115,28 @@ ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml -
 
 A good run ends `failed=0`. The service process is the app domain (`shopapi_t`), not `init_t`. HTTP checks pass. Recent AVC count for that domain is 0, unless you raised `canary_max_avc` on purpose. Do not raise it to hide a missing allow.
 
-Then wait. Production inventory wants **7 days**. Schedule Soak monitor daily:
+Then wait. Production inventory wants **7 days**. Schedule Soak monitor daily. Both commands are on the controller. Soak status only reads the clock. Run it when you want to see the day count. It does not change the host.
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary
 ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --limit canary
 ```
 
-On the host, the same check is `/usr/libexec/selinux-policy-ops/monitor_avc.sh` with `--max-net-new 0`. That script is in the `selinux-policy-ops` RPM. Do not clone this repo onto the server to run it.
+On the production host, the same check is `/usr/libexec/selinux-policy-ops/monitor_avc.sh` with `--max-net-new 0`. That script is in the `selinux-policy-ops` RPM. Do not clone this repo onto the server to run it.
 
 **Net-new** means an access the installed policy does not already allow. Repeated lines for an access that is already allowed do not fail the gate. `sesearch` does that comparison. `setools-console` is a requirement of `selinux-policy-ops`. Canary, soak, and enforce fail when `sesearch` is missing.
 
-After install, confirm labels before you treat the canary as healthy:
+Canary already runs the label check on the host before it restarts the service. To see that line yourself, SSH to production and run the copy that the RPM installed:
 
 ```bash
-sudo bash scripts/verify_file_contexts.sh \
+sudo /usr/libexec/selinux-policy-ops/verify_file_contexts.sh \
   --install-root /opt/shopapi \
   --var-dir /var/lib/shopapi \
   --log-dir /var/log/shopapi \
   --app-name shopapi
 ```
 
-`File context verification passed` is the good line. An error names a path `restorecon` would still change.
+`File context verification passed for shopapi` is the good line. An error names a path `restorecon` would still change.
 
 Before you enforce, confirm:
 
@@ -136,14 +151,19 @@ Before you enforce, confirm:
 
 ## Enforce
 
+On the controller:
+
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \
+  --limit canary \
   -e change_ticket=CHG123
 ```
 
-Soak status runs first inside **Promote to enforce**. Enforce removes the domain from the permissive list and runs the smoke tests again. `semanage permissive -l` no longer shows the domain. `getenforce` is still `Enforcing`.
+This playbook checks the soak gate itself: the canary marker exists, at least 7 days have passed, net-new is 0, and the deploy report passed. In AAP, the workflow **Promote to enforce** runs Soak status, then an approval, then this same playbook.
 
-Leave `force_enforce` false. The 203 talk sets `-e force_enforce=true` so a recording can continue the same day. That flag still requires `change_ticket`.
+Enforce removes `shopapi_t` from the permissive list and runs the smoke tests again. On the host, `semanage permissive -l` no longer shows that domain. `getenforce` is still `Enforcing`.
+
+Leave `force_enforce` false. The 203 talk sets `-e force_enforce=true` so a recording can continue the same day. That skips the day count, the net-new check, the marker, and the deploy report. It still requires `change_ticket`.
 
 ## A denial after ship
 
@@ -191,11 +211,13 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 
 | What you see | What to do |
 |--------------|------------|
-| `Soak period not met` | Wait. Do not set `force_enforce` to skip the clock without a ticket that says so. |
-| `net_new_count` greater than 0 | Follow [A denial after ship](#a-denial-after-ship). Recanary resets the clock. |
-| `verify_file_contexts.sh` names a path | `restorecon -Rv` on the app's install, state, log, and run directories, then run the check again. |
-| `Canary marker not found` | Run `deploy_canary.yml`. The marker is written there. |
-| `Could not determine AVC count` | Install `audit` and confirm `auditd` is running. |
+| `Soak not met` | Wait. The message prints days elapsed and the number it wanted. Do not set `force_enforce` to skip the clock without a ticket that says so. |
+| `Net-new access needs` exceed the threshold | Follow [A denial after ship](#a-denial-after-ship). Recanary resets the clock. |
+| `verify_file_contexts.sh` names a path | On the host: `restorecon -Rv` on `/opt/shopapi`, `/var/lib/shopapi`, `/var/log/shopapi`, and `/run/shopapi`, then run the check again. |
+| `Canary marker missing` | Run `deploy_canary.yml`. The marker is `/var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at`. |
+| `Soak daily history not met` | A day under `/var/lib/selinux-policy-ops/shopapi/daily/` is missing or failed. Wait for the next Soak monitor, or fix the denial and recanary. |
+| `Soak AVC monitor failed closed` | The monitor crashed or could not count net-new access. Install `setools-console` and `audit`. Do not enforce on a count of zero. |
+| `No ausearch or /var/log/audit/audit.log available` | Install `audit` and confirm `auditd` is running. |
 | `sesearch` missing | Install `setools-console`. The playbooks stop on purpose. |
 | App fails after enforce | Run **SELinux – Rollback**. The domain is log-only again. Then the pull-request path above. |
 | Generator says vendor policy is loaded | `--tune-report`, or install the vendor SELinux RPM. See [Vendor module already exists](#vendor-module-already-exists). |

@@ -27,7 +27,7 @@ if [[ "${EUID}" -ne 0 ]]; then
     log_error "validate_policy_semantics.sh needs root (isolated policy store copy)"
     exit 1
 fi
-if ! has_selinux_devel || ! command -v sesearch >/dev/null 2>&1 || [[ ! -d /var/lib/selinux/targeted ]]; then
+if ! has_selinux_devel || ! command -v sesearch >/dev/null 2>&1 || ! command -v seinfo >/dev/null 2>&1 || [[ ! -d /var/lib/selinux/targeted ]]; then
     log_error "Need selinux-policy-devel, setools-console, and selinux-policy-targeted (run on rhel-qa or CI Stream 9)"
     exit 1
 fi
@@ -60,6 +60,21 @@ if sesearch --direct --allow -s "${DOMAIN}" -c file -p entrypoint "${kern}" 2>/d
     log_error "entrypoint allow on a type outside ${MODULE_NAME}_*"
     fail=1
 fi
+
+allows_file="$(mktemp)"
+seinfo_file="$(mktemp)"
+perm_file="$(mktemp)"
+sesearch --allow -s "${DOMAIN}" "${kern}" >"${allows_file}" 2>/dev/null || true
+seinfo -x -t "${DOMAIN}" "${kern}" >"${seinfo_file}" 2>/dev/null || true
+seinfo --permissive "${kern}" >"${perm_file}" 2>/dev/null || true
+if ! python3 "${PROJECT_ROOT}/cli/policy_audit.py" \
+    --allows-file "${allows_file}" \
+    --seinfo-file "${seinfo_file}" \
+    --permissive-file "${perm_file}" \
+    --domain "${DOMAIN}"; then
+    fail=1
+fi
+rm -f "${allows_file}" "${seinfo_file}" "${perm_file}"
 
 if [[ "${fail}" -ne 0 ]]; then
     log_error "Semantic policy check failed"

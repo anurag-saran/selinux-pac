@@ -5,8 +5,6 @@ policy_out/*.fc
 policy_out/policy_version.txt
 selinux/*.pp
 selinux/**/*.pp
-# FCOS canary overlay is compiled in-lab; keep the checked-in copy for workshops.
-!selinux/myapp_canary.pp
 selinux/*.mod
 selinux/**/*.mod
 policy_out/avc.log

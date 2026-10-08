@@ -14,6 +14,10 @@ EXPECTED=(
     post_deploy_report.sh
     collect_soak_facts.sh
     check_soak_ready.sh
+    check_soak_gate.sh
+    check_soak_days.sh
+    record_soak_day.sh
+    semodule_restore_dontaudit.sh
     lib/avc_query.sh
     lib/manifest_shell.sh
     lib/app_manifest.py

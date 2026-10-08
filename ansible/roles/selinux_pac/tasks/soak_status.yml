@@ -5,7 +5,7 @@
     --domain {{ domain }}
     --manifest {{ app_manifest_path }}
     --marker-file {{ soak_marker_file }}
-    --report-file {{ pac_manifest.deploy.deploy_report_file | default(var_dir ~ '/selinux_deploy_report.json') }}
+    --report-file {{ pac_manifest.deploy.deploy_report_file | default('/var/lib/selinux-policy-ops/' ~ app_name ~ '/selinux_deploy_report.json') }}
     --var-dir {{ var_dir }}
   register: soak_status_raw
   changed_when: false

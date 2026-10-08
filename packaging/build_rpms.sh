@@ -29,7 +29,11 @@ cp "${ROOT}/scripts/verify_file_contexts.sh" \
    "${ROOT}/scripts/monitor_avc.sh" \
    "${ROOT}/scripts/post_deploy_report.sh" \
    "${ROOT}/scripts/collect_soak_facts.sh" \
-   "${ROOT}/scripts/check_soak_ready.sh" "${OPS_SRC}/"
+   "${ROOT}/scripts/check_soak_ready.sh" \
+   "${ROOT}/scripts/check_soak_gate.sh" \
+   "${ROOT}/scripts/check_soak_days.sh" \
+   "${ROOT}/scripts/record_soak_day.sh" \
+   "${ROOT}/scripts/semodule_restore_dontaudit.sh" "${OPS_SRC}/"
 cp "${ROOT}/scripts/lib/avc_query.sh" \
    "${ROOT}/scripts/lib/app_manifest.py" \
    "${ROOT}/scripts/lib/manifest_shell.sh" \

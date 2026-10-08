@@ -1892,6 +1892,268 @@ def test_force_reason_recorded() -> None:
         assert "<!-- AUTO:VENDOR_OVERRIDE -->" not in body
 
 
+def test_policy_audit_rejects_review_bypasses() -> None:
+    from policy_audit import (
+        allowed_fc_roots,
+        audit_allow_text,
+        audit_permissive_types,
+        audit_type_attributes,
+        dontaudit_forbidden_hits,
+        fc_paths_outside_roots,
+    )
+
+    domain = "shopapi_t"
+    assert audit_allow_text("allow shopapi_t shadow_t:file { read open getattr };", domain)
+    assert audit_allow_text("allow shopapi_t shadow_t : file { read open };", domain)
+    assert audit_allow_text("allow shopapi_t file_type:file *;", domain)
+    assert audit_allow_text("allow shopapi_t self : capability { sys_admin };", domain)
+    assert audit_allow_text(
+        "allow shopapi_t security_t : security { load_policy setenforce };", domain
+    )
+    assert audit_allow_text("allow shopapi_t self:capability { sys_module };", domain)
+    assert not audit_allow_text("allow shopapi_t shopapi_var_lib_t:file { read write };", domain)
+    assert audit_type_attributes("shopapi_t\n   unconfined_domain_type", domain)
+    assert audit_permissive_types("Permissive Types: 1\n   shopapi_t", domain)
+    assert not audit_permissive_types("Permissive Types: 1\n   unconfined_t", domain)
+    assert dontaudit_forbidden_hits("dontaudit shopapi_t shadow_t:file read;")
+    assert dontaudit_forbidden_hits("dontaudit shopapi_t\n    shadow_t:file { read };")
+    assert not dontaudit_forbidden_hits("dontaudit shopapi_t shopapi_log_t:file read;")
+    roots = allowed_fc_roots(
+        {
+            "install_root": "/opt/shopapi",
+            "var_dir": "/var/lib/shopapi",
+            "log_dir": "/var/log/shopapi",
+            "runtime_dir": "/run/shopapi",
+        }
+    )
+    assert fc_paths_outside_roots(["/etc/shadow"], roots) == ["/etc/shadow"]
+    assert fc_paths_outside_roots(["/opt/shopapi(/.*)?"], roots) == []
+    assert fc_paths_outside_roots(["/var/run/shopapi(/.*)?"], roots) == []
+
+    result = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "cli" / "policy_audit.py"), "--selinux-dir", "selinux"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_collect_soak_facts_monitor_crash() -> None:
+    script = PROJECT_ROOT / "scripts" / "collect_soak_facts.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        marker = Path(tmp) / "marker"
+        marker.write_text("1\n", encoding="utf-8")
+        stub = Path(tmp) / "monitor.sh"
+        stub.write_text("#!/bin/bash\necho '{\"count\":0}'\nexit 2\n", encoding="utf-8")
+        stub.chmod(0o755)
+        env = os.environ.copy()
+        env["MONITOR_AVC_BIN"] = str(stub)
+        result = subprocess.run(
+            [
+                BASH,
+                str(script),
+                "--marker-file",
+                str(marker),
+                "--report-file",
+                str(Path(tmp) / "missing.json"),
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        facts = json.loads(result.stdout)
+        assert facts["avc_fail_closed"] is True
+        assert facts["avc_net_new_count"] == -1
+        assert facts["avc_count_since_marker"] == -1
+
+
+def test_soak_gate_negative_net_new() -> None:
+    script = PROJECT_ROOT / "scripts" / "check_soak_gate.sh"
+    negative = subprocess.run(
+        [BASH, str(script), "--fail-closed", "false", "--net-new", "-1"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert negative.returncode == 1, negative.stdout
+    closed = subprocess.run(
+        [BASH, str(script), "--fail-closed", "true", "--net-new", "0"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert closed.returncode == 1
+    ok = subprocess.run(
+        [BASH, str(script), "--fail-closed", "false", "--net-new", "0"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert ok.returncode == 0, ok.stderr
+
+
+def test_soak_daily_history_and_other_app_guard() -> None:
+    record = PROJECT_ROOT / "scripts" / "record_soak_day.sh"
+    check = PROJECT_ROOT / "scripts" / "check_soak_days.sh"
+    restore = PROJECT_ROOT / "scripts" / "semodule_restore_dontaudit.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "shopapi"
+        junk = subprocess.run(
+            [BASH, str(record), "--state-dir", str(state), "--day", "2026-10-07"],
+            cwd=PROJECT_ROOT,
+            input="not-json",
+            capture_output=True,
+            text=True,
+        )
+        assert junk.returncode == 0, junk.stderr
+        stored = json.loads((state / "daily" / "2026-10-07.json").read_text(encoding="utf-8"))
+        assert stored["avc_fail_closed"] is True
+        assert stored["net_new_count"] == -1
+
+        passing = json.dumps(
+            {"status": "pass", "avc_fail_closed": False, "net_new_count": 0, "count": 0}
+        )
+        for day in range(1, 8):
+            wrote = subprocess.run(
+                [
+                    BASH,
+                    str(record),
+                    "--state-dir",
+                    str(state),
+                    "--day",
+                    f"2026-10-{day:02d}",
+                ],
+                cwd=PROJECT_ROOT,
+                input=passing,
+                capture_output=True,
+                text=True,
+            )
+            assert wrote.returncode == 0, wrote.stderr
+        ok = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "7",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert ok.returncode == 0, ok.stderr
+
+        missing = state / "daily" / "2026-10-04.json"
+        missing.unlink()
+        gap = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "7",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert gap.returncode == 1
+        assert "2026-10-04" in gap.stderr
+        restored = subprocess.run(
+            [BASH, str(record), "--state-dir", str(state), "--day", "2026-10-04"],
+            cwd=PROJECT_ROOT,
+            input=passing,
+            capture_output=True,
+            text=True,
+        )
+        assert restored.returncode == 0, restored.stderr
+
+        failed = json.dumps(
+            {"status": "fail", "avc_fail_closed": False, "net_new_count": 2, "count": 2}
+        )
+        subprocess.run(
+            [BASH, str(record), "--state-dir", str(state), "--day", "2026-10-05"],
+            cwd=PROJECT_ROOT,
+            input=failed,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        blocked = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "7",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert blocked.returncode == 1
+        assert "2026-10-05" in blocked.stderr
+
+        lab = subprocess.run(
+            [BASH, str(check), "--state-dir", str(Path(tmp) / "empty"), "--min-days", "0"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert lab.returncode == 0, lab.stderr
+
+        root = Path(tmp) / "state"
+        (root / "payments").mkdir(parents=True)
+        (root / "payments" / "selinux_canary_deployed_at").write_text("1", encoding="utf-8")
+        (root / "shopapi").mkdir()
+        (root / "shopapi" / "selinux_canary_deployed_at").write_text("1", encoding="utf-8")
+        skipped = subprocess.run(
+            [BASH, str(restore), "--app", "shopapi", "--state-root", str(root)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert skipped.returncode == 0, skipped.stderr
+        assert "skip semodule -B" in skipped.stderr
+
+        alone = Path(tmp) / "alone"
+        (alone / "shopapi").mkdir(parents=True)
+        (alone / "shopapi" / "selinux_canary_deployed_at").write_text("1", encoding="utf-8")
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        ran = Path(tmp) / "ran"
+        fake = bindir / "semodule"
+        fake.write_text(
+            "#!/bin/bash\nprintf '%s\\n' ran > \"${SEMODULE_RAN}\"\n",
+            encoding="utf-8",
+        )
+        fake.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["SEMODULE_RAN"] = str(ran)
+        called = subprocess.run(
+            [BASH, str(restore), "--app", "shopapi", "--state-root", str(alone)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert called.returncode == 0, called.stderr
+        assert ran.read_text(encoding="utf-8").strip() == "ran"
+
+
 def main() -> int:
     tests = [
         ("prompts", test_prompts),
@@ -1942,6 +2204,10 @@ def main() -> int:
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),
         ("force_reason_recorded", test_force_reason_recorded),
+        ("policy_audit_rejects_review_bypasses", test_policy_audit_rejects_review_bypasses),
+        ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
+        ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
+        ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
     ]
     for name, fn in tests:
         fn()
