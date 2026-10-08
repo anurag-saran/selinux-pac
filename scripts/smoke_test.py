@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,9 +19,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash") or "/bin/bash"
 sys.path.insert(0, str(PROJECT_ROOT / "cli"))
 
+from avc_parse import (  # noqa: E402
+    bump_policy_version,
+    deduplicate_avc_entries,
+    filter_avc_entries,
+    parse_avc_line,
+    read_policy_version,
+)
 from avc_preprocess import (  # noqa: E402
     AccessNeed,
-    build_llm_avc_summary,
     extract_type,
     merge_avc_entries,
     normalize_perms,
@@ -28,17 +35,7 @@ from avc_preprocess import (  # noqa: E402
     preprocess_avc_entries,
     subtract_covered,
 )
-from prompt_templates import SYSTEM_PROMPT, build_user_prompt  # noqa: E402
-from selinux_gen import (  # noqa: E402
-    bump_policy_version,
-    deduplicate_avc_entries,
-    filter_avc_entries,
-    parse_avc_line,
-    parse_policy_json,
-    read_policy_version,
-    validate_policy_content,
-    validate_pr_summary,
-)
+from pr_summary_common import validate_pr_summary  # noqa: E402
 
 
 def assert_mentions(text: str, *needles: str) -> None:
@@ -337,28 +334,6 @@ def test_make_deps_uses_venv() -> None:
     assert "$(PIP) install" in deps
 
 
-def test_prompts() -> None:
-    avc = (
-        'type=AVC msg=audit(123): avc: denied { write } for pid=1 comm="python3" '
-        "scontext=system_u:system_r:myapp_t:s0 "
-        "tcontext=system_u:object_r:myapp_var_lib_t:s0 tclass=file permissive=1"
-    )
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
-    prompt = build_user_prompt(
-        "myapp_t", avc, app_name="myapp", version="1.0.0", existing_te=te, existing_fc=fc
-    )
-    assert "myapp_t" in prompt
-    assert "Existing Type Enforcement" in prompt
-    assert len(SYSTEM_PROMPT) > 100
-    import policy_rules
-
-    forbidden = ", ".join(sorted(policy_rules.FORBIDDEN_TARGET_TYPES))
-    assert forbidden in SYSTEM_PROMPT
-    for name in policy_rules.FORBIDDEN_TARGET_TYPES:
-        assert name in SYSTEM_PROMPT
-
-
 def test_avc_parsing() -> None:
     line = (
         'type=AVC msg=audit(1): avc: denied { write append open } for pid=99 '
@@ -453,44 +428,21 @@ def test_preprocess_stats() -> None:
     assert stats["merged"] < stats["raw"]
 
 
-def test_prompt_uses_summary() -> None:
+def test_structured_summary_sections() -> None:
     te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
     entries = [
         parse_avc_line(
             _sample_avc_line("link", "system_u:system_r:myapp_t:s0", "system_u:object_r:myapp_var_lib_t:s0")
         )
     ]
-    summary, _ = build_llm_avc_summary(entries, existing_te=te)
-    prompt = build_user_prompt(
-        "myapp_t", summary, app_name="myapp", version="1.0.0", existing_te=te, existing_fc=fc
-    )
-    assert "Net-new access needs" in prompt
-    assert "Access needs derived from AVCs" in prompt
-    assert "Already covered by existing policy" in prompt
+    summary, stats = preprocess_avc_entries(entries, existing_te=te)
+    assert stats["net_new"] >= 1
+    assert "Net-new access needs" in summary
+    assert "Already covered by existing policy" in summary
 
 
-def test_no_changes_needed_summary() -> None:
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
-    entries = [
-        parse_avc_line(
-            _sample_avc_line("read", "system_u:system_r:myapp_t:s0", "system_u:object_r:myapp_lib_t:s0")
-        )
-    ]
-    summary, stats = build_llm_avc_summary(entries, existing_te=te)
-    assert stats.get("no_changes_needed") == 1
-    assert "no te_content changes required" in summary.lower() or "No te_content changes" in summary
-
-
-def test_pr_summary_split_and_validate() -> None:
-    from pr_summary_common import (
-        merge_pr_summary,
-        split_pr_summary_sections,
-        validate_narrative_section,
-        validate_pr_summary,
-    )
-
-    narrative = "\n".join(
+def test_pr_summary_headings() -> None:
+    body = "\n".join(
         [
             "### Network Bindings",
             "- port 8888",
@@ -505,51 +457,12 @@ def test_pr_summary_split_and_validate() -> None:
             "- no wildcards",
         ]
     )
-    tail = "\n".join(
-        [
-            "### Host administrative actions (not shipped in RPM)",
-            "- None",
-            "",
-            "### Classification audit (engine)",
-            "| Verdict | Target | Engine | Note |",
-            "| --- | --- | --- | --- |",
-            "| direct | myapp_log_t | rules | ok |",
-        ]
-    )
-    template = narrative + "\n\n" + tail
-    got_narr, got_tail = split_pr_summary_sections(template)
-    assert "### Host administrative" in got_tail
-    assert "Classification audit" in got_tail
-    merged = merge_pr_summary(got_narr, got_tail)
-    validate_pr_summary(merged)
-    validate_narrative_section(got_narr)
+    validate_pr_summary(body)
     try:
-        validate_narrative_section("allow myapp_t shadow_t:file read;")
-        raise AssertionError("expected validate_narrative_section to fail")
+        validate_pr_summary("### Network Bindings\n- only one section\n")
+        raise AssertionError("expected validate_pr_summary to fail")
     except RuntimeError:
         pass
-
-
-def test_policy_json_validation() -> None:
-    payload = {
-        "module_name": "myapp",
-        "te_content": "policy_module(myapp, 1.0.0)\ntype myapp_t;\n",
-        "fc_content": (
-            "/opt/myapp/app\\.py -- gen_context(system_u:object_r:myapp_exec_t,s0)\n"
-            "/var/lib/myapp(/.*)? gen_context(system_u:object_r:myapp_var_lib_t,s0)\n"
-            "/run/myapp(/.*)? gen_context(system_u:object_r:myapp_var_run_t,s0)\n"
-        ),
-        "rationale": "test",
-        "pr_summary": (
-            "### Network Bindings\n- Binds unreserved_port_t:8888\n\n"
-            "### File System Access\n- myapp_var_lib_t read/write\n\n"
-            "### Process Execution\n- myapp_exec_t transitions\n\n"
-            "### Explicit Denials Maintained\n- No shadow_t access\n"
-        ),
-    }
-    data = parse_policy_json(json.dumps(payload))
-    validate_policy_content(data["te_content"], data["fc_content"], "myapp_t", "myapp")
-    validate_pr_summary(data["pr_summary"])
 
 
 def test_version_bump() -> None:
@@ -1605,6 +1518,79 @@ def test_rpm_ops_parity() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_ops_rpm_soak_cli_imports_alone() -> None:
+    """The ops RPM pac_cli set must run soak_net_new --help with no other repo modules."""
+    names = [
+        line.strip()
+        for line in (PROJECT_ROOT / "packaging" / "pac_cli.list").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert "soak_net_new.py" in names
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp)
+        for name in names:
+            shutil.copy(PROJECT_ROOT / "cli" / name, dest / name)
+        help_run = subprocess.run(
+            [sys.executable, "-I", "soak_net_new.py", "--help"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
+        )
+        assert help_run.returncode == 0, help_run.stderr or help_run.stdout
+        assert "Net-new" in help_run.stdout
+    parity = subprocess.run(
+        ["bash", str(PROJECT_ROOT / "scripts" / "validate_rpm_ops_parity.sh")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert parity.returncode == 0, parity.stderr or parity.stdout
+
+
+def test_monitor_records_soak_stderr() -> None:
+    """A failing soak_net_new.py puts its stderr in fail_closed_reason."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        ausearch = bindir / "ausearch"
+        ausearch.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' 'type=AVC msg=audit(1.1:1): avc: denied { read } for pid=1 "
+            "path=\"/opt/shopapi/x\" scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1'\n",
+            encoding="utf-8",
+        )
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("APP_MANIFEST", None)
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--domain",
+                "shopapi_t",
+                "--paths",
+                "/opt/shopapi",
+                "--manifest",
+                str(root / "missing-manifest.yml"),
+                "--format",
+                "json",
+                "--max-avc",
+                "-1",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        blob = result.stdout + result.stderr
+        assert "Provide --manifest or --domains" in blob, blob
+        assert "sesearch / policy.kern" not in blob
+
+
 def test_version_consistency() -> None:
     script = PROJECT_ROOT / "scripts" / "validate_version_consistency.sh"
     result = subprocess.run(
@@ -1706,7 +1692,7 @@ def test_promote_policy_version_from_te() -> None:
     import tempfile
 
     version_sh = PROJECT_ROOT / "scripts" / "lib" / "version.sh"
-    te_src = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "skip_ai" / "generated" / "myapp.te"
+    te_src = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         policy_out = root / "policy_out"
@@ -1750,7 +1736,7 @@ def test_classify_fail_closed_json() -> None:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "CLASSIFY_SKIP_PODMAN": "1"},
+            env={**os.environ, "CLASSIFY_SKIP_SELINUX": "1"},
         )
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -1801,20 +1787,62 @@ def test_check_soak_auto_tier_fail_closed() -> None:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "CLASSIFY_SKIP_PODMAN": "1"},
+            env={**os.environ, "CLASSIFY_SKIP_SELINUX": "1"},
         )
     combined = result.stdout + result.stderr
     assert "Blast-radius classifier fail-closed" in combined, combined
     assert "soak minimum 7 day" in combined, combined
 
 
-def test_skip_ai_fixture_sync() -> None:
-    """Offline demo generated/ must match selinux/ (refresh_skip_ai_fixture.sh)."""
-    fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "skip_ai" / "generated"
+def test_tracked_tree_has_no_model_client() -> None:
+    """Fail when a tracked file still names the removed model client."""
+    pattern = "|".join(
+        [
+            r"\b" + "A" + "I" + r"\b",
+            "LL" + "M",
+            "open" + "a" + "i",
+            "gp" + "t-",
+            "dot" + "env",
+            "prompt_" + "templates",
+            "skip_" + "a" + "i",
+        ]
+    )
+    result = subprocess.run(
+        ["git", "grep", "-i", "-I", "-E", "-n", pattern],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, result.stdout
+    assert result.stdout == ""
+    # git grep -E does not treat \b as a word boundary on every platform.
+    regex = re.compile(pattern, re.IGNORECASE)
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+    )
+    hits: list[str] = []
+    for name in tracked.stdout.split(b"\0"):
+        if not name:
+            continue
+        path = PROJECT_ROOT / name.decode()
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if regex.search(line):
+                hits.append(f"{name.decode()}:{lineno}:{line}")
+    assert hits == [], "\n".join(hits)
+
+
+def test_offline_fixture_sync() -> None:
+    """Offline demo generated/ must match selinux/ (refresh_offline_fixture.sh)."""
+    fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated"
     for name in ("myapp.te", "myapp.fc"):
         assert (fix / name).read_text(encoding="utf-8") == (
             PROJECT_ROOT / "selinux" / name
-        ).read_text(encoding="utf-8"), f"Drift in skip_ai/generated/{name} — run refresh_skip_ai_fixture.sh"
+        ).read_text(encoding="utf-8"), f"Drift in offline/generated/{name} — run refresh_offline_fixture.sh"
 
 
 DETERMINISTIC_CLASSIFICATION_VERDICTS = frozenset(
@@ -2286,7 +2314,7 @@ def test_export_app_avcs_requires_paths() -> None:
     assert "paths_csv required" in result.stderr
 
 
-def test_avc_filter_keeps_pathless_bind_drops_passwd() -> None:
+def test_avc_filter_keeps_domain_denials() -> None:
     avc_lib = PROJECT_ROOT / "scripts" / "lib" / "avc_query.sh"
     result = subprocess.run(
         [
@@ -2315,8 +2343,295 @@ AVC
     assert "execmem" in out
     assert "state.txt" in out
     assert "libjli.so" in out
-    assert "passwd" not in out
+    assert 'name="passwd"' in out
+    assert 'path="/etc/passwd"' in out
     assert "var_spool_t" in out
+
+
+def test_init_uses_daemon_domain() -> None:
+    """systemd start uses init_daemon_domain, and the FCOS overlay files are gone."""
+    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    assert te.count("init_daemon_domain(myapp_t, myapp_exec_t)") == 1
+    assert te.count("init_daemon_domain(myapp_backend_t, myapp_backend_exec_t)") == 1
+    assert "dyntransition" not in te
+    assert "type_transition" not in te
+    assert "allow init_t" not in te
+    for path in (
+        PROJECT_ROOT / "selinux" / "myapp_canary.te",
+        PROJECT_ROOT / "selinux" / "myapp_canary.fc",
+        PROJECT_ROOT / "selinux" / "myapp_ports.cil",
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "templates" / "ports_from_manifest.cil.j2",
+    ):
+        assert not path.exists(), path
+    forbidden = (PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh").read_text(encoding="utf-8")
+    assert "myapp_canary" not in forbidden
+    enforce = (PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "enforce.yml").read_text(encoding="utf-8")
+    defaults = (PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "defaults" / "main.yml").read_text(encoding="utf-8")
+    assert "stub_policy" not in enforce and "stub_policy" not in defaults
+    assert "FCOS" not in enforce and "FCOS" not in defaults
+    classify = (PROJECT_ROOT / "scripts" / "classify_policy_blast_radius.sh").read_text(encoding="utf-8")
+    assert "CLASSIFY_SKIP_SELINUX" in classify
+    assert "CLASSIFY_SKIP_PODMAN" not in classify
+    assert "DEMO_PODMAN_IMAGE" not in (PROJECT_ROOT / "scripts" / "lib" / "demo_estate.sh").read_text(encoding="utf-8")
+    assert "container_build" not in (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+    readme = (PROJECT_ROOT / "ansible" / "README.md").read_text(encoding="utf-8")
+    assert "RHEL 9" in readme
+    assert "FCOS" not in readme
+    generated = (PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te").read_text(encoding="utf-8")
+    assert generated == te
+
+
+def test_vm_check_reports_each_result() -> None:
+    """Each QA check prints PASS or FAIL, and a loaded bypass module fails the host check."""
+    script = PROJECT_ROOT / "scripts" / "vm_check.sh"
+    text = script.read_text(encoding="utf-8")
+    for name in (
+        "integration-compile",
+        "integration-semantics",
+        "reject_compiled_bypasses",
+        "test_avc_epoch_window",
+        "test_avc_query_epoch",
+        "integration-blast-radius",
+        "host-unchanged",
+    ):
+        assert name in text
+    assert "semodule -l" in text
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        log = root / "ssh.log"
+        ssh = bindir / "ssh"
+        ssh.write_text(
+            "#!/bin/sh\n"
+            "cmd=\n"
+            "for arg in \"$@\"; do cmd=\"$arg\"; done\n"
+            "printf '%s\\n' \"$cmd\" >> \"$VM_LOG\"\n"
+            "case \"$cmd\" in\n"
+            "  *HOME/selinux-pac*) printf '%s' /home/ansible/selinux-pac ;;\n"
+            "  *semodule*)\n"
+            "    if [ \"$VM_MODE\" = bypass ]; then\n"
+            "      printf '%s\\n' 'bypass_shadow 1.0' 'pac_control 1.0'\n"
+            "    else\n"
+            "      printf '%s\\n' 'shopapi 1.0'\n"
+            "    fi\n"
+            "    ;;\n"
+            "  *integration-compile*)\n"
+            "    if [ \"$VM_MODE\" = compile-fail ]; then echo 'SKIP integration-compile' >&2; exit 1; fi\n"
+            "    ;;\n"
+            "esac\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        ssh.chmod(0o755)
+        rsync = bindir / "rsync"
+        rsync.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        rsync.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env["QA_HOST"] = "qa.example"
+        env["PROD_HOST"] = "prod.example"
+        env["SSH_USER"] = "ansible"
+        env["VM_LOG"] = str(log)
+        env["VM_MODE"] = "ok"
+        ok = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+        for name in (
+            "integration-compile",
+            "integration-semantics",
+            "reject_compiled_bypasses",
+            "test_avc_epoch_window",
+            "test_avc_query_epoch",
+            "integration-blast-radius",
+            "host-unchanged",
+        ):
+            assert f"PASS {name}" in ok.stdout, ok.stdout
+        env["VM_MODE"] = "bypass"
+        leaked = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert leaked.returncode != 0
+        assert "FAIL host-unchanged" in leaked.stdout
+        env["VM_MODE"] = "compile-fail"
+        broken = subprocess.run(
+            [BASH, str(script)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert broken.returncode != 0
+        assert "FAIL integration-compile" in broken.stdout
+
+
+def test_runner_var_selects_rhel_host() -> None:
+    """SELinux jobs stay on Stream 9 unless RUNNER is the rhel9-utm label."""
+    import yaml
+
+    jobs = {
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml": "compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app.yml": "app-compiled-policy",
+        PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-app-proof.yml": "bypass-rejected",
+        PROJECT_ROOT / ".github" / "workflows" / "demo-estate.yml": "shopapi-policy",
+    }
+    for path, job_id in jobs.items():
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        job = workflow["jobs"][job_id]
+        assert "vars.RUNNER" in str(job["runs-on"])
+        assert "rhel9-utm" in str(job["container"])
+        assert "quay.io/centos/centos:stream9" in str(job["container"])
+        assert "fedora:41" not in path.read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "204-TESTING.md").read_text(encoding="utf-8")
+    assert "rhel-ci" in guide
+    assert "rhel-qa" in guide and "rhel-prod" in guide
+    assert "make vm-check" in guide
+
+
+def test_soak_counts_every_domain_denial() -> None:
+    """Denials outside the manifest paths still count when scontext is the app domain."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("2000\n", encoding="utf-8")
+        lines = [
+            "type=AVC msg=audit(1000.1:1): avc: denied { read } for pid=1 "
+            'path="/etc/pki/ca-trust/extracted/pem/old.pem" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:cert_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3000.1:2): avc: denied { read } for pid=1 "
+            'path="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:cert_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3001.1:3): avc: denied { read } for pid=1 "
+            'path="/etc/shopapi-extra.conf" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3002.1:4): avc: denied { read } for pid=1 "
+            'path="/opt/shopapi/lib/app.jar" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:shopapi_lib_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3003.1:5): avc: denied { read } for pid=1 "
+            'path="/etc/httpd/conf/httpd.conf" '
+            "scontext=system_u:system_r:httpd_t:s0 "
+            "tcontext=system_u:object_r:httpd_config_t:s0 tclass=file permissive=1",
+        ]
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + " ".join(repr(line) for line in lines) + "\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--manifest",
+                str(PROJECT_ROOT / "config" / "shopapi.manifest.yml"),
+                "--marker-file",
+                str(marker),
+                "--max-avc",
+                "0",
+                "--format",
+                "json",
+                "--show-lines",
+                "0",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["count"] == 3, result.stdout + result.stderr
+        assert payload["status"] == "fail"
+        assert "httpd_t" not in result.stdout
+
+
+def test_soak_ignore_is_explicit() -> None:
+    """Only soak.ignore drops a domain denial, and the daily JSON records the count."""
+    loader = PROJECT_ROOT / "scripts" / "lib" / "app_manifest.py"
+    bad = subprocess.run(
+        ["python3", str(loader), "validate", str(PROJECT_ROOT / "config" / "shopapi.manifest.yml")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert bad.returncode == 0, bad.stderr
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        manifest = root / "app.manifest.yml"
+        text = (PROJECT_ROOT / "config" / "shopapi.manifest.yml").read_text(encoding="utf-8")
+        text += "\nsoak:\n  ignore:\n    - tclass: file\n      target_type: etc_t\n"
+        manifest.write_text(text, encoding="utf-8")
+        ok = subprocess.run(
+            ["python3", str(loader), "validate", str(manifest)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert ok.returncode == 0, ok.stderr
+        broken = root / "bad.manifest.yml"
+        broken.write_text(text + "    - tclass: 'file class'\n      target_type: etc_t\n", encoding="utf-8")
+        rejected = subprocess.run(
+            ["python3", str(loader), "validate", str(broken)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert rejected.returncode != 0
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("2000\n", encoding="utf-8")
+        line = (
+            "type=AVC msg=audit(3001.1:3): avc: denied { read } for pid=1 "
+            'path="/etc/shopapi-extra.conf" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1"
+        )
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + repr(line) + "\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--manifest",
+                str(manifest),
+                "--marker-file",
+                str(marker),
+                "--max-avc",
+                "0",
+                "--format",
+                "json",
+                "--show-lines",
+                "0",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["count"] == 0, result.stdout + result.stderr
+        assert payload["ignored_count"] == 1
+        assert payload["ignored"] == [{"tclass": "file", "target_type": "etc_t", "count": 1}]
+        assert payload["status"] == "pass"
 
 
 def test_boolean_policy_render() -> None:
@@ -2704,12 +3019,7 @@ def test_policy_rules_are_the_single_source() -> None:
     import deterministic_gen
     import policy_audit
     import policy_rules
-    import prompt_templates
-    import selinux_gen
 
-    assert prompt_templates.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
-    assert selinux_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
-    assert selinux_gen.FORBIDDEN_PRIVILEGED_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert deterministic_gen.FORBIDDEN_TARGET_TYPES is policy_rules.FORBIDDEN_TARGET_TYPES
     assert deterministic_gen.needs_review_hits is policy_rules.needs_review_hits
     assert policy_audit.COMPILED_REJECT_CAPABILITIES is policy_rules.COMPILED_REJECT_CAPABILITIES
@@ -3141,6 +3451,156 @@ def test_soak_gate_negative_net_new() -> None:
     assert ok.returncode == 0, ok.stderr
 
 
+def test_new_canary_ignores_older_soak_files() -> None:
+    """A new canary marker drops daily files and fail files from the previous marker."""
+    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    ops = "/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc"
+    assert ops in prod and ops in mac
+    assert "/var/lib/shopapi/selinux_soak_last_fail" not in prod
+    assert "rm -f ${SOAK_FAIL_JSON}" not in prod
+    check = PROJECT_ROOT / "scripts" / "check_soak_days.sh"
+    monitor = PROJECT_ROOT / "scripts" / "monitor_avc.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "shopapi"
+        daily = state / "daily"
+        daily.mkdir(parents=True)
+        (state / "selinux_canary_deployed_at").write_text("9000\n", encoding="utf-8")
+        old_fail = {
+            "status": "fail",
+            "avc_fail_closed": False,
+            "net_new_count": 3,
+            "count": 3,
+            "since": "1000",
+        }
+        new_pass = {
+            "status": "pass",
+            "avc_fail_closed": False,
+            "net_new_count": 0,
+            "count": 0,
+            "since": "9000",
+        }
+        (daily / "2026-10-06.json").write_text(json.dumps(old_fail), encoding="utf-8")
+        (daily / "2026-10-07.json").write_text(json.dumps(new_pass), encoding="utf-8")
+        one_day = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "1",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert one_day.returncode == 0, one_day.stderr
+        short = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "2",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert short.returncode == 1
+        assert "missing 2026-10-06" in short.stderr
+        assert "did not pass" not in short.stderr
+        for day in range(1, 8):
+            (daily / f"2026-10-{day:02d}.json").write_text(
+                json.dumps(
+                    {
+                        "status": "pass",
+                        "avc_fail_closed": False,
+                        "net_new_count": 0,
+                        "since": "1000",
+                    }
+                ),
+                encoding="utf-8",
+            )
+        inherited = subprocess.run(
+            [
+                BASH,
+                str(check),
+                "--state-dir",
+                str(state),
+                "--min-days",
+                "7",
+                "--today",
+                "2026-10-07",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert inherited.returncode == 1
+        assert "no daily results" in inherited.stderr
+
+        token = "OLD_CANARY_DENIAL"
+        (state / "selinux_soak_last_fail.json").write_text(
+            json.dumps({"since": "1000", "count": 9, "status": "fail"}),
+            encoding="utf-8",
+        )
+        (state / "selinux_soak_last_fail.avc").write_text(token + "\n", encoding="utf-8")
+        (daily / "2026-10-01.json").write_text(
+            json.dumps({"since": "1000", "status": "fail", "count": 9}),
+            encoding="utf-8",
+        )
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("APP_MANIFEST", None)
+        env.pop("AUDIT_LOG", None)
+        ran = subprocess.run(
+            [
+                BASH,
+                str(monitor),
+                "--domain",
+                "shopapi_t",
+                "--paths",
+                "/opt/shopapi",
+                "--manifest",
+                str(Path(tmp) / "missing.yml"),
+                "--marker-file",
+                str(state / "selinux_canary_deployed_at"),
+                "--fail-dir",
+                str(state),
+                "--format",
+                "json",
+                "--max-avc",
+                "0",
+                "--skip-if-unavailable",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert ran.returncode == 0, ran.stdout + ran.stderr
+        assert token not in (ran.stdout + ran.stderr)
+        payload = json.loads(ran.stdout)
+        assert payload["count"] == 0
+        assert payload["status"] == "pass"
+        assert "2026-10-01.json" in payload["ignored_stale_daily"]
+        assert "selinux_soak_last_fail.json" in payload["ignored_stale_fail"]
+        assert "selinux_soak_last_fail.avc" in payload["ignored_stale_fail"]
+        assert token in (state / "selinux_soak_last_fail.avc").read_text(encoding="utf-8")
+
+
 def test_soak_daily_history_and_other_app_guard() -> None:
     record = PROJECT_ROOT / "scripts" / "record_soak_day.sh"
     check = PROJECT_ROOT / "scripts" / "check_soak_days.sh"
@@ -3334,17 +3794,15 @@ def main() -> int:
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
         ("make_deps_uses_venv", test_make_deps_uses_venv),
-        ("prompts", test_prompts),
+        ("tracked_tree_has_no_model_client", test_tracked_tree_has_no_model_client),
         ("avc_parsing", test_avc_parsing),
         ("perm_merge", test_perm_merge),
         ("type_extraction_dedup", test_type_extraction_dedup),
         ("subtract_existing", test_subtract_existing),
         ("net_new_detection", test_net_new_detection),
         ("preprocess_stats", test_preprocess_stats),
-        ("prompt_uses_summary", test_prompt_uses_summary),
-        ("no_changes_needed_summary", test_no_changes_needed_summary),
-        ("pr_summary_split_and_validate", test_pr_summary_split_and_validate),
-        ("policy_json_validation", test_policy_json_validation),
+        ("structured_summary_sections", test_structured_summary_sections),
+        ("pr_summary_headings", test_pr_summary_headings),
         ("version_bump", test_version_bump),
         ("assemble_pr_body_policy_diff_section", test_assemble_pr_body_policy_diff_section),
         ("assemble_pr_body", test_assemble_pr_body),
@@ -3364,6 +3822,8 @@ def main() -> int:
         ("app_manifest", test_app_manifest),
         ("selinux_booleans_and_app_ci", test_selinux_booleans_and_app_ci),
         ("rpm_ops_parity", test_rpm_ops_parity),
+        ("ops_rpm_soak_cli_imports_alone", test_ops_rpm_soak_cli_imports_alone),
+        ("monitor_records_soak_stderr", test_monitor_records_soak_stderr),
         ("version_consistency", test_version_consistency),
         ("version_consistency_fails_on_drift", test_version_consistency_fails_on_drift),
         ("version_consistency_fails_on_payments_drift", test_version_consistency_fails_on_payments_drift),
@@ -3372,12 +3832,18 @@ def main() -> int:
         ("promote_policy_version_from_te", test_promote_policy_version_from_te),
         ("classify_fail_closed_json", test_classify_fail_closed_json),
         ("check_soak_auto_tier_fail_closed", test_check_soak_auto_tier_fail_closed),
-        ("skip_ai_fixture_sync", test_skip_ai_fixture_sync),
+        ("offline_fixture_sync", test_offline_fixture_sync),
         ("deterministic_verdict_fixture_coverage", test_deterministic_verdict_fixture_coverage),
         ("needs_review_hits", test_needs_review_hits),
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),
         ("payments_onboarding_module", test_payments_onboarding_module),
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
+        ("init_uses_daemon_domain", test_init_uses_daemon_domain),
+        ("vm_check_reports_each_result", test_vm_check_reports_each_result),
+        ("runner_var_selects_rhel_host", test_runner_var_selects_rhel_host),
+        ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),
+        ("soak_counts_every_domain_denial", test_soak_counts_every_domain_denial),
+        ("soak_ignore_is_explicit", test_soak_ignore_is_explicit),
         ("boolean_policy_render", test_boolean_policy_render),
         ("boolean_triage_two_matches", test_boolean_triage_two_matches),
         ("boolean_curated_when_policy_unavailable", test_boolean_curated_when_policy_unavailable),
@@ -3395,6 +3861,7 @@ def main() -> int:
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
+        ("new_canary_ignores_older_soak_files", test_new_canary_ignores_older_soak_files),
         ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
     ]
     for name, fn in tests:

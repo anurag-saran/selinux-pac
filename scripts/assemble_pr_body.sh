@@ -32,7 +32,7 @@ Options:
   --policy-diff-file PATH  Use precomputed diff (skips sesearch diff)
   --skip-policy-diff    Omit policy diff section (smoke tests only)
   --template PATH       PR template file
-  --pr-summary PATH     AI summary file
+  --pr-summary PATH     PR summary file
   --avc-log PATH        AVC export file
   --output PATH         Output file
   --staging-host TEXT   Staging environment label

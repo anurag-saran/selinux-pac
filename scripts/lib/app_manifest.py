@@ -150,6 +150,7 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
         },
         "selinux_ports": raw.get("selinux_ports") or [],
         "selinux_booleans": raw.get("selinux_booleans") or [],
+        "soak": {"ignore": _normalize_soak_ignore(raw.get("soak"))},
         "policy": {"module_dir": str(module_dir), "service_name": str(primary_unit)},
         "deploy": {
             "soak_marker_file": str(soak_marker),
@@ -267,7 +268,7 @@ def validate_selinux_booleans(booleans: Any, domain: str) -> list[str]:
             errors.append(f"{label} must be a mapping")
             continue
         name = str(entry.get("name") or "")
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        if re.match(r"[A-Za-z_][A-Za-z0-9_]*\Z", name) is None:
             errors.append(f"{label} name {name!r} is not a boolean identifier")
         if name == "tomcat_can_network_connect":
             errors.append(
@@ -282,6 +283,59 @@ def validate_selinux_booleans(booleans: Any, domain: str) -> list[str]:
         if "persistent" in entry and not isinstance(entry["persistent"], bool):
             errors.append(f"{label} persistent must be true or false")
     return errors
+
+
+def _normalize_soak_ignore(soak: Any) -> list[dict[str, str]]:
+    if soak is None:
+        return []
+    if not isinstance(soak, dict):
+        return []
+    ignore = soak.get("ignore") or []
+    if not isinstance(ignore, list):
+        return []
+    rows: list[dict[str, str]] = []
+    for entry in ignore:
+        if not isinstance(entry, dict):
+            rows.append({"tclass": "", "target_type": ""})
+            continue
+        rows.append(
+            {
+                "tclass": str(entry.get("tclass") or ""),
+                "target_type": str(entry.get("target_type") or ""),
+            }
+        )
+    return rows
+
+
+def _selinux_identifier(value: str) -> bool:
+    return re.match(r"[A-Za-z_][A-Za-z0-9_]*\Z", value) is not None
+
+
+def validate_soak_ignore(ignore: Any) -> list[str]:
+    """soak.ignore entries are tclass plus target type. Empty means ignore nothing."""
+    errors: list[str] = []
+    if not isinstance(ignore, list):
+        return ["soak.ignore must be a list"]
+    for index, entry in enumerate(ignore):
+        label = f"soak.ignore[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} must be a mapping")
+            continue
+        tclass = str(entry.get("tclass") or "")
+        target = str(entry.get("target_type") or "")
+        if not _selinux_identifier(tclass):
+            errors.append(f"{label} tclass {tclass!r} is not an SELinux class name")
+        if not _selinux_identifier(target):
+            errors.append(f"{label} target_type {target!r} is not an SELinux type")
+    return errors
+
+
+def soak_ignore_csv(manifest: dict[str, Any]) -> str:
+    parts = [
+        f"{row['tclass']}:{row['target_type']}"
+        for row in manifest.get("soak", {}).get("ignore", [])
+    ]
+    return ",".join(parts)
 
 
 def validate_normalized(manifest: dict[str, Any]) -> list[str]:
@@ -310,6 +364,13 @@ def load_manifest(path: Path) -> dict[str, Any]:
     declared = port_types_declared(te.read_text(encoding="utf-8")) if te else None
     errors.extend(validate_selinux_ports(manifest["selinux_ports"], declared))
     errors.extend(validate_selinux_booleans(manifest["selinux_booleans"], str(manifest["domain"])))
+    soak_raw = raw.get("soak")
+    if soak_raw is not None and not isinstance(soak_raw, dict):
+        errors.append("soak must be a mapping")
+    elif isinstance(soak_raw, dict) and "ignore" in soak_raw and not isinstance(soak_raw.get("ignore"), list):
+        errors.append("soak.ignore must be a list")
+    else:
+        errors.extend(validate_soak_ignore(manifest["soak"]["ignore"]))
     if errors:
         raise ValueError(f"{path}: " + "; ".join(errors))
     return manifest
@@ -383,6 +444,7 @@ def shell_export(manifest: dict[str, Any]) -> str:
         f"APP_DOMAIN={json.dumps(manifest['domain'])}",
         f"PRIMARY_DOMAIN={json.dumps(primary['domain'])}",
         f"PATHS_CSV={json.dumps(manifest_paths_csv(manifest))}",
+        f"SOAK_IGNORE_CSV={json.dumps(soak_ignore_csv(manifest))}",
         f"PRIMARY_SERVICE={json.dumps(primary['unit'])}",
         f"HTTP_HOST={json.dumps(manifest['http']['host'])}",
         f"HTTP_PORT={manifest['http']['port']}",

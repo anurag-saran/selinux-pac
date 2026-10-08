@@ -10,7 +10,6 @@ APP_B_DATA="${APP_B_DATA:-/opt/appdata}"
 APP_B_PORT="${APP_B_PORT:-8090}"
 APP_A_PORT="${APP_A_PORT:-8080}"
 APP_A_FORBIDDEN_PATH="${APP_A_FORBIDDEN_PATH:-${DEMO_STATE_DIR}/out-of-scope.txt}"
-DEMO_PODMAN_IMAGE="${DEMO_PODMAN_IMAGE:-docker.io/library/fedora:41}"
 
 demo_estate_load_shopapi_manifest() {
     local project_root="${1:?}"

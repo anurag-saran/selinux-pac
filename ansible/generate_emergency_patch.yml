@@ -34,7 +34,7 @@
         msg: "Export AVCs first: ausearch … > {{ emergency_log }}"
       when: not emergency_avc_stat.stat.exists
 
-    - name: Generate policy patch (deterministic — no LLM on .te/.fc)
+    - name: Generate policy patch from the AVC log
       ansible.builtin.command: >
         python3 {{ policy_artifact_dir }}/cli/deterministic_gen.py
         --avc-log {{ emergency_log }}
@@ -51,24 +51,9 @@
         bash {{ policy_artifact_dir }}/scripts/validate_forbidden_patterns.sh
         {{ policy_artifact_dir }}/policy_out
 
-    - name: Optional LLM polish for pr_summary.md only
-      when: lookup('env', 'OPENAI_API_KEY') | default('', true) | length > 0
-      ansible.builtin.command: >
-        python3 {{ policy_artifact_dir }}/cli/summarize_pr.py
-        --template {{ policy_artifact_dir }}/policy_out/pr_summary.md
-        --findings {{ policy_artifact_dir }}/policy_out/findings.json
-        --avc-summary {{ policy_artifact_dir }}/policy_out/avc_summary.txt
-        --out {{ policy_artifact_dir }}/policy_out/pr_summary.md
-        --app-name {{ app_name | default('myapp') }}
-      environment:
-        OPENAI_API_KEY: "{{ lookup('env', 'OPENAI_API_KEY') }}"
-        OPENAI_BASE_URL: "{{ lookup('env', 'OPENAI_BASE_URL') | default('', true) }}"
-        OPENAI_API_MODEL: "{{ lookup('env', 'OPENAI_API_MODEL') | default('gpt-4o-mini', true) }}"
-
     - name: Next step is a PR not a host install
       ansible.builtin.debug:
         msg: >-
           policy_out/ updated via deterministic_gen. Review, run
           bash scripts/assemble_pr_body.sh, open a PR, then AAP Release canary.
           Do not semodule -i this output on prod.
-          {{ 'pr_summary.md template-only (set OPENAI_API_KEY for optional prose).' if (lookup('env', 'OPENAI_API_KEY') | default('', true) | length) == 0 else 'Optional LLM polished pr_summary.md only.' }}

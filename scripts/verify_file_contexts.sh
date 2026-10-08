@@ -151,7 +151,7 @@ check_labeled_dir() {
     restorecon_dry "${dir}"
 }
 
-# Narrow restorecon scope: data dir + app entrypoints (skip venv tree — FCOS relabel risk)
+# Narrow restorecon scope: data dir + app entrypoints (skip the venv tree).
 check_labeled_dir "${VAR_DIR}"
 if [[ -d "${LOG_DIR}" ]]; then
     restorecon_dry "${LOG_DIR}"

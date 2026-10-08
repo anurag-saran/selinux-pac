@@ -8,7 +8,7 @@ PIP := $(VENV)/bin/pip
 .PHONY: help deps test check lint fixtures test-smoke test-static test-manifest \
 	test-rpm test-forbidden test-version test-fixtures test-blast-radius \
 	lint-shell lint-yaml lint-ansible integration-compile integration-semantics \
-	training-lab demo-bootstrap
+	training-lab demo-bootstrap vm-check
 
 help: ## List targets (default)
 	@echo "SELinux demo — common targets:"
@@ -104,3 +104,6 @@ training-lab: ## Dry-run the customer talk (no SELinux required)
 
 demo-bootstrap: ## Stand up App A/B + shopapi on RHEL (idempotent; not for macOS)
 	bash scripts/demo_bootstrap.sh
+
+vm-check: ## Compile and soak checks on the QA VM (needs scripts/lab.env)
+	bash scripts/vm_check.sh

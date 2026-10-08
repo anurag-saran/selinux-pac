@@ -125,7 +125,7 @@ Press Enter here when the denial is on screen." \
 
         e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc
-/var/lib/shopapi/selinux_soak_last_fail.avc should exist. Press Enter here when you have shown that." \
+/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc should exist. Leave it there. Press Enter here when you have shown that." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc $(e2e_auto_flags)'"
 
         tlab_explain "Enforce without force_enforce. That flag would skip this AVC failure and the seven-day count. We do not pass it. The day count is not how you get past a denial."

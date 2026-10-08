@@ -119,11 +119,15 @@ else
 fi
 
 avc_count=0
+ignored_count=0
+ignored_json='[]'
 if [[ -f "${MARKER_FILE}" ]]; then
     MONITOR_ARGS=(--domain "${DOMAIN}" --marker-file "${MARKER_FILE}" --max-avc -1 --show-lines 0 --format json)
     [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]] && MONITOR_ARGS+=(--manifest "${MANIFEST}")
-    avc_json="$(bash "${SCRIPT_DIR}/monitor_avc.sh" "${MONITOR_ARGS[@]}" 2>/dev/null || echo '{"count":0}')"
+    avc_json="$(bash "${SCRIPT_DIR}/monitor_avc.sh" "${MONITOR_ARGS[@]}" 2>/dev/null || echo '{"count":0,"ignored_count":0,"ignored":[]}')"
     avc_count="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("count",0))' <<< "${avc_json}" 2>/dev/null || echo 0)"
+    ignored_count="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("ignored_count",0))' <<< "${avc_json}" 2>/dev/null || echo 0)"
+    ignored_json="$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get("ignored", [])))' <<< "${avc_json}" 2>/dev/null || echo '[]')"
 fi
 
 soak_days=0
@@ -245,6 +249,8 @@ report = {
     "endpoints_exercised": endpoint_data.get("status") == "pass",
     "endpoints_all_passed": endpoint_data.get("status") == "pass",
     "avc_count_since_marker": int("${avc_count}"),
+    "ignored_count": int("${ignored_count}"),
+    "ignored": json.loads("""${ignored_json}"""),
     "soak_days_elapsed": int("${soak_days}"),
     "status": "${overall_status}",
     "host_admin_actions": host_admin_actions,

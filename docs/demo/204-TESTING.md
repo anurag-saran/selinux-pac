@@ -99,16 +99,14 @@ python3 scripts/smoke_test.py
 
 | Test name | What it verifies |
 |-----------|------------------|
-| `prompts` | AI user prompt includes domain, existing `.te`, AVC summary structure |
 | `avc_parsing` | `parse_avc_line`, dedup, domain filter |
 | `perm_merge` | Duplicate AVC lines merge permissions on same src/tgt/class |
 | `type_extraction_dedup` | `system_r` vs `object_r` in scontext normalize to same type |
 | `subtract_existing` | Net-new detection skips permissions already in `.te` |
 | `net_new_detection` | Partial overlap — only missing perms flagged net-new |
-| `preprocess_stats` | Raw vs merged AVC counts for LLM input |
-| `prompt_uses_summary` | Prompt contains Net-new / Already covered sections |
-| `no_changes_needed_summary` | Fully covered AVCs produce no-change summary |
-| `policy_json_validation` | AI JSON shape, forbidden patterns, PR summary headings |
+| `preprocess_stats` | Raw vs merged AVC counts |
+| `structured_summary_sections` | Summary contains Net-new / Already covered sections |
+| `pr_summary_headings` | `pr_summary` requires the four section headings |
 | `version_bump` | SemVer bump in `policy_version.txt` |
 | `version_consistency` | `validate_version_consistency.sh` passes on committed `selinux/` |
 | `classify_fail_closed_json` | Corrupt blast-radius input → JSON with `fail_closed: true` |
@@ -126,7 +124,12 @@ python3 scripts/smoke_test.py
 | `e2e_quiet_ssh_wrap_skips_when_ssh_missing` | `e2e_install_quiet_ssh` no-ops when `ssh`/`scp` are missing or `E2E_DRY=1` |
 | `app_manifest` | Validates demo + example manifests; `shell-export` emits expected keys |
 | `rpm_ops_parity` | Ops RPM file list matches repo scripts |
-| `skip_ai_fixture_sync` | Offline demo `skip_ai/generated/` matches committed `selinux/` |
+| `ops_rpm_soak_cli_imports_alone` | `pac_cli.list` copied alone runs `soak_net_new.py --help` |
+| `monitor_records_soak_stderr` | A failed soak check records that command's stderr |
+| `soak_counts_every_domain_denial` | Domain denials outside the manifest paths still count |
+| `soak_ignore_is_explicit` | `soak.ignore` is the only drop list, and the day JSON records it |
+| `offline_fixture_sync` | Offline demo `offline/generated/` matches committed `selinux/` |
+| `tracked_tree_has_no_model_client` | Tracked files do not name a removed model client |
 | `deterministic_verdict_fixture_coverage` | Every classification verdict has ≥1 golden row under `docs/examples/fixtures/deterministic/` |
 | `needs_review_hits` | `execmem` / `dac_override` / foreign `process transition` match `NEEDS_REVIEW_RULES`; in-module transition does not |
 | `deterministic_fixture_classify` | Each fixture: `--explain` + generation vs `expected.json`; optional `sepolgen_mock.json` |
@@ -141,7 +144,7 @@ python3 scripts/smoke_test.py
 | Compile | `bash scripts/compile_and_validate.sh selinux` | Yes — `selinux-policy-devel` on **rhel-qa** |
 | Semantic assertions | `bash scripts/validate_policy_semantics.sh selinux` | Yes — rhel-qa |
 | Staging + AVC export | `make demo-bootstrap` + curl shopapi `/health` `/state` `/log` | Yes (RHEL **qa**) |
-| AI / deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
+| Deterministic generate | `bash scripts/dev_generate_policy.sh --apply --app-name shopapi` | Yes (RHEL **qa**) |
 | **Enforce-check** | `bash scripts/dev_generate_policy.sh --apply --enforce-check --app-name shopapi` | Yes (root on RHEL **qa**) |
 
 **`--enforce-check`** compiles the candidate `.pp`, removes permissive on the manifest domain, runs `restorecon` on the manifest paths, restarts the manifest units, runs `wait_for_endpoints.sh` (including domain-context verification), and prints recent AVCs on failure.
@@ -160,10 +163,18 @@ The generator already ran the same forbidden-pattern check, so these jobs are ex
 |-----------|----------------|----------------|
 | `offline-tests` | `make test` | Deterministic fixtures, blast-radius fixtures, tune-report fixtures, smoke tests, and the static validators |
 | `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments`, then `cli/policy_audit.py` | No wildcards, forbidden target types, or `bin_t` execute |
-| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` in a CentOS Stream 9 container | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
+| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` on Stream 9, or on the `rhel9-utm` runner when `RUNNER` is set | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
 | `version-consistency` | `scripts/validate_version_consistency.sh` | `policy_version.txt` matches `policy_module()` |
 
 Those four names are stable so branch protection can require them. `make check` on a laptop is `make test` plus linters. The Stream 9 job is the compile. A laptop without `selinux-policy-devel` does not compile.
+
+Repo variable `RUNNER` defaults to unset, which is `ubuntu-latest` plus the Stream 9 image for the SELinux jobs (`compiled-policy`, `app-compiled-policy`, `bypass-rejected`, and `shopapi-policy-compile`). Set `RUNNER` to `rhel9-utm` to run those jobs directly on that runner.
+
+Register the runner on a dedicated **rhel-ci** VM. Do not register it on rhel-qa or rhel-prod. On that VM, install the GitHub Actions runner, and give it the label `rhel9-utm`. The runner user needs passwordless `dnf` so the job can install `selinux-policy-devel` and `setools-console`. Then set the repository variable `RUNNER` to `rhel9-utm`.
+
+A public repository that uses a self-hosted runner must require approval before workflows from outside collaborators run, or the repository must be private. A pull request from a fork can otherwise run code on the VM.
+
+`make vm-check` is the same compile list on the QA VM, not on the runner. Copy `scripts/lab.env.example` to `scripts/lab.env`, set `QA_HOST`, `PROD_HOST`, and `SSH_USER`, then run `make vm-check`. It syncs the checkout and prints one PASS or FAIL line per check. The last line is `host-unchanged`: `semodule -l` must not list `bypass_*` or `pac_control`.
 
 Compiled `selinux/myapp.pp` is **not** committed to Git.
 

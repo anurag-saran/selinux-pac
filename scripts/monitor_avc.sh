@@ -143,13 +143,31 @@ if [[ -z "${raw}" ]] && ! command -v ausearch >/dev/null 2>&1 && [[ ! -f /var/lo
     exit 1
 fi
 
+ignored_log="$(mktemp)"
+: > "${ignored_log}"
 matches=()
 while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
     matches+=("${line}")
-done < <(printf '%s\n' "${raw}" | avc_filter_lines_by_paths "${PATHS}" "${DOMAIN}")
+done < <(printf '%s\n' "${raw}" | avc_filter_lines_by_paths "${PATHS}" "${DOMAINS_CSV}" "${SOAK_IGNORE_CSV:-}" "${ignored_log}")
 
 count="${#matches[@]}"
+ignored_count="$(wc -l < "${ignored_log}" | tr -d '[:space:]')"
+ignored_json="$(python3 - "${ignored_log}" <<'PY'
+import collections, json, sys
+
+counts = collections.Counter()
+for line in open(sys.argv[1], encoding="utf-8"):
+    parts = line.split()
+    if len(parts) == 2:
+        counts[tuple(parts)] += 1
+rows = [
+    {"tclass": tclass, "target_type": target, "count": count}
+    for (tclass, target), count in sorted(counts.items())
+]
+print(json.dumps(rows))
+PY
+)"
 
 net_new_json="$(mktemp)"
 net_new_count=0
@@ -169,7 +187,8 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
             soak_cmd+=(--manifest "${MANIFEST}")
         fi
-        if printf '%s\n' "${matches[@]}" | "${soak_cmd[@]}" >/dev/null 2>&1; then
+        soak_err="$(mktemp)"
+        if printf '%s\n' "${matches[@]}" | "${soak_cmd[@]}" >/dev/null 2>"${soak_err}"; then
             net_new_count="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("net_new_count",-1))' "${net_new_json}")"
             if [[ "$(python3 -c 'import json,sys; print(1 if json.load(open(sys.argv[1])).get("fail_closed") else 0)' "${net_new_json}")" -eq 1 ]]; then
                 avc_fail_closed=1
@@ -178,8 +197,10 @@ if [[ ${#matches[@]} -gt 0 ]]; then
         else
             net_new_count=-1
             avc_fail_closed=1
-            fail_closed_reason="soak_net_new.py failed (sesearch / policy.kern)"
+            fail_closed_reason="$(tr '\n' ' ' <"${soak_err}")"
+            fail_closed_reason="${fail_closed_reason:-soak_net_new.py failed}"
         fi
+        rm -f "${soak_err}"
     fi
 fi
 
@@ -192,6 +213,66 @@ if [[ "${MAX_AVC}" -ge 0 && "${count}" -gt "${MAX_AVC}" ]]; then
 fi
 if [[ "${MAX_NET_NEW}" -ge 0 && "${net_new_count}" -ge 0 && "${avc_fail_closed}" -eq 0 && "${net_new_count}" -gt "${MAX_NET_NEW}" ]]; then
     fail=1
+fi
+
+ignored_stale_daily='[]'
+ignored_stale_fail='[]'
+if [[ -n "${MARKER_FILE}" && -f "${MARKER_FILE}" && -n "${FAIL_DIR}" && -d "${FAIL_DIR}" ]]; then
+    stale_out="$(python3 - "${MARKER_FILE}" "${FAIL_DIR}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+marker_path, fail_dir = Path(sys.argv[1]), Path(sys.argv[2])
+raw = marker_path.read_text(encoding="utf-8").strip()
+if not raw.isdigit():
+    print(json.dumps({"daily": [], "fail": []}))
+    raise SystemExit(0)
+marker = int(raw)
+
+
+def record_epoch(path: Path, record: dict) -> int:
+    for key in ("marker_epoch", "since"):
+        value = record.get(key)
+        if isinstance(value, int) or (isinstance(value, str) and str(value).isdigit()):
+            return int(value)
+    return int(path.stat().st_mtime)
+
+
+daily = []
+daily_dir = fail_dir / "daily"
+if daily_dir.is_dir():
+    for path in sorted(daily_dir.glob("*.json")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                record = {}
+        except (json.JSONDecodeError, OSError):
+            record = {}
+        if record_epoch(path, record) < marker:
+            daily.append(path.name)
+
+fail_names = []
+fail_json = fail_dir / "selinux_soak_last_fail.json"
+fail_avc = fail_dir / "selinux_soak_last_fail.avc"
+if fail_json.is_file():
+    try:
+        record = json.loads(fail_json.read_text(encoding="utf-8"))
+        if not isinstance(record, dict):
+            record = {}
+    except (json.JSONDecodeError, OSError):
+        record = {}
+    if record_epoch(fail_json, record) < marker:
+        fail_names.append(fail_json.name)
+        if fail_avc.is_file():
+            fail_names.append(fail_avc.name)
+elif fail_avc.is_file() and int(fail_avc.stat().st_mtime) < marker:
+    fail_names.append(fail_avc.name)
+print(json.dumps({"daily": daily, "fail": fail_names}))
+PY
+)"
+    ignored_stale_daily="$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])["daily"]))' "${stale_out}")"
+    ignored_stale_fail="$(python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])["fail"]))' "${stale_out}")"
 fi
 
 NEXT_STEP=""
@@ -212,6 +293,8 @@ if [[ "${fail}" -eq 1 && -n "${FAIL_DIR}" ]]; then
         MON_MAX_AVC="${MAX_AVC}" MON_MAX_NET_NEW="${MAX_NET_NEW}" \
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
+        MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
+        MON_STALE_DAILY="${ignored_stale_daily}" MON_STALE_FAIL="${ignored_stale_fail}" \
         MON_NEXT_STEP="${NEXT_STEP}" MON_FAIL_DIR="${FAIL_DIR}" \
         python3 - "${net_new_json}" "${FAIL_DIR}/selinux_soak_last_fail.json" "${avc_excerpt}" <<'PY'
 import json, os, sys
@@ -229,6 +312,10 @@ payload = {
     "net_new_count": int(os.environ.get("MON_NET_NEW", "-1")),
     "avc_fail_closed": os.environ.get("MON_FAIL_CLOSED", "0") == "1",
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
+    "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
+    "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
+    "ignored_stale_daily": json.loads(os.environ.get("MON_STALE_DAILY", "[]")),
+    "ignored_stale_fail": json.loads(os.environ.get("MON_STALE_FAIL", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": "fail",
     "next_step": os.environ.get("MON_NEXT_STEP", ""),
@@ -245,6 +332,8 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
         MON_MAX_AVC="${MAX_AVC}" MON_MAX_NET_NEW="${MAX_NET_NEW}" \
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
+        MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
+        MON_STALE_DAILY="${ignored_stale_daily}" MON_STALE_FAIL="${ignored_stale_fail}" \
         MON_STATUS="$([[ "${fail}" -eq 1 ]] && echo fail || echo pass)" \
         MON_NEXT_STEP="${NEXT_STEP}" \
         python3 - "${net_new_json}" <<'PY'
@@ -264,6 +353,10 @@ out = {
     "net_new_count": int(os.environ.get("MON_NET_NEW", "-1")),
     "avc_fail_closed": os.environ.get("MON_FAIL_CLOSED", "0") == "1",
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
+    "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
+    "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
+    "ignored_stale_daily": json.loads(os.environ.get("MON_STALE_DAILY", "[]")),
+    "ignored_stale_fail": json.loads(os.environ.get("MON_STALE_FAIL", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": os.environ.get("MON_STATUS", "pass"),
 }
@@ -276,7 +369,7 @@ else
     log_info "AVC report: domain=${DOMAIN} since=${SINCE} count=${count} net_new=${net_new_count}"
 fi
 
-rm -f "${net_new_json}"
+rm -f "${net_new_json}" "${ignored_log}"
 
 if [[ "${OUTPUT_FORMAT}" != "json" && "${SHOW_LINES}" -gt 0 && "${count}" -gt 0 ]]; then
     echo "--- recent matching event lines ---"

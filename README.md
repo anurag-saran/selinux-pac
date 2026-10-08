@@ -234,5 +234,4 @@ docs/admin/       301 ship
 
 - Never `force_enforce` without a change ticket. Never copy `soak_min_days: 0` from `inventory.dev.yml` onto prod (enforce refuses it on the `production` group). The three-window demo may pass `force_enforce=true` with `-e change_ticket=DEMO` so the talk can finish.
 - If a file or port is denied after ship: [docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) — PR + recanary, not live `semodule -i`.
-- Optional LLM polishes `pr_summary.md` only. Legacy `--legacy-full-policy` is emergency/controller-only.
 - AAP is the control plane (RPMs, `serial: 1`). Do not `semodule -i` generated policy on prod.

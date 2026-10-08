@@ -183,8 +183,6 @@ def audit_tree(repo: Path, selinux_dir: Path) -> list[str]:
             for hit in dontaudit_forbidden_hits(text):
                 errors.append(f"{path.relative_to(repo)}: {hit}")
             continue
-        if path.name.endswith("_canary.fc"):
-            continue
         module = path.stem
         paths = _manifest_paths(repo, module)
         tokens = fc_path_tokens(text)

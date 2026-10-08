@@ -1,5 +1,5 @@
 # Exercise the three-app demo scripts without a RHEL host.
-# Policy compile needs selinux-policy-devel (Fedora container).
+# Policy compile uses the same Stream 9 image as policy CI, or the rhel9-utm runner.
 name: Demo estate
 
 on:
@@ -66,9 +66,11 @@ jobs:
 
   shopapi-policy:
     name: shopapi-policy-compile
-    runs-on: ubuntu-latest
-    container: fedora:41
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ vars.RUNNER == 'rhel9-utm' && fromJSON('null') || 'quay.io/centos/centos:stream9' }}
     steps:
+      - name: Install git for checkout
+        run: dnf install -y git
       - uses: actions/checkout@v4
       - name: Install selinux-policy-devel
         run: dnf install -y selinux-policy-devel make python3
