@@ -228,6 +228,71 @@ def test_rpm_signing_tree_and_shopapi_ports() -> None:
         assert "labs only" in warned.stderr
 
 
+def test_signed_repo_published_on_qa() -> None:
+    """Canary installs latest from a gpgcheck=1 repo. Signing uses --key-id or _gpg_name."""
+    install = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "install_packages.yml"
+    ).read_text(encoding="utf-8")
+    assert "ansible.builtin.rpm_key" in install
+    assert "ansible.builtin.yum_repository" in install
+    assert "gpgcheck: 1" in install
+    assert "state: latest" in install
+    assert "update_cache: true" in install
+    publish = PROJECT_ROOT / "packaging" / "publish_internal.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        dist = PROJECT_ROOT / "dist"
+        dist.mkdir(exist_ok=True)
+        dummy = dist / "smoke-sign.rpm"
+        dummy.write_bytes(b"not-a-real-rpm")
+        bindir = root / "bin"
+        bindir.mkdir()
+        log = root / "rpmsign.log"
+        sudo = bindir / "sudo"
+        sudo.write_text("#!/bin/sh\nexec \"$@\"\n", encoding="utf-8")
+        sudo.chmod(0o755)
+        createrepo = bindir / "createrepo_c"
+        createrepo.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        createrepo.chmod(0o755)
+
+        def write_rpmsign(help_text: str) -> None:
+            (bindir / "rpmsign").write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = --help ]; then printf '%s\\n' \"" + help_text + "\"; exit 0; fi\n"
+                "printf '%s\\n' \"$*\" >> \"$RPMSIGN_LOG\"\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            (bindir / "rpmsign").chmod(0o755)
+
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:/usr/bin:/bin"
+        env["SELINUX_INTERNAL_ENV"] = str(root / "no-such.env")
+        env["SELINUX_RPM_REPO"] = str(root / "repo")
+        env["SELINUX_GPG_NAME"] = "selinux-pac-lab"
+        env["LAB_GNUPGHOME"] = str(root / "gnupg")
+        env["RPMSIGN_LOG"] = str(log)
+        env.pop("SELINUX_ALLOW_UNSIGNED", None)
+        write_rpmsign("Usage: rpmsign --addsign --key-id KEYID")
+        with_key = subprocess.run(
+            [BASH, str(publish)], cwd=PROJECT_ROOT, capture_output=True, text=True, env=env
+        )
+        assert with_key.returncode == 0, with_key.stderr
+        signed = log.read_text(encoding="utf-8")
+        assert "--key-id" in signed
+        assert "_gpg_name selinux-pac-lab" in signed
+        log.write_text("", encoding="utf-8")
+        write_rpmsign("Usage: rpmsign --addsign")
+        with_macro = subprocess.run(
+            [BASH, str(publish)], cwd=PROJECT_ROOT, capture_output=True, text=True, env=env
+        )
+        dummy.unlink(missing_ok=True)
+        assert with_macro.returncode == 0, with_macro.stderr
+        signed = log.read_text(encoding="utf-8")
+        assert "--key-id" not in signed
+        assert "_gpg_name selinux-pac-lab" in signed
+
+
 def test_selinux_ports_and_canary_refuses_modify() -> None:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
     from app_manifest import (
@@ -1087,7 +1152,9 @@ def test_demo_e2e_scripts_dry_run() -> None:
     guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "git checkout main" in mac_text
     assert "gpgcheck=1" in mac_text
-    assert "No signing key" in mac_text
+    assert "private key stays on rhel-qa" in mac_text
+    assert "dnf repolist" in prod_text
+    assert "rpm -q gpg-pubkey" in prod_text
     assert "rpm -Uvh" not in mac_text
     assert "rpm -Uvh" not in prod_text
     assert "192.168.64." not in guide_203
@@ -3790,6 +3857,7 @@ def main() -> int:
     tests = [
         ("existing_execmem_rules_stay_baseline", test_existing_execmem_rules_stay_baseline),
         ("rpm_signing_tree_and_shopapi_ports", test_rpm_signing_tree_and_shopapi_ports),
+        ("signed_repo_published_on_qa", test_signed_repo_published_on_qa),
         ("selinux_ports_and_canary_refuses_modify", test_selinux_ports_and_canary_refuses_modify),
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),

@@ -44,6 +44,13 @@ cat >"${ROOT}/dist/lab-rpmmacros" <<EOF
 %_gpg_path ${GNUPGHOME}
 EOF
 
+cat >"${ROOT}/dist/lab-signing.env" <<EOF
+SELINUX_GPG_NAME=${NAME}
+SELINUX_RPM_REPO=${REPO}
+LAB_GNUPGHOME=${GNUPGHOME}
+EOF
+chmod 0644 "${ROOT}/dist/lab-signing.env"
+
 echo "SELINUX_GPG_NAME=${NAME}"
 echo "SELINUX_RPM_REPO=${REPO}"
 echo "GNUPGHOME=${GNUPGHOME}"

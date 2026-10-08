@@ -138,6 +138,8 @@ all:
     soak_use_net_new: true
     rollback_dnf_version: ""
     http_probe_host: "127.0.0.1"
+    selinux_rpm_repo_baseurl: "http://${DEV_HOST}:8765"
+    selinux_rpm_gpgkey: "http://${DEV_HOST}:8765/RPM-GPG-KEY"
 EOF
 
     echo "Wrote ${DEV_INVENTORY} (qa=${DEV_HOST}, host rhel-qa)"

@@ -157,7 +157,7 @@ After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permi
 
 ```mermaid
 flowchart TD
-  rpm["Mac builds RPMs from merged main"] --> repo["dnf repo, gpgcheck=1"]
+  rpm["rhel-qa builds and signs RPMs"] --> repo["HTTP repo on rhel-qa, gpgcheck=1"]
   repo --> canary["Mac: deploy_canary.yml"]
   canary --> soak["Prod: curl /feature-spool during soak"]
   soak --> mon["Mac: soak_monitor fails"]
@@ -175,7 +175,7 @@ On the machine that publishes, create the lab key and the local repo once. The s
 bash scripts/lab_signing_setup.sh
 ```
 
-Export `SELINUX_GPG_NAME` and `SELINUX_RPM_REPO` from its output. On the Mac the talk checks out merged `main`, runs `bash packaging/build_rpms.sh`, and publishes that repo. If `SELINUX_GPG_NAME` is unset, it says so and does not install anything. There is no `rpm -Uvh`.
+Run that on rhel-qa. The private key stays there. rhel-qa checks out merged `main`, runs `bash packaging/build_rpms.sh`, signs with `rpmsign`, runs `createrepo_c`, and serves the directory over HTTP. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
 
 Switch to prod:
 
@@ -183,7 +183,7 @@ Switch to prod:
 bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
 ```
 
-That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. If this lab has no signing key, say that out loud and stop.
+That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. It shows `dnf repolist` and `rpm -q gpg-pubkey`.
 
 Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only then restarts the service:
 

@@ -38,7 +38,16 @@ elif [[ -z "${SELINUX_GPG_NAME:-}" ]] || ! command -v rpmsign >/dev/null 2>&1; t
     exit 1
 else
     echo "Signing RPMs with GPG name ${SELINUX_GPG_NAME}"
-    rpmsign --addsign --key-id "${SELINUX_GPG_NAME}" "${DIST}"/*.rpm
+    sign_args=(--addsign)
+    if [[ -n "${LAB_GNUPGHOME:-}" ]]; then
+        sign_args+=(--define "_gpg_path ${LAB_GNUPGHOME}")
+    fi
+    sign_args+=(--define "_gpg_name ${SELINUX_GPG_NAME}")
+    # RHEL 9 rpm dropped --key-id. Older rpm still accepts it.
+    if rpmsign --help 2>&1 | grep -q -- '--key-id'; then
+        sign_args+=(--key-id "${SELINUX_GPG_NAME}")
+    fi
+    rpmsign "${sign_args[@]}" "${DIST}"/*.rpm
 fi
 
 sudo mkdir -p "${REPO_DIR}"

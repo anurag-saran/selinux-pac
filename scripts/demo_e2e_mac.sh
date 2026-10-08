@@ -85,20 +85,15 @@ mac_canary_enforce_dev() {
 
 mac_ship_prod() {
     local mode="${1:-soak_demo}"
-    tlab_explain "Ship only after the PR is merged. Build the RPMs from merged main, not from the unmerged checkout."
-    e2e_run "git fetch origin main && git checkout main && git pull --ff-only origin main"
-    e2e_run "bash packaging/build_rpms.sh"
-    e2e_run "ls dist/*.rpm"
+    tlab_explain "Ship only after the PR is merged. rhel-qa builds, signs, and publishes. The private key stays on rhel-qa."
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && git fetch origin main && git checkout main && git pull --ff-only origin main'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash packaging/build_rpms.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash scripts/lab_signing_setup.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash packaging/publish_internal.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash scripts/serve_lab_repo.sh'"
     tlab_pause
 
-    tlab_explain "Prod installs from a dnf repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand."
-    if [[ -z "${SELINUX_GPG_NAME:-}" ]]; then
-        echo "No signing key: SELINUX_GPG_NAME is unset. Run bash scripts/lab_signing_setup.sh, then export SELINUX_GPG_NAME and SELINUX_RPM_REPO. Do not install unsigned RPMs on prod."
-        echo "Expected: spoken stop — no signing key; do not install unsigned RPMs on prod"
-    else
-        e2e_run "bash packaging/publish_internal.sh"
-        echo "Expected: repo snippet with gpgcheck=1"
-    fi
+    tlab_explain "Prod installs from that HTTP repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand. No signing key is copied to the Mac or to prod."
     tlab_explain "deploy_canary.yml installs the RPMs with dnf and sets shopapi_t permissive before it restarts the service."
 
     e2e_handoff "On the PROD VM window run:
