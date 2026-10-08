@@ -73,7 +73,7 @@ Default (when `APP_MANIFEST` is unset): `config/${POLICY_APP:-myapp}.manifest.ym
 3. Always include `services.primary` and real health path(s).
 4. Run staging permissive → export AVCs → generate policy (`bash scripts/dev_generate_policy.sh`, which runs **`deterministic_gen.py`**).
 
-See [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md) for the full test-layer model.
+See [`docs/demo/303-TESTING.md`](../docs/demo/303-TESTING.md) for the full test-layer model.
 
 ## Ansible inventory
 

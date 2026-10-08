@@ -26,7 +26,7 @@ Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9
 
 Playbooks delegate to role [`roles/selinux_pac/`](roles/selinux_pac/). The old `myapp_selinux` role is gone — do not restore it. Target scripts live in RPM **`selinux-policy-ops`** at **`/usr/libexec/selinux-policy-ops`** (inventory: `selinux_ops_dir`). Checkout (no ops RPM) sets `selinux_ops_from_package: false` and points `selinux_ops_dir` at the **target** checkout `scripts/` tree (not `playbook_dir` on a laptop).
 
-**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md). Testing matrix: [`docs/demo/204-TESTING.md`](../docs/demo/204-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
+**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md). Testing matrix: [`docs/demo/303-TESTING.md`](../docs/demo/303-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
 
 ---
 

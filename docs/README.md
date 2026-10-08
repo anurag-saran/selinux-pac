@@ -5,7 +5,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | Folder | Start |
 |--------|--------|
 | [training/](training/101-CONCEPTS.md) | **[101](training/101-CONCEPTS.md)** concepts, then the command catalog and the hand-built lab |
-| [demo/](demo/301-CUSTOMER.md) | **[202](demo/301-CUSTOMER.md)** (20 min) then **[203](demo/302-TECHNICAL.md)** (45 min). **[201](tool/201-TOOL-COMMANDS.md)** is the tool. **[204](demo/204-TESTING.md)** is `make check`. |
+| [demo/](demo/301-CUSTOMER.md) | **[301](demo/301-CUSTOMER.md)** (20 min) then **[302](demo/302-TECHNICAL.md)** (45 min). **[201](tool/201-TOOL-COMMANDS.md)** and **[202](tool/202-TOOL-LAB.md)** are the tool. **[303](demo/303-TESTING.md)** is `make check`. |
 | [admin/](admin/301-ANSIBLE_OPERATIONS.md) | **[301](admin/301-ANSIBLE_OPERATIONS.md)** canary, soak, enforce |
 
 | Pattern | Meaning |
@@ -37,7 +37,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | **302** | [Two Linux VMs](demo/302-TECHNICAL.md) | `demo_e2e_*.sh` — three windows, ~45 min |
 | **201** | [Tool commands](tool/201-TOOL-COMMANDS.md) | Each script and playbook, the commands it runs, and which **104** steps it replaces |
 | **202** | [Tool lab](tool/202-TOOL-LAB.md) | The **104** outcome using the scripts |
-| **204** | [Testing](demo/204-TESTING.md) | `make check`, CI, endpoints |
+| **303** | [Testing](demo/303-TESTING.md) | `make check`, CI, endpoints |
 | **301** | [Ship the module](admin/301-ANSIBLE_OPERATIONS.md) | Canary, soak, enforce, and a denial after ship |
 
 `make training-lab` prints the 202 talk and runs nothing. It is not a third lab.

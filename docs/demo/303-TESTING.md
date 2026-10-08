@@ -1,6 +1,6 @@
-# 204 — Testing
+# 303 — Testing
 
-This is the testing guide. Older notes called the same page 205.
+This is the testing guide. Older notes called the same page 204, then 205.
 
 This document is the **single reference** for how this repository tests SELinux policy — from developer laptop checks through production enforce gates.
 
@@ -10,7 +10,7 @@ This document is the **single reference** for how this repository tests SELinux 
 | **Policy author opening a PR** | §4 CI on pull requests | §5 Shell gate scripts |
 | **Admin / SRE** | §6 Staging and production gates | [`302-TECHNICAL.md`](302-TECHNICAL.md), [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) |
 
-Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](301-CUSTOMER.md)**; **file-by-file code tour** in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md).
+Related: concepts in **[101](../training/101-CONCEPTS.md)**; commands in **[102](../training/102-COMMANDS.md)**; the hand-built lab in **[104](../training/104-HAND-BUILT-MODULE.md)**; the customer talk in **[301](301-CUSTOMER.md)**; tool commands in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md). The soak gate fails closed when `sesearch` is missing ([201](../tool/201-TOOL-COMMANDS.md#scriptsmonitor_avcsh)).
 
 **Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([302-TECHNICAL.md](302-TECHNICAL.md)).
 
