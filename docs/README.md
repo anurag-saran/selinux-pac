@@ -32,6 +32,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | **101** | [Concepts](training/101-CONCEPTS.md) | Labels, enforcing, an AVC line. Commands: `getenforce`, `ls -Z`, `ps -eZ` |
 | **102** | [Commands](training/102-COMMANDS.md) | One question per command: mode, labels, ports, booleans, modules, policy query, audit |
 | **103** | [Config files](training/103-CONFIG-FILES.md) | The files those commands read and write, including module priority |
+| **104** | [Hand-built module](training/104-HAND-BUILT-MODULE.md) | Shopapi labs with the commands from **102**. No repo script |
 | **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
 | **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
 | **201** | [How the tool works](demo/201-CODE_WALKTHROUGH.md) | Folders, generate, a second app, what a PR must not contain |
