@@ -1086,11 +1086,14 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     assert "day count" in clean
     talk = mac.split("Part 6 —", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
+    glass = talk.find("break_glass_reason")
+    fail = talk.find("--part fail")
+    rollback = talk.find("emergency_rollback.yml")
     fix = talk.find("--part generate --skip-export")
     recanary = talk.find("mac_ship_prod recanary")
-    rollback = talk.find("emergency_rollback.yml")
-    assert -1 not in (dirty, fix, recanary, rollback)
-    assert dirty < fix < recanary < rollback
+    ends = talk.find("shopapi_t enforcing")
+    assert -1 not in (dirty, glass, fail, rollback, fix, recanary, ends)
+    assert dirty < glass < fail < rollback < fix < recanary < ends
     assert "/feature-spool" in prod
     assert "part_soak()" in prod
     assert "lab_signing_setup.sh" in guide
@@ -1107,6 +1110,35 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     )
     assert refused.returncode != 0
     assert "private key" in (refused.stdout + refused.stderr).lower()
+
+
+def test_demo_outage_before_fix_dry_run() -> None:
+    """Dry-run prints the 500 and the rollback before the spool allow, and ends enforcing."""
+    mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        uname = Path(tmp) / "uname"
+        uname.write_text("#!/bin/sh\necho Darwin\n", encoding="utf-8")
+        uname.chmod(0o755)
+        env = _lab_hosts()
+        env["PATH"] = f"{tmp}:{env.get('PATH', '/usr/bin:/bin')}"
+        run = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    out = run.stdout + run.stderr
+    assert run.returncode == 0, out
+    refuse = out.find("enforce_production.yml -e change_ticket=DEMO")
+    glass = out.find("break_glass_reason=")
+    fail = out.find("--part fail")
+    rollback = out.find("emergency_rollback.yml")
+    fix = out.find("--part generate --skip-export")
+    clean = out.find("--part soak-clean")
+    ends = out.find("shopapi_t enforcing")
+    assert -1 not in (refuse, glass, fail, rollback, fix, clean, ends), out
+    assert refuse < glass < fail < rollback < fix < clean < ends
 
 
 def test_demo_e2e_scripts_dry_run() -> None:
@@ -3883,6 +3915,7 @@ def main() -> int:
         ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
+        ("demo_outage_before_fix_dry_run", test_demo_outage_before_fix_dry_run),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),

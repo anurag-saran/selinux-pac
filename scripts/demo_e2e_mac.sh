@@ -160,7 +160,7 @@ cd "${PROJECT_ROOT}"
 e2e_banner "MAC — the remote control (no SELinux on this laptop)"
 tlab_why "macOS cannot enforce SELinux. This window talks to two RHEL VMs over SSH: QA ${DEV_HOST} and prod ${PROD_HOST}."
 tlab_explain "Look at the prompt. If it says rhel-qa or rhel-prod, you are in the wrong window."
-tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate on rhel-qa → PR → prod canary. The soak curls /feature-spool, the monitor fails, and enforce without force_enforce refuses. Fix on rhel-qa, second PR, recanary, clean soak, then enforce. The day-count skip is force_enforce and is written in the deploy report. The outage and rollback beat comes after that."
+tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate on rhel-qa → PR → prod canary. The soak curls /feature-spool, the monitor fails, and enforce without force_enforce refuses. Break-glass enforce of that first module makes /feature-spool return 500. Roll back, then generate, second PR, recanary, clean soak, and enforce. The demo ends enforcing."
 tlab_pause
 
 tlab_print_section "Part 1 — Can the Mac reach the VMs?"
@@ -216,10 +216,30 @@ tlab_print_section "Part 5 — Canary + lab enforce on QA"
 mac_canary_enforce_dev
 tlab_pause
 
-tlab_print_section "Part 6 — Prod soak hits /feature-spool; the gate refuses; then the fix is enforced"
+tlab_print_section "Part 6 — Prod soak refuses, then the outage and rollback"
 mac_ship_prod soak_demo
 tlab_pause
 
+tlab_explain "Break-glass enforce of the first module. The spool allow is not in it, so /feature-spool returns 500. This skips the soak gate. It is not the clean enforce at the end."
+e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true -e break_glass_reason='show the enforcing denial before the fix'"
+tlab_pause
+
+e2e_handoff "On the PROD VM window run:
+  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
+curl /feature-spool returns 500. The denial is shopapi_t and var_spool_t." \
+    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
+
+tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
+e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
+tlab_pause
+
+e2e_handoff "On the PROD VM window run:
+  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
+curl /health and /feature-spool should return 200 again. Press Enter here when the app is up." \
+    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
+tlab_pause
+
+tlab_print_section "Part 7 — Fix, recanary, clean soak, enforce"
 tlab_explain "The denial is already in /tmp/prod-feature-spool.avc. Generate the spool allow on rhel-qa. Do not semodule -i on prod."
 mac_copy_prod_avc_to_dev
 tlab_pause
@@ -239,22 +259,7 @@ mac_canary_enforce_dev
 tlab_pause
 mac_ship_prod recanary
 tlab_pause
-
-tlab_print_section "Part 7 — Outage and rollback"
-tlab_explain "This beat is the enforcing denial and the rollback. It is what you show when shopapi_t is enforcing and the loaded module does not allow /var/spool/shopapi. After the fix above, that allow is loaded, so /feature-spool returns 200. Say the rollback playbook anyway: it puts the domain back to permissive and getenforce stays Enforcing."
-e2e_handoff "On the PROD VM window run:
-  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
-When the spool allow is not loaded, curl /feature-spool returns 500 and /tmp/prod-feature-spool.avc is written. After Part 6, expect HTTP 200." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
-
-tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
-e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
-tlab_pause
-
-e2e_handoff "On the PROD VM window run:
-  bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
-curl /health and /feature-spool should return 200 again. Press Enter here when the app is up." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
+tlab_checkpoint "The demo ends with shopapi_t enforcing."
 
 echo
 echo -e "${TLAB_BOLD}End of the Mac talk track.${TLAB_NC} Full script: docs/demo/302-TECHNICAL.md"

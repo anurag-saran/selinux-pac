@@ -216,7 +216,7 @@ flowchart TD
 
 Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe `audit2allow` into `semodule` on the server.
 
-1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [203](../demo/302-TECHNICAL.md) shows this after `/feature-spool` returns 500.
+1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [302](../demo/302-TECHNICAL.md) enforces the first module with break-glass so `/feature-spool` returns 500, rolls back, and only then generates the fix. The talk ends enforcing.
 2. Copy `/var/lib/<app>/selinux_soak_last_fail.json` and `selinux_soak_last_fail.avc` off the host.
 3. On rhel-qa, run `bash scripts/dev_generate_policy.sh`. If the vendor check says the app is already covered, re-run with `--tune-report` and apply those host commands. Use `--force "reason"` only when the app really is not the vendor one.
 4. Open the pull request on the **app** repo. The reusable workflow runs forbidden-patterns, the source audit, version consistency, and the Stream 9 compiled check.

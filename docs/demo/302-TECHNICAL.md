@@ -151,7 +151,7 @@ ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e 
 
 After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permissive.
 
-## Part 6 — Prod soak hits `/feature-spool`, the gate refuses, then the fix is enforced
+## Part 6 — Prod soak refuses, then the outage and rollback
 
 [ausearch](../training/102-COMMANDS.md#ausearch--m-avc), then [soak_monitor.yml](../tool/201-TOOL-COMMANDS.md#ansiblesoak_monitoryml). The gate fails closed when `sesearch` is missing. Enforce without `force_enforce` is [enforce_production.yml](../tool/201-TOOL-COMMANDS.md#ansibleenforce_productionyml). The production install is the RPM at priority 200, not a hand `semodule -i` at 400.
 
@@ -162,9 +162,12 @@ flowchart TD
   canary --> soak["Prod: curl /feature-spool during soak"]
   soak --> mon["Mac: soak_monitor fails"]
   mon --> refuse["Mac: enforce without force_enforce refuses"]
-  refuse --> fix["QA: generate the spool allow, second PR"]
+  refuse --> glass["Mac: break-glass enforce of the first module"]
+  glass --> outage["Prod: /feature-spool returns 500"]
+  outage --> roll["Mac: emergency_rollback.yml"]
+  roll --> fix["QA: generate the spool allow, second PR"]
   fix --> clean["Prod: clean soak, monitor passes"]
-  clean --> enf["Mac: enforce, force_enforce for the day count only"]
+  clean --> enf["Mac: enforce. The demo ends enforcing"]
 ```
 
 Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`, and only after the pull request is on `main`.
@@ -203,31 +206,20 @@ ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.
 
 Expected: non-zero. The refusal to show is the failed soak. Do not pass `force_enforce` to hide the denial.
 
-The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA, `--part generate --skip-export` writes the spool allow. Merge that PR. Recanary QA, rebuild the RPMs, and canary prod again.
-
-On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `soak_monitor.yml` passes (`failed=0`).
-
-`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `force_enforce` skips the day count and is written in the deploy report. It is not a way past a failed soak.
-
-```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true
-```
-
-Expected: `shopapi_t` is enforcing. The report records `force_enforce`.
-
-## Part 7 — Outage and rollback
+## Part 7 — Outage, then the fix, then enforce
 
 [emergency_rollback.yml](../tool/201-TOOL-COMMANDS.md#ansibleemergency_rollbackyml) is [semanage permissive -a](../training/102-COMMANDS.md#semanage-permissive). `getenforce` stays Enforcing.
 
-```mermaid
-flowchart TD
-  fail["Prod: /feature-spool returns 500 when the allow is missing"] --> roll["Mac: emergency_rollback.yml"]
-  roll --> up["Prod: app returns 200 again<br/>domain is permissive"]
+This beat is before the fix. The first module is loaded and does not allow `/var/spool/shopapi`. Break-glass enforce of that module makes `/feature-spool` return 500. Roll back, then generate the allow.
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \
+  -e change_ticket=DEMO \
+  -e force_enforce=true \
+  -e break_glass_reason='show the enforcing denial before the fix'
 ```
 
-This beat follows the clean enforce. It is the enforcing denial and the rollback for a module that does not allow `/var/spool/shopapi`. After Part 6 that allow is loaded, so `/feature-spool` returns 200. Say the rollback playbook anyway.
-
-On prod, when the allow is not loaded:
+On prod:
 
 ```bash
 bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
@@ -242,6 +234,18 @@ ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.
 ```
 
 That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason. We still do not run `semodule -i` on prod.
+
+The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA, `--part generate --skip-export` writes the spool allow. Merge that PR. Recanary QA, rebuild the RPMs, and canary prod again.
+
+On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `soak_monitor.yml` passes (`failed=0`).
+
+`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `force_enforce` skips the day count and is written in the deploy report. It is not a way past a failed soak.
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true
+```
+
+Expected: `shopapi_t` is enforcing. The demo ends enforcing.
 
 ## URLs
 
