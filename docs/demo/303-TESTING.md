@@ -8,7 +8,7 @@ This document is the **single reference** for how this repository tests SELinux 
 |----------|------------|------|
 | **App developer** | §1 Integration endpoints | §1.5 App manifest, §2 Local smoke tests |
 | **Policy author opening a PR** | §4 CI on pull requests | §5 Shell gate scripts |
-| **Admin / SRE** | §6 Staging and production gates | [`302-TECHNICAL.md`](302-TECHNICAL.md), [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) |
+| **Admin / SRE** | §6 Staging and production gates | [`302-TECHNICAL.md`](302-TECHNICAL.md), [`401-OPERATIONS.md`](../admin/401-OPERATIONS.md) |
 
 Related: concepts in **[101](../training/101-CONCEPTS.md)**; commands in **[102](../training/102-COMMANDS.md)**; the hand-built lab in **[104](../training/104-HAND-BUILT-MODULE.md)**; the customer talk in **[301](301-CUSTOMER.md)**; tool commands in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md). The soak gate fails closed when `sesearch` is missing ([201](../tool/201-TOOL-COMMANDS.md#scriptsmonitor_avcsh)).
 
@@ -203,7 +203,7 @@ These run on **SELinux hosts** (Ansible playbooks call them; admins can run manu
 
 ## 6. Staging and production gates
 
-Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)). The three-app customer talk is [301-CUSTOMER.md](301-CUSTOMER.md); the two-host pipeline ([302-TECHNICAL.md](302-TECHNICAL.md)) runs the same playbooks from the Mac.
+Production control plane is **Ansible Automation Platform (AAP)** ([401-OPERATIONS.md](../admin/401-OPERATIONS.md)). The three-app customer talk is [301-CUSTOMER.md](301-CUSTOMER.md); the two-host pipeline ([302-TECHNICAL.md](302-TECHNICAL.md)) runs the same playbooks from the Mac.
 
 | Phase | Playbook | Key tests embedded |
 |-------|----------|-------------------|
@@ -215,7 +215,7 @@ Production control plane is **Ansible Automation Platform (AAP)** ([301-ANSIBLE_
 
 Full Ansible task order and variables: [`ansible/README.md`](../../ansible/README.md).
 
-Admin runbook with pass/fail examples: [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md#soak).
+Admin runbook with pass/fail examples: [`401-OPERATIONS.md`](../admin/401-OPERATIONS.md#soak).
 
 ---
 

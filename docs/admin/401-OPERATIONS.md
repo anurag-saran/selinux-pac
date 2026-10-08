@@ -1,6 +1,6 @@
-# 301 — Ship the module
+# 401 — Ship the module
 
-This is the page after [203](../demo/302-TECHNICAL.md). 203 shows the same jobs on two VMs. This page is how you run them for a real app: where the files live, which job to click, and what to do when a denial shows up.
+This is the page after [302](../demo/302-TECHNICAL.md). 302 shows the same jobs on two VMs. This page is how you run them for a real app: where the files live, which job to click, and what to do when a denial shows up. Commands were taught in [102](../training/102-COMMANDS.md). The playbook-to-command map is [201](../tool/201-TOOL-COMMANDS.md).
 
 Production does not get a git clone. A pull request is reviewed, an RPM is built, and **Ansible Automation Platform (AAP)** installs it. The same YAML runs as `ansible-playbook` on a laptop until AAP is wired up.
 
@@ -160,7 +160,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --l
 
 On the production host, the same check is `/usr/libexec/selinux-policy-ops/monitor_avc.sh` with `--max-net-new 0`. That script is in the `selinux-policy-ops` RPM. Do not clone this repo onto the server to run it.
 
-**Net-new** means an access the installed policy does not already allow. Repeated lines for an access that is already allowed do not fail the gate. `sesearch` does that comparison. `setools-console` is a requirement of `selinux-policy-ops`. Canary, soak, and enforce fail when `sesearch` is missing.
+**Net-new** means an access the installed policy does not already allow. Repeated lines for an access that is already allowed do not fail the gate. `sesearch` does that comparison. `setools-console` is a requirement of `selinux-policy-ops`. The soak gate fails closed when `sesearch` is missing. It does not report a clean window. Day 0 installs the RPM (`dnf`), which lands the module at priority 200. It does not `semodule -i` a loose `.pp` at priority 400.
 
 Canary already runs the label check on the host before it restarts the service. To see that line yourself, SSH to production and run the copy that the RPM installed:
 

@@ -53,7 +53,7 @@ ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml \\
   -e "app_manifest_path=\$(pwd)/${MANIFEST#${PROJECT_ROOT}/}"
 EOF
     echo "7. Prod canary/soak/enforce: -i ansible/inventory.production.yml"
-    echo "Docs: docs/demo/302-TECHNICAL.md docs/admin/301-ANSIBLE_OPERATIONS.md"
+    echo "Docs: docs/demo/302-TECHNICAL.md docs/admin/401-OPERATIONS.md"
 }
 
 if [[ $# -lt 1 ]]; then

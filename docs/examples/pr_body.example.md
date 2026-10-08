@@ -112,9 +112,9 @@ type=AVC msg=audit(1730000006.106:506): avc: denied { connectto } for pid=4421 c
 
 **After merge:** Compile with CLI, then AAP **SELinux – Release canary** (`ansible/deploy_canary.yml`).
 
-**Soak:** Daily AAP **Soak monitor** (`soak_monitor.yml`). Before enforce: **Soak status** (`soak_status.yml`). Soak fail → [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship), not live patch.
+**Soak:** Daily AAP **Soak monitor** (`soak_monitor.yml`). Before enforce: **Soak status** (`soak_status.yml`). Soak fail → [401-OPERATIONS.md#a-denial-after-ship](../admin/401-OPERATIONS.md#a-denial-after-ship), not live patch.
 
-**Production enforce (manual):** AAP **SELinux – Promote to enforce** (`ansible/enforce_production.yml`). See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md).
+**Production enforce (manual):** AAP **SELinux – Promote to enforce** (`ansible/enforce_production.yml`). See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/401-OPERATIONS.md`](../admin/401-OPERATIONS.md) and [`docs/admin/401-OPERATIONS.md`](../admin/401-OPERATIONS.md).
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary

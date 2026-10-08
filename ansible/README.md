@@ -2,7 +2,7 @@
 
 Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9 hosts. It does **not** install the application for the first time — use [`scripts/demo_bootstrap.sh`](../scripts/demo_bootstrap.sh) for the shopapi demo.
 
-**AAP job templates and soak workflow:** [`ansible/aap/`](aap/README.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Denied file/port after ship: [`docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship`](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
+**AAP job templates and soak workflow:** [`ansible/aap/`](aap/README.md) and [`docs/admin/401-OPERATIONS.md`](../docs/admin/401-OPERATIONS.md). Denied file/port after ship: [`docs/admin/401-OPERATIONS.md#a-denial-after-ship`](../docs/admin/401-OPERATIONS.md#a-denial-after-ship).
 
 **Where commands run:**
 
@@ -26,7 +26,7 @@ Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9
 
 Playbooks delegate to role [`roles/selinux_pac/`](roles/selinux_pac/). The old `myapp_selinux` role is gone — do not restore it. Target scripts live in RPM **`selinux-policy-ops`** at **`/usr/libexec/selinux-policy-ops`** (inventory: `selinux_ops_dir`). Checkout (no ops RPM) sets `selinux_ops_from_package: false` and points `selinux_ops_dir` at the **target** checkout `scripts/` tree (not `playbook_dir` on a laptop).
 
-**Ship guide:** [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md). Two-host lab: [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md). Testing matrix: [`docs/demo/303-TESTING.md`](../docs/demo/303-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
+**Ship guide:** [`docs/admin/401-OPERATIONS.md`](../docs/admin/401-OPERATIONS.md). Two-host lab: [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md). Testing matrix: [`docs/demo/303-TESTING.md`](../docs/demo/303-TESTING.md). Compile on **RHEL** with `selinux-policy-devel`.
 
 ---
 
@@ -167,7 +167,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml \
 
 (Production inventory uses RPMs; staging/example passes `policy_pp_src` — see inventory files.)
 
-Preferred admin UI: [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md). PR review CI: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selinux-policy-ci.yml) (`offline-tests`, `forbidden-patterns`, `compiled-policy`, `version-consistency`).
+Preferred admin UI: [401-OPERATIONS.md](../docs/admin/401-OPERATIONS.md). PR review CI: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selinux-policy-ci.yml) (`offline-tests`, `forbidden-patterns`, `compiled-policy`, `version-consistency`).
 
 ---
 
@@ -212,7 +212,7 @@ ansible-playbook ... enforce_production.yml -e "force_enforce=true" -e change_ti
 | `soak_monitor.yml` | Runs `monitor_avc.sh --format json` with `--max-avc`, `--max-net-new`, and `--fail-dir`; **fails** if `status=fail` with a PR-shaped `next_step` |
 | `soak_status.yml` | Read-only `collect_soak_facts.sh` summary (no state change) |
 
-Schedule **Soak monitor** in AAP on the canary group. See [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md).
+Schedule **Soak monitor** in AAP on the canary group. See [401-OPERATIONS.md](../docs/admin/401-OPERATIONS.md).
 
 ---
 
@@ -222,7 +222,7 @@ Schedule **Soak monitor** in AAP on the canary group. See [301-ANSIBLE_OPERATION
 
 Role phase **`rollback`**. **Permissive first** (stock modules / `semanage`); optional **`dnf downgrade`**; then `semodule -B`, restorecon, restarts, AVC export. Optional ops scripts if RPM installed.
 
-Run [`generate_emergency_patch.yml`](generate_emergency_patch.yml) on the **controller git checkout** after fetching `/tmp/emergency_avc.log` or `selinux_soak_last_fail.avc`. Output is `policy_out/` for a PR — never `semodule -i` on prod. See [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
+Run [`generate_emergency_patch.yml`](generate_emergency_patch.yml) on the **controller git checkout** after fetching `/tmp/emergency_avc.log` or `selinux_soak_last_fail.avc`. Output is `policy_out/` for a PR — never `semodule -i` on prod. See [401-OPERATIONS.md#a-denial-after-ship](../docs/admin/401-OPERATIONS.md#a-denial-after-ship).
 
 ### Example
 
@@ -244,7 +244,7 @@ To wipe leftover **demo** policy on both VMs and start [302-TECHNICAL.md](../doc
 
 ## GitHub Actions (PR review)
 
-Same playbooks as AAP for ship — [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md) is the admin UI. GitHub only runs policy best-practices on the PR:
+Same playbooks as AAP for ship — [401-OPERATIONS.md](../docs/admin/401-OPERATIONS.md) is the admin UI. GitHub only runs policy best-practices on the PR:
 
 Workflow: [`.github/workflows/selinux-policy-ci.yml`](../.github/workflows/selinux-policy-ci.yml)
 
@@ -302,4 +302,4 @@ Parity guard: [`scripts/validate_rpm_ops_parity.sh`](../scripts/validate_rpm_ops
 | Enforce rescue | Deploy report at `/var/lib/selinux-policy-ops/{{ app_name }}/selinux_deploy_report.json` |
 | Host noisy after failed canary | Run `reset_host_state.yml` or `semodule -B` + clear permissive |
 
-See [`301-ANSIBLE_OPERATIONS.md`](../docs/admin/301-ANSIBLE_OPERATIONS.md#when-something-fails).
+See [`401-OPERATIONS.md`](../docs/admin/401-OPERATIONS.md#when-something-fails).

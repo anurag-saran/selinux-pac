@@ -398,11 +398,11 @@ sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissiv
 
 | Who | Path |
 |-----|------|
-| New to SELinux | [101-SELINUX.md](../training/101-SELINUX.md) first, then this talk. |
+| New to SELinux | [104-HAND-BUILT-MODULE.md](../training/104-HAND-BUILT-MODULE.md) first, then this talk. |
 | Us (maintained host) | App A persists. `--preflight` the night before. Act 1 is evidence. |
 | Colleague on a throwaway VM | `make demo-bootstrap` (idempotent; resume after Ctrl-C). |
 | Customer after the meeting | Same bootstrap + `--dry-run` on a laptop first. |
-| Laptop, no RHEL | 101 [Appendix B](../training/101-SELINUX.md#appendix-b-laptop-no-selinux) + `--dry-run`. `make check` uses deterministic fixtures (no live app). |
+| Laptop, no RHEL | [202 — laptop](../tool/202-TOOL-LAB.md#laptop-no-selinux) + `--dry-run`. `make check` uses deterministic fixtures (no live app). |
 
 `payments/` remains a **CI multi-module fixture**, not a talk app.
 
@@ -412,4 +412,4 @@ sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissiv
 - Generating a `.te` for Tomcat App A or App B.
 - `semodule -i` (or `audit2allow`) on prod.
 
-**Ship path after generate:** [302-TECHNICAL.md](302-TECHNICAL.md) → [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md).
+**Ship path after generate:** [302-TECHNICAL.md](302-TECHNICAL.md) → [401-OPERATIONS.md](../admin/401-OPERATIONS.md).

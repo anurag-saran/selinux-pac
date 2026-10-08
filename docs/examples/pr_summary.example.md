@@ -9,7 +9,7 @@
 - Path traversal allows on log directory parents (read/search on `var_log_t`, `usr_t`, `root_t` as needed)
 
 ### Next action
-- None for this sample (ports already in `selinux_ports`; no net-new bind). After soak fail, generator fills this with `add_manifest_port` / `update_fc_and_restorecon` / `setsebool_host`. See [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship).
+- None for this sample (ports already in `selinux_ports`; no net-new bind). After soak fail, generator fills this with `add_manifest_port` / `update_fc_and_restorecon` / `setsebool_host`. See [401-OPERATIONS.md#a-denial-after-ship](../admin/401-OPERATIONS.md#a-denial-after-ship).
 
 ### Process Execution
 - `init_daemon_domain(myapp_t, myapp_exec_t)` — systemd entrypoint transition

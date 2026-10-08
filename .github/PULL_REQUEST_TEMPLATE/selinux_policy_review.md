@@ -98,9 +98,9 @@ A laptop without `selinux-policy-devel` does not compile. The Stream 9 job does.
 
 **After merge:** Compile with CLI (`bash scripts/compile_and_validate.sh`, optional `packaging/build_rpms.sh`), then AAP **SELinux – Release canary** (`ansible/deploy_canary.yml`).
 
-**Soak:** Daily AAP **SELinux – Soak monitor** (`ansible/soak_monitor.yml`) — zero **net-new** access needs vs installed policy. Before enforce: **Soak status** (`ansible/soak_status.yml`). If soak fails: [`docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship`](../../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) (PR + recanary, not live patch).
+**Soak:** Daily AAP **SELinux – Soak monitor** (`ansible/soak_monitor.yml`) — zero **net-new** access needs vs installed policy. Before enforce: **Soak status** (`ansible/soak_status.yml`). If soak fails: [`docs/admin/401-OPERATIONS.md#a-denial-after-ship`](../../docs/admin/401-OPERATIONS.md#a-denial-after-ship) (PR + recanary, not live patch).
 
-**Production enforce (manual):** AAP workflow **SELinux – Promote to enforce** (`ansible/enforce_production.yml`) after soak. See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../../docs/admin/301-ANSIBLE_OPERATIONS.md) and [`docs/admin/301-ANSIBLE_OPERATIONS.md`](../../docs/admin/301-ANSIBLE_OPERATIONS.md).
+**Production enforce (manual):** AAP workflow **SELinux – Promote to enforce** (`ansible/enforce_production.yml`) after soak. See [`ansible/aap/`](../../ansible/aap/), [`docs/admin/401-OPERATIONS.md`](../../docs/admin/401-OPERATIONS.md) and [`docs/admin/401-OPERATIONS.md`](../../docs/admin/401-OPERATIONS.md).
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary

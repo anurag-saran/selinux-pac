@@ -71,7 +71,7 @@ bash scripts/sync_rhel_dev.sh
 
 ## Part 2 — QA: install shopapi and collect denials
 
-Replaces [104 prep](../training/104-HAND-BUILT-MODULE.md#prep) via [demo_bootstrap.sh](../tool/201-TOOL-COMMANDS.md#scriptsdemobootstrapsh). Denials: [ausearch](../training/102-COMMANDS.md#ausearch--m-avc).
+Replaces [104 prep](../training/104-HAND-BUILT-MODULE.md#prep) via [demo_bootstrap.sh](../tool/201-TOOL-COMMANDS.md#scriptsdemo_bootstrapsh). Denials: [ausearch](../training/102-COMMANDS.md#ausearch--m-avc).
 
 The Mac tells you to run:
 
@@ -255,7 +255,7 @@ The port is `http.port` in `config/shopapi.manifest.yml`.
 
 ## Related
 
-- Practice the commands first: [101-SELINUX.md](../training/101-SELINUX.md)
+- Practice the commands first: [104-HAND-BUILT-MODULE.md](../training/104-HAND-BUILT-MODULE.md)
 - The 20-minute customer talk: [301-CUSTOMER.md](301-CUSTOMER.md)
-- Ansible jobs after this talk: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md)
-- What to do when a denial shows up after ship: [301-ANSIBLE_OPERATIONS.md](../admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship)
+- Ansible jobs after this talk: [401-OPERATIONS.md](../admin/401-OPERATIONS.md)
+- What to do when a denial shows up after ship: [401-OPERATIONS.md](../admin/401-OPERATIONS.md#a-denial-after-ship)

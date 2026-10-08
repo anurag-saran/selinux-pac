@@ -8,7 +8,7 @@ Each application onboarded to the SELinux Policy-as-Code pipeline declares an **
 
 **Where you edit files:** `config/<app>.manifest.yml` in your **git clone** (repo root). **Where validation runs:** same machine as your shell at repo root (`validate_app_manifest.sh`, CI).
 
-**More context:** [302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md), [201 — Add an application](../docs/tool/201-TOOL-COMMANDS.md#add-an-application), [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md), [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) (denied port → `selinux_ports`, not live `semanage port`), [docs/README.md](../docs/README.md).
+**More context:** [302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md), [201 — Add an application](../docs/tool/201-TOOL-COMMANDS.md#add-an-application), [401-OPERATIONS.md](../docs/admin/401-OPERATIONS.md), [401-OPERATIONS.md#a-denial-after-ship](../docs/admin/401-OPERATIONS.md#a-denial-after-ship) (denied port → `selinux_ports`, not live `semanage port`), [docs/README.md](../docs/README.md).
 
 ## Quick start
 

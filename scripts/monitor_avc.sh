@@ -277,7 +277,7 @@ fi
 
 NEXT_STEP=""
 if [[ "${fail}" -eq 1 ]]; then
-    NEXT_STEP="Copy ${FAIL_DIR:-/var/lib/<app>}/selinux_soak_last_fail.json and selinux_soak_last_fail.avc to rhel-qa. Run bash scripts/dev_generate_policy.sh. Open a PR, recanary, reset soak. Do not semodule -i or audit2allow on this host. See docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship."
+    NEXT_STEP="Copy ${FAIL_DIR:-/var/lib/<app>}/selinux_soak_last_fail.json and selinux_soak_last_fail.avc to rhel-qa. Run bash scripts/dev_generate_policy.sh. Open a PR, recanary, reset soak. Do not semodule -i or audit2allow on this host. See docs/admin/401-OPERATIONS.md#a-denial-after-ship."
 fi
 
 if [[ "${fail}" -eq 1 && -n "${FAIL_DIR}" ]]; then

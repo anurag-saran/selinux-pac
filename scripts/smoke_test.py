@@ -1355,7 +1355,7 @@ def test_selinux_booleans_and_app_ci() -> None:
     """Manifest booleans, packaged verify path, and app-repo CI call."""
     import yaml
 
-    guide = (PROJECT_ROOT / "docs" / "admin" / "301-ANSIBLE_OPERATIONS.md").read_text(
+    guide = (PROJECT_ROOT / "docs" / "admin" / "401-OPERATIONS.md").read_text(
         encoding="utf-8"
     )
     assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
@@ -2491,7 +2491,7 @@ def test_runner_var_selects_rhel_host() -> None:
         assert "rhel9-utm" in str(job["container"])
         assert "quay.io/centos/centos:stream9" in str(job["container"])
         assert "fedora:41" not in path.read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "204-TESTING.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
     assert "rhel-ci" in guide
     assert "rhel-qa" in guide and "rhel-prod" in guide
     assert "make vm-check" in guide
