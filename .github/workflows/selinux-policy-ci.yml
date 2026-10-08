@@ -1,5 +1,6 @@
 # Source grep is a fast check. The security boundary is the Stream 9 job,
 # which compiles myapp, shopapi, and payments and searches the module.
+# It also compiles each review-bypass fixture and fails if any is accepted.
 name: SELinux Policy CI
 
 on:
@@ -66,6 +67,8 @@ jobs:
           bash scripts/validate_policy_semantics.sh selinux
           POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_policy_semantics.sh selinux/shopapi
           POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_policy_semantics.sh selinux/payments
+      - name: Reject compiled review bypasses
+        run: bash scripts/reject_compiled_bypasses.sh
 
   version-consistency:
     name: version-consistency

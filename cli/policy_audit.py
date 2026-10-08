@@ -203,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audit SELinux sources and compiled allows")
     parser.add_argument("--selinux-dir", type=Path)
     parser.add_argument("--allows-file", type=Path)
+    parser.add_argument("--dontaudit-file", type=Path)
     parser.add_argument("--seinfo-file", type=Path)
     parser.add_argument("--permissive-file", type=Path)
     parser.add_argument("--domain", default="")
@@ -225,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
                 if line.strip()
             }
             errors.extend(audit_foreign_entrypoint(allows_text, args.domain, declared))
+    if args.dontaudit_file:
+        errors.extend(dontaudit_forbidden_hits(args.dontaudit_file.read_text(encoding="utf-8")))
     if args.seinfo_file and args.domain:
         errors.extend(audit_type_attributes(args.seinfo_file.read_text(encoding="utf-8"), args.domain))
     if args.permissive_file and args.domain:

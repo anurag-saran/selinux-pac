@@ -23,6 +23,26 @@ NC='\033[0m'
 log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
+# Types this module declares. A type only mentioned inside require { } is
+# foreign: an entrypoint allow on it is not "our" exec type.
+module_declared_types() {
+    awk '
+        /^[[:space:]]*require[[:space:]]*\{/ { in_require = 1 }
+        in_require && /\}/ { in_require = 0; next }
+        in_require { next }
+        /^[[:space:]]*type[[:space:]]+[A-Za-z_]/ {
+            gsub(/;/, "", $2)
+            print $2
+        }
+    ' "$1"
+}
+
+if [[ "${1:-}" == "--print-declared-types" ]]; then
+    [[ -n "${2:-}" && -f "${2}" ]] || exit 2
+    module_declared_types "${2}"
+    exit 0
+fi
+
 if [[ "${EUID}" -ne 0 ]]; then
     log_error "validate_policy_semantics.sh needs root (isolated policy store copy)"
     exit 1
@@ -59,20 +79,42 @@ allows_file="$(mktemp)"
 declared_file="$(mktemp)"
 seinfo_file="$(mktemp)"
 perm_file="$(mktemp)"
+dontaudit_file="$(mktemp)"
 sesearch --allow -s "${DOMAIN}" "${kern}" >"${allows_file}" 2>/dev/null || true
+sesearch --dontaudit --direct -s "${DOMAIN}" "${kern}" >"${dontaudit_file}" 2>/dev/null || true
 seinfo -x -t "${DOMAIN}" "${kern}" >"${seinfo_file}" 2>/dev/null || true
 seinfo --permissive "${kern}" >"${perm_file}" 2>/dev/null || true
-awk '/^[[:space:]]*type[[:space:]]+/ { gsub(/;/,"",$2); print $2 }' \
-    "${POLICY_DIR}/${MODULE_NAME}.te" >"${declared_file}"
+module_declared_types "${POLICY_DIR}/${MODULE_NAME}.te" >"${declared_file}"
 if ! python3 "${PROJECT_ROOT}/cli/policy_audit.py" \
     --allows-file "${allows_file}" \
+    --dontaudit-file "${dontaudit_file}" \
     --seinfo-file "${seinfo_file}" \
     --permissive-file "${perm_file}" \
     --declared-types-file "${declared_file}" \
     --domain "${DOMAIN}"; then
     fail=1
 fi
-rm -f "${allows_file}" "${seinfo_file}" "${perm_file}" "${declared_file}"
+fc_active="${store_prefix}/var/lib/selinux/targeted/active/file_contexts"
+if [[ -f "${fc_active}" ]] && awk -v declared="${declared_file}" '
+    BEGIN {
+        while ((getline line < declared) > 0) {
+            if (line != "") types[line] = 1
+        }
+        close(declared)
+    }
+    /^#/ || NF < 2 { next }
+    {
+        path = $1
+        if (index(path, "/etc/shadow") != 1) next
+        n = split($NF, parts, ":")
+        if (n >= 3 && (parts[3] in types)) hit = 1
+    }
+    END { exit hit ? 0 : 1 }
+' "${fc_active}"; then
+    log_error "compiled file contexts relabel /etc/shadow to a type this module declares"
+    fail=1
+fi
+rm -f "${allows_file}" "${seinfo_file}" "${perm_file}" "${declared_file}" "${dontaudit_file}"
 
 if [[ "${fail}" -ne 0 ]]; then
     log_error "Semantic policy check failed"

@@ -2556,6 +2556,99 @@ def test_policy_audit_rejects_review_bypasses() -> None:
     assert result.returncode == 0, result.stderr or result.stdout
 
 
+def test_compiled_bypass_fixtures_fail_closed() -> None:
+    """Each review bypass is a real module the Stream 9 job must reject."""
+    import yaml
+
+    names = [
+        "interface-macro",
+        "split-line",
+        "permissive-declaration",
+        "file-type-star",
+        "unconfined-domain-type",
+        "load-policy-setenforce",
+        "sys-module-sys-admin",
+        "fc-relabel-shadow",
+        "foreign-entrypoint",
+        "dontaudit-forbidden",
+    ]
+    root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-bypasses"
+    script = (PROJECT_ROOT / "scripts" / "reject_compiled_bypasses.sh").read_text(encoding="utf-8")
+    semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(encoding="utf-8")
+    assert "was accepted" in script
+    assert "--dontaudit" in semantics
+    assert "/etc/shadow" in semantics
+    for name in names:
+        assert name in script
+        te = (root / name / "bypass.te").read_text(encoding="utf-8")
+        fc = (root / name / "bypass.fc").read_text(encoding="utf-8")
+        assert te.startswith("policy_module(bypass, 1.0.0)\n")
+        assert "bypass_exec_t" in fc
+    interface_te = (root / "interface-macro" / "bypass.te").read_text(encoding="utf-8")
+    interface_if = (root / "interface-macro" / "bypass.if").read_text(encoding="utf-8")
+    assert "allow " not in interface_te
+    assert "shadow_t:file read" in interface_if
+    split = (root / "split-line" / "bypass.te").read_text(encoding="utf-8")
+    allow_lines = [line for line in split.splitlines() if "allow" in line]
+    assert allow_lines
+    assert all("shadow_t" not in line for line in allow_lines)
+    assert "permissive bypass_t;" in (root / "permissive-declaration" / "bypass.te").read_text(
+        encoding="utf-8"
+    )
+    assert "file_type:file *;" in (root / "file-type-star" / "bypass.te").read_text(encoding="utf-8")
+    assert "typeattribute bypass_t unconfined_domain_type;" in (
+        root / "unconfined-domain-type" / "bypass.te"
+    ).read_text(encoding="utf-8")
+    load = (root / "load-policy-setenforce" / "bypass.te").read_text(encoding="utf-8")
+    assert "load_policy" in load and "setenforce" in load
+    caps = (root / "sys-module-sys-admin" / "bypass.te").read_text(encoding="utf-8")
+    assert "sys_module" in caps and "sys_admin" in caps
+    assert "/etc/shadow" in (root / "fc-relabel-shadow" / "bypass.fc").read_text(encoding="utf-8")
+    assert "bin_t:file entrypoint" in (root / "foreign-entrypoint" / "bypass.te").read_text(
+        encoding="utf-8"
+    )
+    assert "dontaudit bypass_t shadow_t:file read;" in (
+        root / "dontaudit-forbidden" / "bypass.te"
+    ).read_text(encoding="utf-8")
+
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(encoding="utf-8")
+    )
+    compiled = "\n".join(
+        str(step.get("run", "")) for step in workflow["jobs"]["compiled-policy"]["steps"]
+    )
+    assert "reject_compiled_bypasses.sh" in compiled
+    assert "POLICY_MODULE=payments" in compiled
+
+    declared = subprocess.run(
+        [
+            BASH,
+            str(PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh"),
+            "--print-declared-types",
+            str(root / "foreign-entrypoint" / "bypass.te"),
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert declared.returncode == 0, declared.stderr
+    assert set(declared.stdout.split()) == {"bypass_t", "bypass_exec_t"}
+
+    audit = subprocess.run(
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "cli" / "policy_audit.py"),
+            "--dontaudit-file",
+            str(root / "dontaudit-forbidden" / "bypass.te"),
+        ],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert audit.returncode != 0, audit.stdout
+    assert "shadow_t" in audit.stderr
+
+
 def test_collect_soak_facts_monitor_crash() -> None:
     script = PROJECT_ROOT / "scripts" / "collect_soak_facts.sh"
     with tempfile.TemporaryDirectory() as tmp:
@@ -2832,6 +2925,7 @@ def main() -> int:
         ("policy_rules_are_the_single_source", test_policy_rules_are_the_single_source),
         ("compiled_policy_rejects_foreign_entrypoint", test_compiled_policy_rejects_foreign_entrypoint),
         ("policy_audit_rejects_review_bypasses", test_policy_audit_rejects_review_bypasses),
+        ("compiled_bypass_fixtures_fail_closed", test_compiled_bypass_fixtures_fail_closed),
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
