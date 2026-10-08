@@ -148,7 +148,7 @@ Implements role phase **`canary`** ([`roles/selinux_pac/tasks/canary.yml`](roles
 | 1 | Install ops + app RPM (optional) | When `selinux_ops_from_package` |
 | 2 | Stage `.pp` from controller → `semodule -i` | When `policy_pp_src` set |
 | 3 | `semodule -DB` | Host-wide dontaudit off for soak |
-| 4 | `seport` from manifest `selinux_ports` | When semanage available; loop `item.port` / `item.proto` / `item.type` |
+| 4 | Register `selinux_ports` | `semanage port -a` only when the port is free. If `semanage port -l` already assigns it to a different type, the canary fails. It does not run `semanage port -m`. |
 | 5 | Permissive domain | `semanage permissive` on the app domain only. Canary fails if `semanage` is missing. It does not install a permissive overlay. |
 | 6 | Ensure `var_dir` + `log_dir`; `restorecon` (no pre-restart `/run/myapp`) | |
 | 7 | `{{ selinux_ops_dir }}/verify_file_contexts.sh` | |

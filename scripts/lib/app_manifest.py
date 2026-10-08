@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -157,6 +158,95 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def port_types_declared(te_text: str) -> set[str]:
+    """Port types this module declares (`type name_port_t;`)."""
+    return set(re.findall(r"^\s*type\s+(\w+_port_t)\s*;", te_text, re.MULTILINE))
+
+
+def module_te_for_manifest(manifest_path: Path, manifest: dict[str, Any]) -> Path | None:
+    """Repo manifests live in config/ next to selinux/. Installed copies may not."""
+    if manifest_path.parent.name != "config":
+        return None
+    rel = manifest["policy"]["module_dir"]
+    te = manifest_path.parent.parent / rel / f"{manifest['app_name']}.te"
+    return te if te.is_file() else None
+
+
+def validate_selinux_ports(ports: Any, declared: set[str] | None) -> list[str]:
+    """Ports are 1024–65535 unless allow_privileged, and the type is this module's."""
+    errors: list[str] = []
+    if not isinstance(ports, list):
+        return ["selinux_ports must be a list"]
+    for index, entry in enumerate(ports):
+        label = f"selinux_ports[{index}]"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} must be a mapping")
+            continue
+        try:
+            port = int(entry["port"])
+        except (KeyError, TypeError, ValueError):
+            errors.append(f"{label} needs an integer port")
+            continue
+        if port < 1 or port > 65535:
+            errors.append(f"{label} port {port} is outside 1-65535")
+        elif port < 1024 and not entry.get("allow_privileged"):
+            errors.append(
+                f"{label} port {port} is below 1024; set allow_privileged: true to keep it"
+            )
+        ptype = str(entry.get("type") or "")
+        if not ptype.endswith("_port_t"):
+            errors.append(f"{label} type {ptype!r} is not a port type")
+        elif declared is not None and ptype not in declared:
+            errors.append(f"{label} type {ptype} is not declared by this module")
+    return errors
+
+
+# Ranges such as unreserved_port_t are not an application assignment.
+# semanage port -a carves a port out of those ranges. A named type is a conflict.
+GENERIC_PORT_ASSIGNMENTS = frozenset(
+    {"unreserved_port_t", "port_t", "reserved_port_t", "ephemeral_port_t"}
+)
+
+
+def classify_port_assignment(listing: str, port: int, proto: str, want_type: str) -> str:
+    """Return 'add' or 'present'. Raise if another application type already owns the port.
+
+    Generic ranges are not ownership. The caller adds with semanage port -a and
+    does not fall back to semanage port -m.
+    """
+    proto = proto.lower()
+    owners: list[str] = []
+    for raw in listing.splitlines():
+        line = raw.strip()
+        if not line or line.lower().startswith("selinux "):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        type_name, line_proto = parts[0], parts[1].lower()
+        if line_proto != proto:
+            continue
+        numbers: list[int] = []
+        for token in " ".join(parts[2:]).replace(",", " ").split():
+            if token.isdigit():
+                numbers.append(int(token))
+                continue
+            if "-" in token:
+                left, right = token.split("-", 1)
+                if left.isdigit() and right.isdigit():
+                    numbers.extend(range(int(left), int(right) + 1))
+        if port in numbers and type_name not in GENERIC_PORT_ASSIGNMENTS:
+            owners.append(type_name)
+    if not owners:
+        return "add"
+    if set(owners) == {want_type}:
+        return "present"
+    raise ValueError(
+        f"port {port}/{proto} is already assigned to {', '.join(owners)}, not {want_type}. "
+        "Refusing to run semanage port -m."
+    )
+
+
 def validate_normalized(manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for key in REQUIRED_TOP:
@@ -179,6 +269,9 @@ def load_manifest(path: Path) -> dict[str, Any]:
     raw = load_raw(path)
     manifest = normalize(raw)
     errors = validate_normalized(manifest)
+    te = module_te_for_manifest(path, manifest)
+    declared = port_types_declared(te.read_text(encoding="utf-8")) if te else None
+    errors.extend(validate_selinux_ports(manifest["selinux_ports"], declared))
     if errors:
         raise ValueError(f"{path}: " + "; ".join(errors))
     return manifest
@@ -291,11 +384,38 @@ def service_roles(manifest: dict[str, Any]) -> list[tuple[str, str]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="App manifest loader")
-    parser.add_argument("command", choices=("json", "validate", "shell-export", "resolve", "check-domain-context", "paths-csv", "domains-csv"))
+    parser.add_argument(
+        "command",
+        choices=(
+            "json",
+            "validate",
+            "shell-export",
+            "resolve",
+            "check-domain-context",
+            "paths-csv",
+            "domains-csv",
+            "check-port",
+        ),
+    )
+    parser.add_argument("--port", type=int, default=None)
+    parser.add_argument("--proto", default="tcp")
+    parser.add_argument("--type", dest="port_type", default="")
     parser.add_argument("path", nargs="?", help="Manifest YAML path or endpoint JSON for check-domain-context")
     parser.add_argument("endpoint_json", nargs="?", help="Endpoint JSON path for check-domain-context")
     parser.add_argument("--app-name", default=None)
     args = parser.parse_args()
+
+    if args.command == "check-port":
+        if args.port is None or not args.port_type:
+            print("usage: check-port --port N --proto tcp --type TYPE", file=sys.stderr)
+            return 2
+        listing = sys.stdin.read()
+        try:
+            print(classify_port_assignment(listing, args.port, args.proto, args.port_type))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        return 0
 
     if args.command == "resolve":
         path = resolve_manifest_path(args.path, app_name=args.app_name)

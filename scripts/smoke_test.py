@@ -48,6 +48,63 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_selinux_ports_and_canary_refuses_modify() -> None:
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
+    from app_manifest import (
+        classify_port_assignment,
+        load_manifest,
+        port_types_declared,
+        validate_selinux_ports,
+    )
+
+    declared = {"shopapi_port_t"}
+    assert validate_selinux_ports(
+        [{"port": 8091, "proto": "tcp", "type": "shopapi_port_t"}], declared
+    ) == []
+    low = validate_selinux_ports(
+        [{"port": 80, "proto": "tcp", "type": "shopapi_port_t"}], declared
+    )
+    assert any("below 1024" in err for err in low)
+    allowed = validate_selinux_ports(
+        [{"port": 80, "proto": "tcp", "type": "shopapi_port_t", "allow_privileged": True}],
+        declared,
+    )
+    assert allowed == []
+    foreign = validate_selinux_ports(
+        [{"port": 8091, "proto": "tcp", "type": "http_port_t"}], declared
+    )
+    assert any("not declared" in err for err in foreign)
+    te = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
+    assert "shopapi_port_t" in port_types_declared(te)
+    load_manifest(PROJECT_ROOT / "config" / "shopapi.manifest.yml")
+
+    listing = "\n".join(
+        [
+            "SELinux Port Type              Proto    Port Number",
+            "http_port_t                    tcp      80, 443, 8080",
+            "shopapi_port_t                 tcp      8091",
+            "unreserved_port_t              tcp      1024-32767",
+        ]
+    )
+    assert classify_port_assignment(listing, 8091, "tcp", "shopapi_port_t") == "present"
+    try:
+        classify_port_assignment(listing, 80, "tcp", "shopapi_port_t")
+        raise AssertionError("expected a conflict")
+    except ValueError as exc:
+        assert "port -m" in str(exc)
+    # A port that only sits in the unreserved range is added, not modified.
+    assert classify_port_assignment(listing, 8092, "tcp", "shopapi_port_t") == "add"
+    assert classify_port_assignment(listing, 50000, "tcp", "shopapi_port_t") == "add"
+
+    canary = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "canary.yml"
+    ).read_text(encoding="utf-8")
+    assert "seport:" not in canary
+    assert "port -m" not in canary
+    assert "check-port" in canary
+    assert "semanage port -a" in canary
+
+
 def test_codeowners_covers_policy_surface() -> None:
     text = (PROJECT_ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
     for path in (
@@ -2208,6 +2265,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("selinux_ports_and_canary_refuses_modify", test_selinux_ports_and_canary_refuses_modify),
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
         ("make_deps_uses_venv", test_make_deps_uses_venv),

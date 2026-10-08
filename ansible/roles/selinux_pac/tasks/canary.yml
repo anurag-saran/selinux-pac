@@ -48,16 +48,30 @@
       register: semodule_db
       changed_when: semodule_db.rc == 0
 
-    - name: Register TCP/UDP ports from manifest
-      community.general.seport:
-        ports: "{{ item.port | string }}"
-        proto: "{{ item.proto | default('tcp') }}"
-        setype: "{{ item.type }}"
-        state: present
+    - name: Read current SELinux port assignments
+      ansible.builtin.command: semanage port -l
+      register: semanage_port_list
+      changed_when: false
+      when:
+        - semanage_bin.stat.exists
+        - selinux_ports_list | length > 0
+
+    - name: Register manifest ports without taking one another type owns
+      ansible.builtin.shell: |
+        set -euo pipefail
+        action="$(printf '%s\n' "$PORT_LIST" | python3 "{{ selinux_ops_dir }}/lib/app_manifest.py" check-port --port "{{ item.port }}" --proto "{{ item.proto | default('tcp') }}" --type "{{ item.type }}")"
+        printf '%s\n' "${action}"
+        if [[ "${action}" == "add" ]]; then
+          semanage port -a -t "{{ item.type }}" -p "{{ item.proto | default('tcp') }}" "{{ item.port }}"
+        fi
+      environment:
+        PORT_LIST: "{{ semanage_port_list.stdout | default('') }}"
       loop: "{{ selinux_ports_list }}"
       when:
         - semanage_bin.stat.exists
         - selinux_ports_list | length > 0
+      register: port_register
+      changed_when: port_register.stdout is search('^add')
 
     - name: Enable permissive domain for canary
       community.general.selinux_permissive:
