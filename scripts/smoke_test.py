@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1814,6 +1815,25 @@ def test_tracked_tree_has_no_model_client() -> None:
     )
     assert result.returncode == 1, result.stdout
     assert result.stdout == ""
+    # git grep -E does not treat \b as a word boundary on every platform.
+    regex = re.compile(pattern, re.IGNORECASE)
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+    )
+    hits: list[str] = []
+    for name in tracked.stdout.split(b"\0"):
+        if not name:
+            continue
+        path = PROJECT_ROOT / name.decode()
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if regex.search(line):
+                hits.append(f"{name.decode()}:{lineno}:{line}")
+    assert hits == [], "\n".join(hits)
 
 
 def test_offline_fixture_sync() -> None:
