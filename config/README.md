@@ -8,7 +8,7 @@ Each application onboarded to the SELinux Policy-as-Code pipeline declares an **
 
 **Where you edit files:** `config/<app>.manifest.yml` in your **git clone** (repo root). **Where validation runs:** same machine as your shell at repo root (`validate_app_manifest.sh`, CI).
 
-**More context:** [203-RHEL_TWO_HOST.md](../docs/demo/203-RHEL_TWO_HOST.md), [201 — Add an application](../docs/demo/201-CODE_WALKTHROUGH.md#add-an-application), [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md), [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) (denied port → `selinux_ports`, not live `semanage port`), [docs/README.md](../docs/README.md).
+**More context:** [203-RHEL_TWO_HOST.md](../docs/demo/203-RHEL_TWO_HOST.md), [201 — Add an application](../docs/tool/201-TOOL-COMMANDS.md#add-an-application), [301-ANSIBLE_OPERATIONS.md](../docs/admin/301-ANSIBLE_OPERATIONS.md), [301-ANSIBLE_OPERATIONS.md#a-denial-after-ship](../docs/admin/301-ANSIBLE_OPERATIONS.md#a-denial-after-ship) (denied port → `selinux_ports`, not live `semanage port`), [docs/README.md](../docs/README.md).
 
 ## Quick start
 
@@ -18,7 +18,7 @@ bash scripts/selinux_pac_adopt.sh init payments
 
 1. Copy [`payments.manifest.example.yml`](payments.manifest.example.yml) to `config/<app_name>.manifest.yml`.
 2. Fill in paths, systemd units, HTTP probes, and SELinux port types (**same bind ports in every env**).
-3. Scaffold policy on RHEL: `bash scripts/scaffold_sepolicy_module.sh payments payments_t` (see [201 — Add an application](../docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)).
+3. Scaffold policy on RHEL: `bash scripts/scaffold_sepolicy_module.sh payments payments_t` (see [201 — Add an application](../docs/tool/201-TOOL-COMMANDS.md#add-an-application)).
 4. Point scripts and Ansible at it:
 
 ```bash

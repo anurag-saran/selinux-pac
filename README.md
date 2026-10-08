@@ -9,7 +9,7 @@ The **customer talk** is **202** — three applications (distro Tomcat loaded bu
 | **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[202](docs/demo/202-DEMO_GUIDE.md)** |
 | **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
 | **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
-| **Application developer** | [Developers](#developers) and **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)** |
+| **Application developer** | [Developers](#developers) and **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)** |
 | **Offline check (any laptop)** | `make check` (**204**) |
 
 ---
@@ -115,7 +115,7 @@ bash scripts/setup_rhel_hosts.sh doctor
 # bootstrap — print (do not run) SSH steps for rhel-qa only
 bash scripts/setup_rhel_hosts.sh bootstrap
 # next app after the shopapi demo
-bash scripts/selinux_pac_adopt.sh init payments     # see docs/demo/201-CODE_WALKTHROUGH.md#add-an-application
+bash scripts/selinux_pac_adopt.sh init payments     # see docs/tool/201-TOOL-COMMANDS.md#add-an-application
 
 # Package + publish (see packaging/internal.env.example)
 bash packaging/build_rpms.sh                        # selinux-policy-ops + shopapi-selinux (demo) + myapp-selinux (test fixture)
@@ -209,7 +209,7 @@ The generator classifies the denial: **file** → `.fc` + `restorecon`; **port**
 
 CI must pass `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls this workflow instead of copying it; see [301](docs/admin/301-ANSIBLE_OPERATIONS.md). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`. Shopapi starts from `/opt/shopapi/bin/shopapi` (the `shopapi_exec_t` wrapper around the system Java). The unit has no `SELinuxContext=` line.
 
-New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/demo/201-CODE_WALKTHROUGH.md#add-an-application)**.
+New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)**.
 
 Ports stay in the committed manifest (`selinux_ports`). Probe host/IP is per inventory (`http_probe_host`).
 

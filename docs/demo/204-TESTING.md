@@ -10,7 +10,7 @@ This document is the **single reference** for how this repository tests SELinux 
 | **Policy author opening a PR** | §4 CI on pull requests | §5 Shell gate scripts |
 | **Admin / SRE** | §6 Staging and production gates | [`203-RHEL_TWO_HOST.md`](203-RHEL_TWO_HOST.md), [`301-ANSIBLE_OPERATIONS.md`](../admin/301-ANSIBLE_OPERATIONS.md) |
 
-Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](202-DEMO_GUIDE.md)**; **file-by-file code tour** in **[201](201-CODE_WALKTHROUGH.md)**. **Catalog:** [`README.md`](../README.md).
+Related: endpoint SELinux concepts in **[102](../training/102-SELINUX_BASICS.md)** §9; typed labs in **[101](../training/101-SELINUX.md)**; paced walkthrough in **[202](202-DEMO_GUIDE.md)**; **file-by-file code tour** in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md).
 
 **Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([203-RHEL_TWO_HOST.md](203-RHEL_TWO_HOST.md)).
 
@@ -249,6 +249,6 @@ Layer 7  emergency_rollback                           outage response
 | Check | Command |
 |-------|---------|
 | House-rule golden fixtures | `make test-fixtures` or `make test` |
-| Explain a denial log | `python3 cli/deterministic_gen.py --explain …` — [201 — Generate a module](201-CODE_WALKTHROUGH.md#generate-a-module) |
-| Full dev path | `bash scripts/dev_generate_policy.sh --skip-export` — [201 — Generate a module](201-CODE_WALKTHROUGH.md#generate-a-module) |
+| Explain a denial log | `python3 cli/deterministic_gen.py --explain …` — [201 — Generate a module](../tool/201-TOOL-COMMANDS.md#generate-a-module) |
+| Full dev path | `bash scripts/dev_generate_policy.sh --skip-export` — [201 — Generate a module](../tool/201-TOOL-COMMANDS.md#generate-a-module) |
 | Coverage gate | `bash scripts/verify_avc_coverage.sh` after generation |

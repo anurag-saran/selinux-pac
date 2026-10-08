@@ -92,7 +92,7 @@ type=AVC msg=audit(1730000006.106:506): avc: denied { connectto } for pid=4421 c
 
 ### 6. Security and Sysadmin Checklist (Admin Team Review)
 
-> Full principles and anti-patterns: [`docs/demo/201-CODE_WALKTHROUGH.md`](../demo/201-CODE_WALKTHROUGH.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
+> Full principles and anti-patterns: [`docs/tool/201-TOOL-COMMANDS.md`](../tool/201-TOOL-COMMANDS.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
 
 | Security Check | Status | Notes / Approver Initials |
 | --- | --- | --- |

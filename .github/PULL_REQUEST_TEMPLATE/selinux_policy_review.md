@@ -45,7 +45,7 @@ labels:
 - [ ] `selinux/myapp.fc` (File Contexts)
 - [ ] `selinux/policy_version.txt` (SemVer bump — must match `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
 - [ ] `selinux/myapp.if` — N/A (standalone demo module)
-- [ ] `selinux/payments/payments.if` — updated if this PR touches cross-module interfaces (see [201 — Add an application](../../docs/demo/201-CODE_WALKTHROUGH.md#add-an-application))
+- [ ] `selinux/payments/payments.if` — updated if this PR touches cross-module interfaces (see [201 — Add an application](../../docs/tool/201-TOOL-COMMANDS.md#add-an-application))
 
 ---
 
@@ -77,7 +77,7 @@ A laptop without `selinux-policy-devel` does not compile. The Stream 9 job does.
 
 ### 6. Security and Sysadmin Checklist (Admin Team Review)
 
-> Full principles and anti-patterns: [`docs/demo/201-CODE_WALKTHROUGH.md`](../../docs/demo/201-CODE_WALKTHROUGH.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
+> Full principles and anti-patterns: [`docs/tool/201-TOOL-COMMANDS.md`](../../docs/tool/201-TOOL-COMMANDS.md#what-a-pull-request-must-not-contain) (what a pull request must not contain).
 
 | Security Check | Status | Notes / Approver Initials |
 | --- | --- | --- |

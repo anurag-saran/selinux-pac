@@ -241,7 +241,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 - [ ] Soak monitor is scheduled daily, with a notification on job failure.
 - [ ] Production hosts have `selinux-policy-ops` and `setools-console`, and no git clone.
 
-`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../demo/201-CODE_WALKTHROUGH.md#add-an-application). The two-VM rehearsal is [203](../demo/203-RHEL_TWO_HOST.md).
+`bash scripts/selinux_pac_adopt.sh init <app>` lays down the manifest and policy directory for a new app. The first confine on QA is [201 — Add an application](../tool/201-TOOL-COMMANDS.md#add-an-application). The two-VM rehearsal is [203](../demo/203-RHEL_TWO_HOST.md).
 
 ## When something fails
 
