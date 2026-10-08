@@ -4,29 +4,21 @@ name: SELinux Policy CI
 
 on:
   pull_request:
-    paths:
-      - 'selinux/**'
-      - 'config/**'
-      - 'cli/policy_rules.py'
-      - 'cli/policy_audit.py'
-      - 'scripts/validate_forbidden_patterns.sh'
-      - 'scripts/validate_policy_semantics.sh'
-      - 'scripts/validate_version_consistency.sh'
-      - '.github/workflows/selinux-policy-ci.yml'
   push:
     branches:
       - main
-    paths:
-      - 'selinux/**'
-      - 'config/**'
-      - 'cli/policy_rules.py'
-      - 'cli/policy_audit.py'
-      - 'scripts/validate_forbidden_patterns.sh'
-      - 'scripts/validate_policy_semantics.sh'
-      - 'scripts/validate_version_consistency.sh'
-      - '.github/workflows/selinux-policy-ci.yml'
 
 jobs:
+  offline-tests:
+    name: offline-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python venv support
+        run: sudo apt-get update && sudo apt-get install -y python3-venv
+      - name: Run the offline suite
+        run: make test
+
   forbidden-patterns:
     name: forbidden-patterns
     runs-on: ubuntu-latest
@@ -36,6 +28,7 @@ jobs:
         run: |
           bash scripts/validate_forbidden_patterns.sh selinux
           POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
+          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_forbidden_patterns.sh selinux/payments
       - name: Audit dontaudit rules and file-context paths
         run: |
           pip install pyyaml

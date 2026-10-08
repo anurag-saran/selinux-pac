@@ -40,6 +40,7 @@ test-static: test-forbidden test-version test-rpm test-manifest ## Shell validat
 test-forbidden: ## Forbidden-pattern grep plus source audit (dontaudit, .fc paths)
 	bash scripts/validate_forbidden_patterns.sh selinux
 	POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
+	POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_forbidden_patterns.sh selinux/payments
 	$(PYTHON) cli/policy_audit.py --selinux-dir selinux
 
 test-manifest: deps ## App manifest YAML validation

@@ -48,6 +48,30 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_ci_runs_full_suite_with_stable_names() -> None:
+    """Every PR runs make test, and check names stay stable for branch protection."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "selinux-policy-ci.yml").read_text(encoding="utf-8")
+    )
+    assert "paths" not in (workflow.get("on", {}).get("pull_request") or {})
+    jobs = workflow["jobs"]
+    for job_id, job in jobs.items():
+        assert job.get("name") == job_id, f"{job_id} name must match the job id"
+    offline = jobs["offline-tests"]
+    steps = "\n".join(str(step.get("run", "")) for step in offline["steps"])
+    assert "make test" in steps
+    forbidden = "\n".join(
+        str(step.get("run", "")) for step in jobs["forbidden-patterns"]["steps"]
+    )
+    compiled = "\n".join(
+        str(step.get("run", "")) for step in jobs["compiled-policy"]["steps"]
+    )
+    assert "selinux/payments" in forbidden
+    assert "POLICY_MODULE=payments" in compiled
+
+
 def test_make_deps_uses_venv() -> None:
     """make deps must not pip-install into the system interpreter."""
     text = (PROJECT_ROOT / "Makefile").read_text(encoding="utf-8")
@@ -2169,6 +2193,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),
         ("make_deps_uses_venv", test_make_deps_uses_venv),
         ("prompts", test_prompts),
         ("avc_parsing", test_avc_parsing),
