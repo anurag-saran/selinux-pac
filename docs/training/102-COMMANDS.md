@@ -246,7 +246,7 @@ sudo semanage permissive -d shopapi_t
 
 **Example.** A line containing `shopapi`, and `permissive_shopapi_t` while that domain is log-only. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
-**Used in.** [104](104-HAND-BUILT-MODULE.md) after install. Vendor check before generate (`semodule -l` looking for tomcat, httpd, and shopapi).
+**Used in.** [104](104-HAND-BUILT-MODULE.md) after install. Vendor check before generate (`semodule -l` looking for `apache`).
 
 **Common mistake.** A missing name meaning the types were never declared. The seed can be loaded and still have almost no allows.
 
@@ -256,7 +256,7 @@ sudo semanage permissive -d shopapi_t
 
 **Reads or writes.** Reads the module store.
 
-**Example.** Priorities you should see on a stock host: 100 for base, 200 for an RPM module, 400 for a module installed with `semodule -i`. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
+**Example.** Priorities you should see on a stock host: 100 for every module from `selinux-policy-targeted`, 200 for an RPM module, 400 for a module installed with `semodule -i` and for `permissive_<type>`. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
 **Used in.** Confirming a hand install did not silently sit on top of an RPM module of the same name. See [103](103-CONFIG-FILES.md).
 
@@ -286,7 +286,7 @@ sudo semodule -i shopapi.pp
 
 **Example.** `sudo semodule -r shopapi` removes the shopapi module. Capture of the following `-l`: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
-**Used in.** Enforce removes a stub module when `semanage` is absent. Demo reset unloads leftover shopapi modules.
+**Used in.** Demo reset unloads leftover shopapi modules.
 
 **Common mistake.** Removing the module and expecting file labels to revert. Labels on disk stay until something else changes them.
 
@@ -440,7 +440,7 @@ sesearch -A -s shopapi_t -t shopapi_log_t -c file -p write
 
 **Time.** `-ts recent` is the last ten minutes. `-ts today` and `-ts boot` are keywords. A clock time is two arguments, the date and the time, for example `-ts 10/08/2026 09:00:00`. One argument that contains a space is rejected with `Invalid start time`. The date order follows the locale. Do not pass an epoch to `-ts`. The monitor keeps a record when `msg=audit(EPOCH.` is at or after the marker epoch.
 
-**Other flags.** `--subject shopapi_t` keeps that source type. `--format raw` is the line the generator reads. `--input-logs` reads the log files rather than the live audit socket.
+**Other flags.** `--subject shopapi_t` keeps that source type. `--format raw` is the line the generator reads. `--input-logs` is required when stdin is not a terminal, because `ausearch` reads stdin in that case instead of the audit log. `--checkpoint file` prints only events that were not printed by the previous search that used the same file. [104](104-HAND-BUILT-MODULE.md) uses it in labs 2, 4, and 5.
 
 **Example.**
 
@@ -484,11 +484,11 @@ sudo ausearch -m avc -ts recent --subject shopapi_t | audit2why
 
 ### aureport -a
 
-**Answers.** A summary count of AVC events, not the full line.
+**Answers.** `aureport -a` lists AVC events. `aureport -a --summary` counts them.
 
 **Reads or writes.** Reads the audit log. Does not write.
 
-**Example.** `sudo aureport -a`. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
+**Example.** `sudo aureport -a` lists the events. `sudo aureport -a --summary` prints the count. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
 **Used in.** A quick look before `ausearch`. Not a gate. The soak gate counts records by epoch, not this summary.
 
@@ -496,6 +496,6 @@ sudo ausearch -m avc -ts recent --subject shopapi_t | audit2why
 
 ---
 
-Further reading on the practice host: `man selinux`, `man semodule`, `man restorecon`, `man ausearch`. The Red Hat guide for RHEL 8 is the closest public book: [Using SELinux](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/using_selinux/index).
+Further reading on the practice host: `man selinux`, `man semodule`, `man restorecon`, `man ausearch`. The RHEL 9 book is [Using SELinux](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/using_selinux/index).
 
 Next: [103 — config files](103-CONFIG-FILES.md).

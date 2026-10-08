@@ -19,7 +19,7 @@ Four folders, in reading order. **training** is concepts, commands, files, and a
 
 | You are | Start here |
 |---------|------------|
-| **New to SELinux** | **[101](training/101-CONCEPTS.md)** → **102** commands → **202** |
+| **New to SELinux** | **[101](training/101-CONCEPTS.md)** → **[102](training/102-COMMANDS.md)** → **[103](training/103-CONFIG-FILES.md)** → **[104](training/104-HAND-BUILT-MODULE.md)** |
 | **RHEL admin (customer env)** | **[401](admin/401-OPERATIONS.md)** |
 | **Trying this on a Mac** | [../README.md](../README.md#try-it-on-a-mac) — two RHEL VMs + `setup_rhel_hosts.sh` |
 | **Laptop only (no VM)** | [202 — laptop](tool/202-TOOL-LAB.md#laptop-no-selinux) + `make check` (**303**) |

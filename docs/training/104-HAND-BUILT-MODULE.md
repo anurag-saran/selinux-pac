@@ -64,7 +64,7 @@ sudo mkdir -p /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi /var/s
 
 ```bash
 cd ~/selinux-pac/demo/shopapi
-sudo mvn -q -DskipTests package
+mvn -q -DskipTests package
 sudo cp -f target/shopapi.jar /opt/shopapi/shopapi.jar
 sudo chown -R shopapi:shopapi /opt/shopapi /var/lib/shopapi /var/log/shopapi /var/spool/shopapi
 cd ~/selinux-pac
@@ -220,11 +220,12 @@ A new module name, not shopapi, starts from `sepolicy-generate`. The shopapi fil
 
 ## Lab 2 — One AVC
 
-Curl `/log` only.
+Curl `/log` only. `ausearch --checkpoint` separates this denial from older ones. Labs 4 and 5 reuse the same checkpoint file, so each search prints only what arrived since the previous one.
 
 **2.1**
 
 ```bash
+sudo ausearch -m avc --checkpoint /var/tmp/shopapi-lab.checkpoint --subject shopapi_t >/dev/null || true
 curl -sf http://127.0.0.1:8091/log
 echo
 ```
@@ -232,18 +233,18 @@ echo
 **2.2**
 
 ```bash
-sudo ausearch -m avc -ts recent --subject shopapi_t
+sudo ausearch -m avc --checkpoint /var/tmp/shopapi-lab.checkpoint --subject shopapi_t | tee /tmp/lab2.avc
 ```
 
 **2.3**
 
 ```bash
-sudo ausearch -m avc -ts recent --subject shopapi_t | audit2why
+audit2why < /tmp/lab2.avc
 ```
 
 Read one line. `scontext` is `shopapi_t`. `tcontext` may still be `var_log_t` if the file was not relabeled. `tclass=file`. `permissive=1`. `{ write }` or `{ open }` is the permission. `permissive=0` waits until lab 5.
 
-If the search prints nothing, curl `/log` again. `-ts recent` is ten minutes. Do not generate a rule from a line whose source is not `shopapi_t`.
+If the search prints nothing, curl `/log` again and search with the same checkpoint. Do not generate a rule from a line whose source is not `shopapi_t`.
 
 ---
 
@@ -254,8 +255,11 @@ The line you add is the one you just read. An access the `.te` already allows is
 **3.1.** Add an allow for the shopapi log type, not for the generic type in the denial. The denial showed `var_log_t` because the file was unlabeled. The address book already says `/var/log/shopapi` is `shopapi_log_t`. The allow names that type:
 
 ```text
+allow shopapi_t shopapi_log_t:dir { search write add_name };
 allow shopapi_t shopapi_log_t:file { create write append open getattr };
 ```
+
+The directory line is what lets the process look up `/var/log/shopapi` and create a file in it. The file line is the write.
 
 If the AVC included `execmem`, that permission is domain-weakening. Add `allow shopapi_t self:process execmem;` only because the log showed it. Do not add it from memory. An execute on `java_exec_t` is not an entrypoint. Leave `/usr/bin/java` as `java_exec_t`.
 
@@ -297,10 +301,10 @@ echo
 **4.2**
 
 ```bash
-sudo ausearch -m avc -ts recent --subject shopapi_t
+sudo ausearch -m avc --checkpoint /var/tmp/shopapi-lab.checkpoint --subject shopapi_t
 ```
 
-The curl prints the log line. `ausearch` does not print a new `shopapi_t` write denial for `/log`. An allow is not a denial. A permissive domain also does not log an access the module already allows. A second copy of the same denial waits for a policy reload. The `/log` allow is in the module.
+The curl prints the log line. `ausearch` does not print a new `shopapi_t` write denial for `/log`. The checkpoint file is the one lab 2 wrote, so older denials stay out of this search. An allow is not a denial. A permissive domain also does not log an access the module already allows. A second copy of the same denial waits for a policy reload. The `/log` allow is in the module.
 
 ---
 
@@ -331,10 +335,10 @@ curl -sf http://127.0.0.1:8091/feature-spool; echo "spool exit=$?"
 **5.4**
 
 ```bash
-sudo ausearch -m avc -ts recent --subject shopapi_t
+sudo ausearch -m avc --checkpoint /var/tmp/shopapi-lab.checkpoint --subject shopapi_t
 ```
 
-`/log` still works. `/feature-spool` fails. The new AVC has `permissive=0`. `getenforce` is still `Enforcing`.
+`/log` still works. `/feature-spool` fails. The checkpoint shows the new denial and not the ones from labs 2 and 4. The new AVC has `permissive=0`. `getenforce` is still `Enforcing`.
 
 ---
 
@@ -351,8 +355,11 @@ In `shopapi.fc`:
 Use a type you declare. The seed has no spool type. `shopapi_var_lib_t` is already declared, so the module still compiles. The generator in the tool lab picks the type from the manifest instead of this shortcut. If you add `type shopapi_spool_t` and `files_type(shopapi_spool_t)`, name that type in both files. One type, one allow:
 
 ```text
+allow shopapi_t shopapi_var_lib_t:dir { search write add_name };
 allow shopapi_t shopapi_var_lib_t:file { create write append open getattr };
 ```
+
+The directory line is required when the spool directory is `shopapi_var_lib_t`. Search, write, and add_name are how the process creates `feature.log` in that directory.
 
 Skip that allow if lab 3 already granted `shopapi_var_lib_t` and you reused that type. The new fact is the file-context line plus `restorecon`.
 

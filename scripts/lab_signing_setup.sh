@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# lab_signing_setup.sh — Lab GPG key and a local dnf repo so 203 installs
+# lab_signing_setup.sh — Lab GPG key and a local dnf repo so 302 installs
 # with gpgcheck=1. Prints the public key path and the two variable names.
 # Never prints the private key. Do not commit the key or the repo.
 #

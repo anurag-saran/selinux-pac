@@ -2144,6 +2144,74 @@ def _run_deterministic_gen(
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def test_docs_match_the_store() -> None:
+    """Training pages name the store files, the RHEL 9 guide, and the current doc numbers."""
+    c103 = (PROJECT_ROOT / "docs/training/103-CONFIG-FILES.md").read_text(encoding="utf-8")
+    assert "ports.local" in c103
+    assert "file_contexts.local" in c103
+    assert "booleans.local" in c103
+    assert "permissive_<type>" in c103
+    assert "priority 400" in c103
+    assert "selinux-policy-targeted" in c103
+    assert "Every `semodule` or `semanage` rebuild rewrites this file" in c103
+    assert "It is what the kernel loads" in c103
+    assert "/etc/selinux/targeted/contexts/files/" in c103
+    assert "not this file by itself" not in c103
+
+    c101 = (PROJECT_ROOT / "docs/training/101-CONCEPTS.md").read_text(encoding="utf-8")
+    assert "Java started from that shell runs as **`unconfined_java_t`**" in c101
+
+    c102 = (PROJECT_ROOT / "docs/training/102-COMMANDS.md").read_text(encoding="utf-8")
+    assert "because `ausearch` reads stdin" in c102
+    assert "`aureport -a` lists AVC events" in c102
+    assert "`aureport -a --summary` counts them" in c102
+    assert "stub module" not in c102
+    assert "looking for `apache`" in c102
+    assert "red_hat_enterprise_linux/9/html/using_selinux" in c102
+    assert "red_hat_enterprise_linux/8/" not in c102
+
+    c104 = (PROJECT_ROOT / "docs/training/104-HAND-BUILT-MODULE.md").read_text(encoding="utf-8")
+    assert c104.count("--checkpoint") >= 3
+    assert "sudo mvn" not in c104
+    assert "shopapi_log_t:dir { search write add_name }" in c104
+    assert "shopapi_var_lib_t:dir { search write add_name }" in c104
+
+    c301 = (PROJECT_ROOT / "docs/demo/301-CUSTOMER.md").read_text(encoding="utf-8")
+    assert "[203]" not in c301
+    assert "ran **104**" in c301
+    assert "labs 5 and 6 of **104**" in c301
+    assert "JWS denies" in c301
+    assert "JWS tunes the host" in c301
+    assert "LAST_VERIFIED:** 2026-09-18" in c301
+
+    c401 = (PROJECT_ROOT / "docs/admin/401-OPERATIONS.md").read_text(encoding="utf-8")
+    assert "/var/lib/selinux-policy-ops/<app>/selinux_soak_last_fail.json" in c401
+    assert "/var/lib/<app>/" not in c401
+    assert "203 talk" not in c401
+
+    monitor = (PROJECT_ROOT / "scripts/monitor_avc.sh").read_text(encoding="utf-8")
+    assert "/var/lib/<app>" not in monitor
+    assert 'FAIL_DIR:-/var/lib/selinux-policy-ops/<app>' in monitor
+    assert '${fail_dir_shown}/selinux_soak_last_fail.json' in monitor
+
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    docs_readme = (PROJECT_ROOT / "docs/README.md").read_text(encoding="utf-8")
+    assert "(**204**)" not in readme
+    assert "API key" not in readme
+    assert "103-CONFIG-FILES.md" in readme
+    assert "104-HAND-BUILT-MODULE.md" in readme
+    assert "103-CONFIG-FILES.md" in docs_readme
+    assert "→ **202**" not in docs_readme
+
+    live = (PROJECT_ROOT / "docs/LIVE_CHECKS.md").read_text(encoding="utf-8")
+    assert "ls /var/lib/selinux/targeted/active/" in live
+    assert "ls -l /etc/selinux/targeted/contexts/files/" in live
+    assert (
+        "sha256sum /etc/selinux/targeted/policy/policy.33 "
+        "/var/lib/selinux/targeted/active/policy.kern"
+    ) in live
+
+
 def test_baseline_fixture_rerun_does_not_append() -> None:
     """A baseline-only log writes no header and no version bump. A second run is byte-identical."""
     case = PROJECT_ROOT / "docs/examples/fixtures/deterministic/05-baseline-covered"
@@ -4120,6 +4188,7 @@ def main() -> int:
         ("classify_fail_closed_json", test_classify_fail_closed_json),
         ("check_soak_auto_tier_fail_closed", test_check_soak_auto_tier_fail_closed),
         ("offline_fixture_sync", test_offline_fixture_sync),
+        ("docs_match_the_store", test_docs_match_the_store),
         ("baseline_fixture_rerun_does_not_append", test_baseline_fixture_rerun_does_not_append),
         ("deterministic_verdict_fixture_coverage", test_deterministic_verdict_fixture_coverage),
         ("needs_review_hits", test_needs_review_hits),

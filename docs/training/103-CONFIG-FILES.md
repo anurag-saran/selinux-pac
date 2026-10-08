@@ -2,7 +2,7 @@
 
 The commands that read and write these files are in [102](102-COMMANDS.md). None of this is a repo script. Paths are the RHEL 9 layout. A directory listing that has not been captured on rhel-qa is in [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
-File contexts are files on disk. `restorecon` and `matchpathcon` read them. They are not part of the kernel.
+`restorecon` and `matchpathcon` read `/etc/selinux/targeted/contexts/files/`. That directory is not the kernel policy.
 
 ---
 
@@ -22,12 +22,17 @@ File contexts are files on disk. `restorecon` and `matchpathcon` read them. They
 
 | Path | What |
 |------|------|
-| `modules/100` | Base modules shipped with the policy |
-| `modules/200` | Modules from an RPM |
-| `modules/400` | Modules from `semodule -i`, and local changes from `semanage` (a permissive domain, a port, a file context, a boolean) |
-| `policy.kern` | The rebuilt binary policy `sesearch` and `seinfo` can read when `/sys/fs/selinux/policy` is not the file you want |
+| `modules/100` | Every module from `selinux-policy-targeted`, at priority 100 |
+| `modules/200` | Modules from an RPM, at priority 200 |
+| `modules/400` | A module from `semodule -i`, and the one module `semanage permissive` adds: `permissive_<type>`, at priority 400 |
+| `ports.local` | Ports added on this host with `semanage port` |
+| `file_contexts.local` | File-context lines added on this host with `semanage fcontext` |
+| `booleans.local` | Booleans changed on this host with `semanage boolean` or `setsebool -P` |
+| `policy.kern` | The rebuilt binary beside the modules. `policy.33` is the file the kernel loads |
 
-**Which command writes it.** `semodule -i` writes priority 400 and rebuilds `policy.kern`. `semanage` writes its own small modules at 400 and rebuilds the same way. An RPM's `%post` installs its `.pp` at priority 200. `semodule -B` and `semodule -DB` rebuild `policy.kern` without adding a module.
+Local `semanage` changes for ports, file contexts, and booleans are those three files in the store. They are not modules. Only `semanage permissive` adds a module.
+
+**Which command writes it.** `semodule -i` writes priority 400. `semanage permissive -a` writes `permissive_<type>` at priority 400. `semanage port`, `semanage fcontext`, and `semanage boolean` write `ports.local`, `file_contexts.local`, and `booleans.local`. An RPM's `%post` installs its `.pp` at priority 200. Every `semodule` or `semanage` rebuild rewrites `policy.33`.
 
 **Look safely.** `sudo semodule --list-modules=full`. `sudo ls /var/lib/selinux/targeted/active/modules`. Do not delete a directory under `modules/`.
 
@@ -37,26 +42,26 @@ File contexts are files on disk. `restorecon` and `matchpathcon` read them. They
 
 ## policy.33
 
-**What it holds.** The binary policy file shipped for targeted policy on RHEL 9, at `/etc/selinux/targeted/policy/policy.33`. The number is the policy version. It is the packaged file. After `semodule` or `semanage` rebuilds the store, the kernel loads the rebuilt image, not this file by itself.
+**What it holds.** `/etc/selinux/targeted/policy/policy.33`. The number is the policy version. Every `semodule` or `semanage` rebuild rewrites this file. It is what the kernel loads.
 
-**Which command writes it.** The `selinux-policy-targeted` RPM. Do not compile over it.
+**Which command writes it.** `semodule` and `semanage`, on every rebuild. The `selinux-policy-targeted` RPM ships the first copy. Do not edit the file by hand.
 
-**Look safely.** `ls -l /etc/selinux/targeted/policy/policy.33`. Confirm the filename on the host with the command in [LIVE_CHECKS.md](../LIVE_CHECKS.md). `sesearch` can take this path when you want the packaged policy rather than the rebuilt store.
+**Look safely.** `ls -l /etc/selinux/targeted/policy/policy.33`. Confirm the filename on the host with the command in [LIVE_CHECKS.md](../LIVE_CHECKS.md). `sha256sum` of this file and `policy.kern` is in that same list.
 
 ---
 
 ## file_contexts and file_contexts.local
 
-**What they hold.** Under `/var/lib/selinux/targeted/active/`:
+**What they hold.** `semanage fcontext` writes `file_contexts.local` in the store (`/var/lib/selinux/targeted/active/file_contexts.local`). The rebuild copies the combined map to `/etc/selinux/targeted/contexts/files/`. `restorecon` and `matchpathcon` read that directory, not the store path.
 
 | File | What |
 |------|------|
-| `file_contexts` | The combined map from the loaded modules: path pattern to label |
-| `file_contexts.local` | Lines `semanage fcontext -a` added on this host |
+| `/etc/selinux/targeted/contexts/files/file_contexts` | The combined map from the loaded modules: path pattern to label |
+| `/etc/selinux/targeted/contexts/files/file_contexts.local` | Lines `semanage fcontext -a` added on this host |
 
-`file_contexts.homedirs` and `file_contexts.bin` sit beside them. The text files are the ones to read. `matchpathcon` and `restorecon` read this map. The kernel does not store it as a list of paths.
+`file_contexts.homedirs` sits in the same directory. The kernel does not store this map as a list of paths.
 
-**Which command writes them.** A module install rebuilds `file_contexts` from every module's `.fc`. `semanage fcontext -a` and `-d` write `file_contexts.local`. `semanage export` prints those local lines.
+**Which command writes them.** A module install rebuilds `file_contexts` from every module's `.fc`. `semanage fcontext -a` and `-d` write `file_contexts.local` in the store, and the rebuild updates `/etc/selinux/targeted/contexts/files/`. `semanage export` prints those local lines.
 
 **Look safely.**
 
