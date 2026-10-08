@@ -143,13 +143,31 @@ if [[ -z "${raw}" ]] && ! command -v ausearch >/dev/null 2>&1 && [[ ! -f /var/lo
     exit 1
 fi
 
+ignored_log="$(mktemp)"
+: > "${ignored_log}"
 matches=()
 while IFS= read -r line; do
     [[ -z "${line}" ]] && continue
     matches+=("${line}")
-done < <(printf '%s\n' "${raw}" | avc_filter_lines_by_paths "${PATHS}" "${DOMAIN}")
+done < <(printf '%s\n' "${raw}" | avc_filter_lines_by_paths "${PATHS}" "${DOMAINS_CSV}" "${SOAK_IGNORE_CSV:-}" "${ignored_log}")
 
 count="${#matches[@]}"
+ignored_count="$(wc -l < "${ignored_log}" | tr -d '[:space:]')"
+ignored_json="$(python3 - "${ignored_log}" <<'PY'
+import collections, json, sys
+
+counts = collections.Counter()
+for line in open(sys.argv[1], encoding="utf-8"):
+    parts = line.split()
+    if len(parts) == 2:
+        counts[tuple(parts)] += 1
+rows = [
+    {"tclass": tclass, "target_type": target, "count": count}
+    for (tclass, target), count in sorted(counts.items())
+]
+print(json.dumps(rows))
+PY
+)"
 
 net_new_json="$(mktemp)"
 net_new_count=0
@@ -215,6 +233,7 @@ if [[ "${fail}" -eq 1 && -n "${FAIL_DIR}" ]]; then
         MON_MAX_AVC="${MAX_AVC}" MON_MAX_NET_NEW="${MAX_NET_NEW}" \
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
+        MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
         MON_NEXT_STEP="${NEXT_STEP}" MON_FAIL_DIR="${FAIL_DIR}" \
         python3 - "${net_new_json}" "${FAIL_DIR}/selinux_soak_last_fail.json" "${avc_excerpt}" <<'PY'
 import json, os, sys
@@ -232,6 +251,8 @@ payload = {
     "net_new_count": int(os.environ.get("MON_NET_NEW", "-1")),
     "avc_fail_closed": os.environ.get("MON_FAIL_CLOSED", "0") == "1",
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
+    "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
+    "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": "fail",
     "next_step": os.environ.get("MON_NEXT_STEP", ""),
@@ -248,6 +269,7 @@ if [[ "${OUTPUT_FORMAT}" == "json" ]]; then
         MON_MAX_AVC="${MAX_AVC}" MON_MAX_NET_NEW="${MAX_NET_NEW}" \
         MON_NET_NEW="${net_new_count}" MON_FAIL_CLOSED="${avc_fail_closed}" \
         MON_FAIL_REASON="${fail_closed_reason}" \
+        MON_IGNORED_COUNT="${ignored_count}" MON_IGNORED_JSON="${ignored_json}" \
         MON_STATUS="$([[ "${fail}" -eq 1 ]] && echo fail || echo pass)" \
         MON_NEXT_STEP="${NEXT_STEP}" \
         python3 - "${net_new_json}" <<'PY'
@@ -267,6 +289,8 @@ out = {
     "net_new_count": int(os.environ.get("MON_NET_NEW", "-1")),
     "avc_fail_closed": os.environ.get("MON_FAIL_CLOSED", "0") == "1",
     "fail_closed_reason": os.environ.get("MON_FAIL_REASON", extra.get("fail_closed_reason", "")),
+    "ignored_count": int(os.environ.get("MON_IGNORED_COUNT", "0")),
+    "ignored": json.loads(os.environ.get("MON_IGNORED_JSON", "[]")),
     "exceptions": extra.get("exceptions", [])[:20],
     "status": os.environ.get("MON_STATUS", "pass"),
 }
@@ -279,7 +303,7 @@ else
     log_info "AVC report: domain=${DOMAIN} since=${SINCE} count=${count} net_new=${net_new_count}"
 fi
 
-rm -f "${net_new_json}"
+rm -f "${net_new_json}" "${ignored_log}"
 
 if [[ "${OUTPUT_FORMAT}" != "json" && "${SHOW_LINES}" -gt 0 && "${count}" -gt 0 ]]; then
     echo "--- recent matching event lines ---"

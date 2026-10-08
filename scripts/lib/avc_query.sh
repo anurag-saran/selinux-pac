@@ -56,72 +56,65 @@ count_domain_events_since() {
     echo "${count:-0}"
 }
 
-# Filter raw AVC lines for generate / soak.
-# Keep: manifest path hits; pathless non-file denials (name_bind, execmem);
-# pathless file denials whose tcontext type belongs to this module (shopapi_log_t).
-# Drop: /etc/passwd, /usr/lib/jvm, /proc, /sys — those are not app trees.
-# Keep var_spool_t: shopapi /feature-spool writes /var/spool/shopapi and the
-# kernel often logs name= without path=.
+# Keep every AVC whose scontext type is one of the domains.
+# A path= outside the manifest paths is still a denial and still counts.
+# Optional ignore list is tclass:target_type pairs (comma-separated).
+# Optional 4th arg is a file that receives one "tclass target_type" line per ignored AVC.
 avc_filter_lines_by_paths() {
-    local paths_csv="$1"
-    local domain="${2:-}"
-    local type_prefix=""
-    local -a path_filters=()
-    local hit p tctx ttype
-    if [[ "${domain}" == *_t ]]; then
-        type_prefix="${domain%_t}_"
+    local _paths_csv="$1"
+    local domains_csv="${2:-}"
+    local ignore_csv="${3:-}"
+    local ignored_log="${4:-}"
+    local -a domains=() ignores=()
+    local line sctx stype tctx ttype tclass rule iclass itype ignored
+    if [[ -n "${domains_csv}" ]]; then
+        IFS=',' read -r -a domains <<< "${domains_csv}"
     fi
-    if [[ -n "${paths_csv}" ]]; then
-        IFS=',' read -r -a path_filters <<< "${paths_csv}"
+    if [[ -n "${ignore_csv}" ]]; then
+        IFS=',' read -r -a ignores <<< "${ignore_csv}"
     fi
     while IFS= read -r line; do
         [[ -z "${line}" ]] && continue
         [[ "${line}" != type=AVC* ]] && continue
-        if [[ ${#path_filters[@]} -eq 0 ]]; then
-            echo "${line}"
-            continue
-        fi
-        local hit=0 p
-        for p in "${path_filters[@]}"; do
-            p="${p// /}"
-            if [[ -n "${p}" && "${line}" == *"${p}"* ]]; then
-                hit=1
-                break
-            fi
-        done
-        if [[ "${hit}" -eq 1 ]]; then
-            echo "${line}"
-            continue
+        sctx="${line##* scontext=}"
+        sctx="${sctx%% *}"
+        stype="$(printf '%s' "${sctx}" | cut -d: -f3)"
+        if [[ ${#domains[@]} -gt 0 ]]; then
+            local keep=0 d
+            for d in "${domains[@]}"; do
+                d="${d// /}"
+                if [[ -n "${d}" && "${stype}" == "${d}" ]]; then
+                    keep=1
+                    break
+                fi
+            done
+            [[ "${keep}" -eq 1 ]] || continue
         fi
         tctx="${line##* tcontext=}"
         tctx="${tctx%% *}"
-        ttype="$(cut -d: -f3 <<<"${tctx}")"
-        case "${ttype}" in
-            random_device_t|tmp_t|proc_t|proc_net_t|var_spool_t)
-                echo "${line}"
-                continue
-                ;;
-        esac
-        # path= is a file-tree AVC outside the manifest — skip.
-        if [[ "${line}" == *" path="* ]]; then
-            continue
+        ttype="$(printf '%s' "${tctx}" | cut -d: -f3)"
+        tclass="${line##* tclass=}"
+        tclass="${tclass%% *}"
+        ignored=0
+        if [[ ${#ignores[@]} -gt 0 ]]; then
+            for rule in "${ignores[@]}"; do
+                rule="${rule// /}"
+                [[ -z "${rule}" ]] && continue
+                iclass="${rule%%:*}"
+                itype="${rule#*:}"
+                if [[ "${tclass}" == "${iclass}" && "${ttype}" == "${itype}" ]]; then
+                    ignored=1
+                    break
+                fi
+            done
         fi
-        # cgroupfs getattr is optional JVM telemetry; cgroup_t is often undeclared.
-        if [[ "${line}" == *" tclass=filesystem"* ]]; then
-            continue
-        fi
-        if [[ "${line}" == *" tclass=file "* || "${line}" == *" tclass=dir "* \
-            || "${line}" == *" tclass=lnk_file "* || "${line}" == *" tclass=chr_file "* \
-            || "${line}" == *" tclass=fifo_file "* ]]; then
-            tctx="${line##* tcontext=}"
-            tctx="${tctx%% *}"
-            ttype="$(cut -d: -f3 <<<"${tctx}")"
-            if [[ -n "${type_prefix}" && "${ttype}" == "${type_prefix}"* ]]; then
-                echo "${line}"
+        if [[ "${ignored}" -eq 1 ]]; then
+            if [[ -n "${ignored_log}" ]]; then
+                printf '%s %s\n' "${tclass}" "${ttype}" >> "${ignored_log}"
             fi
             continue
         fi
-        echo "${line}"
+        printf '%s\n' "${line}"
     done
 }
 

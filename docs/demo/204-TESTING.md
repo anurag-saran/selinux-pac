@@ -126,6 +126,8 @@ python3 scripts/smoke_test.py
 | `rpm_ops_parity` | Ops RPM file list matches repo scripts |
 | `ops_rpm_soak_cli_imports_alone` | `pac_cli.list` copied alone runs `soak_net_new.py --help` |
 | `monitor_records_soak_stderr` | A failed soak check records that command's stderr |
+| `soak_counts_every_domain_denial` | Domain denials outside the manifest paths still count |
+| `soak_ignore_is_explicit` | `soak.ignore` is the only drop list, and the day JSON records it |
 | `offline_fixture_sync` | Offline demo `offline/generated/` matches committed `selinux/` |
 | `tracked_tree_has_no_model_client` | Tracked files do not name a removed model client |
 | `deterministic_verdict_fixture_coverage` | Every classification verdict has ≥1 golden row under `docs/examples/fixtures/deterministic/` |

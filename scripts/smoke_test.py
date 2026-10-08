@@ -2294,7 +2294,7 @@ def test_export_app_avcs_requires_paths() -> None:
     assert "paths_csv required" in result.stderr
 
 
-def test_avc_filter_keeps_pathless_bind_drops_passwd() -> None:
+def test_avc_filter_keeps_domain_denials() -> None:
     avc_lib = PROJECT_ROOT / "scripts" / "lib" / "avc_query.sh"
     result = subprocess.run(
         [
@@ -2323,8 +2323,146 @@ AVC
     assert "execmem" in out
     assert "state.txt" in out
     assert "libjli.so" in out
-    assert "passwd" not in out
+    assert 'name="passwd"' in out
+    assert 'path="/etc/passwd"' in out
     assert "var_spool_t" in out
+
+
+def test_soak_counts_every_domain_denial() -> None:
+    """Denials outside the manifest paths still count when scontext is the app domain."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("2000\n", encoding="utf-8")
+        lines = [
+            "type=AVC msg=audit(1000.1:1): avc: denied { read } for pid=1 "
+            'path="/etc/pki/ca-trust/extracted/pem/old.pem" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:cert_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3000.1:2): avc: denied { read } for pid=1 "
+            'path="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:cert_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3001.1:3): avc: denied { read } for pid=1 "
+            'path="/etc/shopapi-extra.conf" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3002.1:4): avc: denied { read } for pid=1 "
+            'path="/opt/shopapi/lib/app.jar" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:shopapi_lib_t:s0 tclass=file permissive=1",
+            "type=AVC msg=audit(3003.1:5): avc: denied { read } for pid=1 "
+            'path="/etc/httpd/conf/httpd.conf" '
+            "scontext=system_u:system_r:httpd_t:s0 "
+            "tcontext=system_u:object_r:httpd_config_t:s0 tclass=file permissive=1",
+        ]
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + " ".join(repr(line) for line in lines) + "\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--manifest",
+                str(PROJECT_ROOT / "config" / "shopapi.manifest.yml"),
+                "--marker-file",
+                str(marker),
+                "--max-avc",
+                "0",
+                "--format",
+                "json",
+                "--show-lines",
+                "0",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["count"] == 3, result.stdout + result.stderr
+        assert payload["status"] == "fail"
+        assert "httpd_t" not in result.stdout
+
+
+def test_soak_ignore_is_explicit() -> None:
+    """Only soak.ignore drops a domain denial, and the daily JSON records the count."""
+    loader = PROJECT_ROOT / "scripts" / "lib" / "app_manifest.py"
+    bad = subprocess.run(
+        ["python3", str(loader), "validate", str(PROJECT_ROOT / "config" / "shopapi.manifest.yml")],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert bad.returncode == 0, bad.stderr
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        manifest = root / "app.manifest.yml"
+        text = (PROJECT_ROOT / "config" / "shopapi.manifest.yml").read_text(encoding="utf-8")
+        text += "\nsoak:\n  ignore:\n    - tclass: file\n      target_type: etc_t\n"
+        manifest.write_text(text, encoding="utf-8")
+        ok = subprocess.run(
+            ["python3", str(loader), "validate", str(manifest)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert ok.returncode == 0, ok.stderr
+        broken = root / "bad.manifest.yml"
+        broken.write_text(text + "    - tclass: 'file class'\n      target_type: etc_t\n", encoding="utf-8")
+        rejected = subprocess.run(
+            ["python3", str(loader), "validate", str(broken)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert rejected.returncode != 0
+        bindir = root / "bin"
+        bindir.mkdir()
+        marker = root / "marker"
+        marker.write_text("2000\n", encoding="utf-8")
+        line = (
+            "type=AVC msg=audit(3001.1:3): avc: denied { read } for pid=1 "
+            'path="/etc/shopapi-extra.conf" '
+            "scontext=system_u:system_r:shopapi_t:s0 "
+            "tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=1"
+        )
+        ausearch = bindir / "ausearch"
+        ausearch.write_text("#!/bin/sh\nprintf '%s\\n' " + repr(line) + "\n", encoding="utf-8")
+        ausearch.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("AUDIT_LOG", None)
+        result = subprocess.run(
+            [
+                BASH,
+                str(PROJECT_ROOT / "scripts" / "monitor_avc.sh"),
+                "--manifest",
+                str(manifest),
+                "--marker-file",
+                str(marker),
+                "--max-avc",
+                "0",
+                "--format",
+                "json",
+                "--show-lines",
+                "0",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["count"] == 0, result.stdout + result.stderr
+        assert payload["ignored_count"] == 1
+        assert payload["ignored"] == [{"tclass": "file", "target_type": "etc_t", "count": 1}]
+        assert payload["status"] == "pass"
 
 
 def test_boolean_policy_render() -> None:
@@ -3381,6 +3519,9 @@ def main() -> int:
         ("deterministic_fixture_classify", test_deterministic_fixture_classify),
         ("payments_onboarding_module", test_payments_onboarding_module),
         ("export_app_avcs_requires_paths", test_export_app_avcs_requires_paths),
+        ("avc_filter_keeps_domain_denials", test_avc_filter_keeps_domain_denials),
+        ("soak_counts_every_domain_denial", test_soak_counts_every_domain_denial),
+        ("soak_ignore_is_explicit", test_soak_ignore_is_explicit),
         ("boolean_policy_render", test_boolean_policy_render),
         ("boolean_triage_two_matches", test_boolean_triage_two_matches),
         ("boolean_curated_when_policy_unavailable", test_boolean_curated_when_policy_unavailable),
