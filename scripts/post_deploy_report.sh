@@ -20,6 +20,7 @@ APP_NAME="myapp"
 POLICY_VERSION_FILE="${PROJECT_ROOT}/selinux/policy_version.txt"
 FINDINGS_JSON=""
 POLICY_VERSION_OVERRIDE=""
+FORCE_ENFORCE=0
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -44,6 +45,7 @@ Options:
   --project-root PATH   Repo root for policy version lookup
   --manifest PATH       App manifest YAML (default: config/\${POLICY_APP:-myapp}.manifest.yml)
   --findings-json PATH  Optional policy_out/findings.json (embeds host_admin_actions booleans)
+  --force-enforce       Record that enforce skipped the daily soak-history files
   -h, --help            Show help
 EOF
 }
@@ -60,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --policy-version) POLICY_VERSION_OVERRIDE="$2"; shift 2 ;;
         --findings-json) FINDINGS_JSON="$2"; shift 2 ;;
         --manifest) MANIFEST="$2"; shift 2 ;;
+        --force-enforce) FORCE_ENFORCE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) log_error "Unknown option: $1"; usage; exit 1 ;;
     esac
@@ -171,7 +174,7 @@ if manifest_path and Path(manifest_path).is_file():
             state = subprocess.check_output(
                 ["systemctl", "is-active", unit], text=True, stderr=subprocess.DEVNULL
             ).strip()
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             state = "unknown"
         services[role] = {"unit": unit, "state": state}
 else:
@@ -180,7 +183,7 @@ else:
             state = subprocess.check_output(
                 ["systemctl", "is-active", unit], text=True, stderr=subprocess.DEVNULL
             ).strip()
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             state = "unknown"
         services[role] = {"unit": unit, "state": state}
 
@@ -246,6 +249,8 @@ report = {
     "status": "${overall_status}",
     "host_admin_actions": host_admin_actions,
     "report_file": "${REPORT_FILE}",
+    "force_enforce": ${FORCE_ENFORCE} == 1,
+    "daily_history_bypassed": ${FORCE_ENFORCE} == 1,
 }
 Path("${REPORT_FILE}").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(json.dumps(report, indent=2))

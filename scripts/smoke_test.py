@@ -2691,6 +2691,104 @@ def test_collect_soak_facts_monitor_crash() -> None:
         assert facts["avc_count_since_marker"] == -1
 
 
+def test_stale_canary_marker_and_force_enforce_report() -> None:
+    """An abandoned marker is reported, and force_enforce is written into the deploy report."""
+    facts = PROJECT_ROOT / "scripts" / "collect_soak_facts.sh"
+    report_script = PROJECT_ROOT / "scripts" / "post_deploy_report.sh"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        old = root / "shopapi"
+        fresh = root / "payments"
+        old.mkdir()
+        fresh.mkdir()
+        old_marker = old / "selinux_canary_deployed_at"
+        fresh_marker = fresh / "selinux_canary_deployed_at"
+        now = int(time.time())
+        old_marker.write_text(str(now - 31 * 86400), encoding="utf-8")
+        fresh_marker.write_text(str(now), encoding="utf-8")
+        stub = root / "monitor.sh"
+        stub.write_text("#!/bin/bash\necho '{\"count\":0,\"net_new_count\":0}'\n", encoding="utf-8")
+        stub.chmod(0o755)
+        env = os.environ.copy()
+        env["MONITOR_AVC_BIN"] = str(stub)
+        result = subprocess.run(
+            [
+                BASH,
+                str(facts),
+                "--marker-file",
+                str(old_marker),
+                "--report-file",
+                str(root / "missing.json"),
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["stale_canary_markers"] == [str(old_marker)]
+        status = (PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/soak_status.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "stale_canary_markers" in status
+        assert "older than 30 days" in status
+
+        out = root / "report.json"
+        forced = subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(out),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+                "--force-enforce",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert out.is_file(), forced.stderr
+        body = json.loads(out.read_text(encoding="utf-8"))
+        assert body["force_enforce"] is True
+        assert body["daily_history_bypassed"] is True
+        plain = root / "plain.json"
+        subprocess.run(
+            [
+                BASH,
+                str(report_script),
+                "--phase",
+                "enforce",
+                "--manifest",
+                str(root / "no-manifest.yml"),
+                "--report-file",
+                str(plain),
+                "--marker-file",
+                str(root / "absent-marker"),
+                "--var-dir",
+                str(root),
+                "--policy-version",
+                "1.2.3",
+            ],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert plain.is_file()
+        plain_body = json.loads(plain.read_text(encoding="utf-8"))
+        assert plain_body["force_enforce"] is False
+        assert plain_body["daily_history_bypassed"] is False
+
+
 def test_soak_gate_negative_net_new() -> None:
     script = PROJECT_ROOT / "scripts" / "check_soak_gate.sh"
     negative = subprocess.run(
@@ -2874,6 +2972,32 @@ def test_soak_daily_history_and_other_app_guard() -> None:
         assert called.returncode == 0, called.stderr
         assert ran.read_text(encoding="utf-8").strip() == "ran"
 
+        archived = subprocess.run(
+            [BASH, str(restore), "--app", "shopapi", "--state-root", str(root), "--archive"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert archived.returncode == 0, archived.stderr
+        assert not (root / "shopapi" / "selinux_canary_deployed_at").exists()
+        assert (root / "shopapi" / "selinux_canary_deployed_at.enforced").is_file()
+        ran.write_text("", encoding="utf-8")
+        after = subprocess.run(
+            [BASH, str(restore), "--app", "payments", "--state-root", str(root)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert after.returncode == 0, after.stderr
+        assert "skip semodule -B" not in after.stderr
+        assert ran.read_text(encoding="utf-8").strip() == "ran"
+        enforce = (PROJECT_ROOT / "ansible/roles/selinux_pac/tasks/enforce.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "--archive" in enforce
+        assert "--force-enforce" in enforce
+
 
 def main() -> int:
     tests = [
@@ -2940,6 +3064,7 @@ def main() -> int:
         ("collect_soak_facts_monitor_crash", test_collect_soak_facts_monitor_crash),
         ("soak_gate_negative_net_new", test_soak_gate_negative_net_new),
         ("soak_daily_history_and_other_app_guard", test_soak_daily_history_and_other_app_guard),
+        ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
     ]
     for name, fn in tests:
         fn()

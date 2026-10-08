@@ -184,9 +184,17 @@
         --manifest {{ app_manifest_path }}
         --marker-file {{ soak_marker_file }}
         --policy-version {{ policy_version }}
+        {{ '--force-enforce' if (force_enforce | default(false) | bool) else '' }}
       register: deploy_report
       changed_when: deploy_report.rc == 0
       failed_when: deploy_report.rc != 0
+
+    - name: Archive this app's canary marker after enforce
+      ansible.builtin.command: >
+        {{ selinux_ops_dir }}/semodule_restore_dontaudit.sh
+        --app {{ app_name }} --archive
+      register: archived_marker
+      changed_when: "'archived ' in (archived_marker.stdout | default(''))"
 
   rescue:
     - name: Auto-rescue — restore permissive domain after enforce failure

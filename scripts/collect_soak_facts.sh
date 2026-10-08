@@ -138,8 +138,34 @@ PY
 )"
 fi
 
+if [[ -n "${SOAK_STATE_ROOT:-}" ]]; then
+    STATE_ROOT="${SOAK_STATE_ROOT}"
+elif [[ "${MARKER_FILE}" == */selinux_canary_deployed_at ]]; then
+    STATE_ROOT="$(dirname "$(dirname "${MARKER_FILE}")")"
+else
+    STATE_ROOT=""
+fi
+
 python3 - <<PY
 import json
+import time
+from pathlib import Path
+
+stale = []
+root = """${STATE_ROOT}"""
+if root:
+    cutoff = time.time() - 30 * 86400
+    root_path = Path(root)
+    if root_path.is_dir():
+        for marker in sorted(root_path.glob("*/selinux_canary_deployed_at")):
+            text = marker.read_text(encoding="utf-8", errors="replace").strip()
+            if text.isdigit():
+                opened = int(text)
+            else:
+                opened = int(marker.stat().st_mtime)
+            if opened < cutoff:
+                stale.append(str(marker))
+
 print(json.dumps({
     "domain": "${DOMAIN}",
     "marker_file": "${MARKER_FILE}",
@@ -152,5 +178,6 @@ print(json.dumps({
     "report_status": "${report_status}",
     "report_gate_ok": bool(int("${report_ok:-0}")),
     "manifest": "${MANIFEST:-}",
+    "stale_canary_markers": stale,
 }, indent=2))
 PY

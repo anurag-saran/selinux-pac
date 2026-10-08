@@ -124,7 +124,7 @@ Attach [`ansible/aap/survey_enforce.json`](../../ansible/aap/survey_enforce.json
 | `selinux_pac_package` | leave unset | The playbook reads `selinux/shopapi/policy_version.txt` on the controller and installs `shopapi-selinux-<that version>`. |
 | `soak_max_net_new` | `0` | Soak fails when a new access appears. |
 | `soak_min_days` | `7` on prod, `0` on the lab QA inventory | How long canary must run before enforce. |
-| `force_enforce` | `false` | Skips the whole soak gate: the day count, the net-new check, the canary marker, and the deploy report. Still needs a change ticket. The 203 recording sets it true. A real shop leaves it false. |
+| `force_enforce` | `false` | Skips the soak gate, including the daily history files under `daily/`. Still needs a change ticket. The enforce deploy report records `daily_history_bypassed: true`. The 203 recording sets it true. A real shop leaves it false. |
 | `rollback_dnf_version` | previous NVR | Optional RPM downgrade during rollback. |
 
 **Release canary** is the Canary job. **Promote to enforce** is Soak status, then approval, then Enforce. Attach an AAP notification to Soak monitor (job failed) so a new denial pages someone. The failed job does not change the host.
@@ -139,7 +139,7 @@ Do these once, on the controller, before the first playbook. `inventory.producti
 cp ansible/inventory.production.example.yml ansible/inventory.production.yml
 ```
 
-Canary installs the module, writes `/var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at`, and adds only `shopapi_t` to the permissive list. The operating system stays Enforcing. That directory is `root:root` mode `0755`. The app cannot rewrite the marker while its domain is permissive. `semodule -DB` turns off dontaudit rules for the **whole host** so soak can see every denial. Enforce and rollback run `semodule -B` to put dontaudit back, unless another app still has a marker under `/var/lib/selinux-policy-ops/`. If you canary and never enforce, `-DB` stays until you do. Each Soak monitor run stores that day's JSON in `/var/lib/selinux-policy-ops/shopapi/daily/`. Enforce needs that many consecutive passing days, and the newest file has to be from today or yesterday. A later clean reading of `audit.log` does not erase a stored failure.
+Canary installs the module, writes `/var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at`, and adds only `shopapi_t` to the permissive list. The operating system stays Enforcing. That directory is `root:root` mode `0755`. The app cannot rewrite the marker while its domain is permissive. `semodule -DB` turns off dontaudit rules for the **whole host** so soak can see every denial. Enforce and rollback run `semodule -B` to put dontaudit back, unless another app still has a marker under `/var/lib/selinux-policy-ops/`. A successful enforce archives this app's marker to `selinux_canary_deployed_at.enforced`. If that file stayed in place, every later `semodule -B` would treat the app as still soaking. If you canary and never enforce, `-DB` stays until you do. Soak status warns when any marker there is older than 30 days. It does not delete it. Each Soak monitor run stores that day's JSON in `/var/lib/selinux-policy-ops/shopapi/daily/`. Enforce needs that many consecutive passing days, and the newest file has to be from today or yesterday. A later clean reading of `audit.log` does not erase a stored failure.
 
 Type this on the controller:
 
@@ -197,7 +197,7 @@ This playbook checks the soak gate itself: the canary marker exists, at least 7 
 
 Enforce removes `shopapi_t` from the permissive list and runs the smoke tests again. On the host, `semanage permissive -l` no longer shows that domain. `getenforce` is still `Enforcing`.
 
-Leave `force_enforce` false. The 203 talk sets `-e force_enforce=true` so a recording can continue the same day. That skips the day count, the net-new check, the marker, and the deploy report. It still requires `change_ticket`.
+Leave `force_enforce` false. The 203 talk sets `-e force_enforce=true` so a recording can continue the same day. That skips the day count, the net-new check, the canary marker, and the daily history files. It still writes the deploy report, with `daily_history_bypassed` set, and it still requires `change_ticket`.
 
 ## A denial after ship
 
@@ -217,7 +217,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 1. If the app is already enforcing and down, run **SELinux – Rollback** first. The domain is log-only again, the host stays Enforcing, and an optional `rollback_dnf_version` downgrades the RPM. [203](../demo/203-RHEL_TWO_HOST.md) shows this after `/feature-spool` returns 500.
 2. Copy `/var/lib/<app>/selinux_soak_last_fail.json` and `selinux_soak_last_fail.avc` off the host.
 3. On rhel-qa, run `bash scripts/dev_generate_policy.sh`. If the vendor check says the app is already covered, re-run with `--tune-report` and apply those host commands. Use `--force "reason"` only when the app really is not the vendor one.
-4. Open the pull request on the **app** repo. CI runs forbidden-patterns and version-consistency.
+4. Open the pull request on the **app** repo. The reusable workflow runs forbidden-patterns, the source audit, version consistency, and the Stream 9 compiled check.
 5. Build the RPM and run **Release canary** again. The soak clock starts over.
 
 | The denial | Change this in git | Leave this off the server as the lasting fix |
