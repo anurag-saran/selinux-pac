@@ -13,8 +13,8 @@ flowchart LR
   p3["3 QA<br/>Generate the module"]
   p4["4 Mac<br/>Copy policy and open a PR"]
   p5["5 Mac<br/>Canary, then enforce on QA"]
-  p6["6 Prod<br/>RPMs, soak, then enforce"]
-  p7["7 Prod fails<br/>Restore, fix on QA, ship again"]
+  p6["6 Prod<br/>Spool soak refuses, then the fix"]
+  p7["7 Outage<br/>Rollback"]
   p1 --> p2 --> p3 --> p4 --> p5 --> p6 --> p7
 ```
 
@@ -143,21 +143,29 @@ ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e 
 
 After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permissive.
 
-## Part 6 — Prod: RPMs, a clean soak, then enforce
+## Part 6 — Prod soak hits `/feature-spool`, the gate refuses, then the fix is enforced
 
 ```mermaid
 flowchart TD
   rpm["Mac builds RPMs from merged main"] --> repo["dnf repo, gpgcheck=1"]
-  repo --> canary["Mac: deploy_canary.yml installs them"]
-  canary --> soak["Prod: /health /state /log return 200"]
-  soak --> mon["Mac: soak_monitor failed=0"]
-  mon --> empty["Prod: no soak-fail file"]
-  empty --> enf["Mac: enforce with force_enforce and ticket DEMO"]
+  repo --> canary["Mac: deploy_canary.yml"]
+  canary --> soak["Prod: curl /feature-spool during soak"]
+  soak --> mon["Mac: soak_monitor fails"]
+  mon --> refuse["Mac: enforce without force_enforce refuses"]
+  refuse --> fix["QA: generate the spool allow, second PR"]
+  fix --> clean["Prod: clean soak, monitor passes"]
+  clean --> enf["Mac: enforce, force_enforce for the day count only"]
 ```
 
 Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`, and only after the pull request is on `main`.
 
-On the Mac the script checks out merged `main`, runs `bash packaging/build_rpms.sh`, and publishes a dnf repo with `gpgcheck=1`. If `SELINUX_GPG_NAME` is unset, it says so and does not install anything. There is no `rpm -Uvh`.
+On the machine that publishes, create the lab key and the local repo once. The script writes a public key and a repo file with `gpgcheck=1`. It does not print the private key.
+
+```bash
+bash scripts/lab_signing_setup.sh
+```
+
+Export `SELINUX_GPG_NAME` and `SELINUX_RPM_REPO` from its output. On the Mac the talk checks out merged `main`, runs `bash packaging/build_rpms.sh`, and publishes that repo. If `SELINUX_GPG_NAME` is unset, it says so and does not install anything. There is no `rpm -Uvh`.
 
 Switch to prod:
 
@@ -173,39 +181,47 @@ Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only 
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
 ```
 
-On prod, `--part soak` curls `/health`, `/state`, and `/log`. Each returns 200. `ausearch` shows no `shopapi` denial since the canary. Do not curl `/feature-spool` yet.
+On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. The domain is permissive, so the page can still return 200. `ausearch` shows a `shopapi_t` denial for `/var/spool/shopapi`. The lines are saved in `/tmp/prod-feature-spool.avc`.
 
-The Mac then runs `soak_monitor.yml`. `failed=0` means nothing new was denied. `--part soak-avc` on prod confirms there is no `/var/lib/shopapi/selinux_soak_last_fail.avc`.
+The Mac then runs `soak_monitor.yml`. It must fail. `--part soak-avc` shows `/var/lib/shopapi/selinux_soak_last_fail.avc`.
 
-`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording does not wait. It enforces with an extra flag:
+Enforce omits `force_enforce`. That flag would skip the AVC failure and the seven-day count. The playbook refuses. `shopapi_t` stays permissive.
+
+```bash
+ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO
+```
+
+Expected: non-zero. The refusal to show is the failed soak. Do not pass `force_enforce` to hide the denial.
+
+The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA, `--part generate --skip-export` writes the spool allow. Merge that PR. Recanary QA, rebuild the RPMs, and canary prod again.
+
+On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `soak_monitor.yml` passes (`failed=0`).
+
+`soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `force_enforce` skips the day count and is written in the deploy report. It is not a way past a failed soak.
 
 ```bash
 ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true
 ```
 
-`force_enforce=true` is for the recording. A real shop omits it and waits seven clean days. `failed=0` means prod is enforcing `shopapi_t`.
+Expected: `shopapi_t` is enforcing. The report records `force_enforce`.
 
-## Part 7 — The new URL fails, then the fix is generated on QA
+## Part 7 — Outage and rollback
 
 ```mermaid
 flowchart TD
-  fail["Prod: /feature-spool returns 500"] --> roll["Mac: emergency_rollback.yml"]
-  roll --> up["Prod: app returns 200 again<br/>policy is not fixed"]
-  up --> copy["Mac copies the denial log to QA"]
-  copy --> gen["QA: generate --skip-export"]
-  gen --> ship["Second PR, canary, new RPMs"]
-  ship --> ok["Prod: /feature-spool returns 200"]
+  fail["Prod: /feature-spool returns 500 when the allow is missing"] --> roll["Mac: emergency_rollback.yml"]
+  roll --> up["Prod: app returns 200 again<br/>domain is permissive"]
 ```
 
-Say: the first module never mentioned `/var/spool/shopapi/feature.log`. Enforcing makes that request fail. We still do not run `semodule -i` on prod.
+This beat follows the clean enforce. It is the enforcing denial and the rollback for a module that does not allow `/var/spool/shopapi`. After Part 6 that allow is loaded, so `/feature-spool` returns 200. Say the rollback playbook anyway.
 
-On prod:
+On prod, when the allow is not loaded:
 
 ```bash
 bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
 ```
 
-`curl -sf` exits non-zero. The page is HTTP 500. The denial is `shopapi_t` opening a `var_spool_t` file. The script saves those lines in `/tmp/prod-feature-spool.avc`.
+`curl -sf` exits non-zero. The page is HTTP 500. The denial is `shopapi_t` opening a `var_spool_t` file.
 
 On the Mac:
 
@@ -213,24 +229,15 @@ On the Mac:
 ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml
 ```
 
-That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. The policy is not fixed. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason.
-
-The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA:
-
-```bash
-bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export
-```
-
-`--skip-export` uses that file. It does not reread QA’s audit log. Generate runs on QA, not on prod.
-
-The Mac copies the new module back, opens a second PR, canaries QA, rebuilds the RPMs, and ships prod again. Prod `--part retest` curls `/feature-spool`. HTTP 200 under the new module is the end.
+That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason. We still do not run `semodule -i` on prod.
 
 ## URLs
 
 | When | What you curl | Why |
 |------|----------------|-----|
-| Generate and soak | `http://127.0.0.1:8091/health`, `/state`, `/log` | These are in the first module. |
-| After prod enforce | `http://127.0.0.1:8091/feature-spool` | Writes `/var/spool/shopapi/feature.log`, which the first module does not allow. |
+| First prod soak | `http://127.0.0.1:8091/health`, `/state`, `/log`, `/feature-spool` | The spool write is not in the first module. Permissive still returns a page; the denial fails the monitor. |
+| Clean soak after the fix | same four URLs | The spool allow is loaded. Monitor passes. |
+| Outage, allow not loaded | `http://127.0.0.1:8091/feature-spool` | Enforcing, and the module does not allow `/var/spool/shopapi/feature.log`. |
 
 The port is `http.port` in `config/shopapi.manifest.yml`.
 

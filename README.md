@@ -184,7 +184,7 @@ See **[202](docs/demo/202-DEMO_GUIDE.md)**. Already-tuned App B (second run): `b
 |--------|--------|
 | Mac | From the repo root, `bash scripts/demo_e2e_mac.sh` |
 | rhel-qa | `ssh $SSH_USER@$QA_HOST` — run the `--part` the Mac prints (`app`, then `generate`, later `--skip-export`) |
-| rhel-prod | `ssh $SSH_USER@$PROD_HOST` — run the `--part` the Mac prints. `--part rpms` does not install the policy RPM or restart shopapi. `deploy_canary.yml` installs from the `gpgcheck=1` repo and sets the domain permissive before the restart. Later parts: `soak`, `soak-avc`, `fail`, `restore`, `retest` |
+| rhel-prod | `ssh $SSH_USER@$PROD_HOST` — run the `--part` the Mac prints. `--part rpms` does not install the policy RPM or restart shopapi. `deploy_canary.yml` installs from the `gpgcheck=1` repo and sets the domain permissive before the restart. Later parts: `soak` (curl `/feature-spool`), `soak-avc`, `soak-clean`, `fail`, `restore`, `retest` |
 
 Unattended rehearsal: `bash scripts/demo_e2e_mac.sh --auto --no-type`. Talk-only: `--dry-run`. Policy PRs: `gh auth login` with push access to **this** repo (`selinux/shopapi/`). CI jobs `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency` should go green.
 

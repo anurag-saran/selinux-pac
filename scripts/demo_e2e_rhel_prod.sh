@@ -9,6 +9,7 @@
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc
+#   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-clean
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
 #   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part retest
@@ -52,8 +53,9 @@ This is one window of the ~45 min three-host walkthrough (see demo_e2e_mac.sh).
 
   --part app      Install shopapi only (no SELinux module, unconfined JVM)
   --part rpms     Install selinux-policy-ops + shopapi-selinux from ~/
-  --part soak     Canary soak: first-ship URLs 200, no shopapi AVC since canary
-  --part soak-avc Confirm soak_monitor did not write a fail AVC file
+  --part soak      Canary soak: curl /feature-spool, denial is in the audit log
+  --part soak-avc  Confirm soak_monitor wrote the fail file
+  --part soak-clean  After the fix: /feature-spool returns 200 and no new denial
   --part fail     curl /feature-spool (expect 500) and export AVCs
   --part restore  After emergency rollback: app 200 again (not a policy fix)
   --part retest   curl /feature-spool (expect 200) after recanary
@@ -111,19 +113,30 @@ part_rpms() {
 }
 
 part_soak() {
-    e2e_banner "PROD VM — soak: shopapi is up, AVC file is clean"
-    tlab_why "Canary left shopapi_t permissive. First-ship URLs are in the module we just shipped."
+    e2e_banner "PROD VM — soak: /feature-spool is not in this module"
+    tlab_why "Canary left shopapi_t permissive, so the request can still return 200. The denial is in the audit log. soak_monitor reads that log."
     e2e_run "sudo rm -f ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
-    tlab_explain "Curl /health /state /log only. Do not call /feature-spool yet."
-    e2e_run "for path in /health /state /log; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\"; echo; done"
-    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
-    tlab_checkpoint "HTTP 200 on first-ship URLs and a clean AVC log. Go back to the Mac for soak_monitor."
+    tlab_explain "Curl /health /state /log, then /feature-spool."
+    e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sS -o /dev/null -w \"%{http_code}\\n\" \"http://127.0.0.1:${SHOP_PORT}\${path}\" || true; done"
+    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 || echo "No shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "No shopapi AVC in recent log"; fi'
+    e2e_run "sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null; sudo chmod a+r ${AVC_EXPORT}; wc -l ${AVC_EXPORT}"
+    tlab_checkpoint "A shopapi denial for /var/spool/shopapi is in ${AVC_EXPORT}. Go back to the Mac. soak_monitor must fail."
 }
 
 part_soak_avc() {
-    e2e_banner "PROD VM — soak AVC file (should not exist)"
-    e2e_run "sudo test ! -f ${SOAK_FAIL_AVC} && sudo test ! -f ${SOAK_FAIL_JSON} && echo 'Good: no ${SOAK_FAIL_AVC}' || sudo ls -l ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
-    tlab_checkpoint "No fail AVC file. Soak is clean. Go back to the Mac — we treat soak as complete and enforce."
+    e2e_banner "PROD VM — soak monitor wrote the fail file"
+    e2e_run "sudo ls -l ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
+    tlab_checkpoint "The fail file is there. Go back to the Mac. Enforce without force_enforce must refuse."
+}
+
+part_soak_clean() {
+    e2e_banner "PROD VM — clean soak after the spool allow"
+    tlab_why "The new module allows /var/spool/shopapi. shopapi_t is still permissive until enforce."
+    e2e_run "sudo rm -f ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
+    tlab_explain "Curl /health /state /log /feature-spool. Each should be HTTP 200, and ausearch should show no new shopapi denial since this canary."
+    e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\" >/dev/null && echo 200; done"
+    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
+    tlab_checkpoint "HTTP 200 including /feature-spool, and a clean AVC log. Go back to the Mac. soak_monitor should pass."
 }
 
 part_fail() {
@@ -157,11 +170,12 @@ case "${E2E_PART}" in
     rpms|all) part_rpms ;;
     soak) part_soak ;;
     soak-avc) part_soak_avc ;;
+    soak-clean) part_soak_clean ;;
     fail) part_fail ;;
     restore) part_restore ;;
     retest) part_retest ;;
     *)
-        echo "Unknown --part ${E2E_PART} (use app, rpms, soak, soak-avc, fail, restore, retest)" >&2
+        echo "Unknown --part ${E2E_PART} (use app, rpms, soak, soak-avc, soak-clean, fail, restore, retest)" >&2
         exit 2
         ;;
 esac

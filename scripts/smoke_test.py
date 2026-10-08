@@ -1088,6 +1088,47 @@ def _without_lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
+def test_prod_soak_gate_and_lab_signing() -> None:
+    """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "demo" / "203-RHEL_TWO_HOST.md").read_text(encoding="utf-8")
+    assert "LAST_VERIFIED:** 2026-09-18" in guide
+    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
+    assert "/feature-spool" in gate
+    assert "e2e_run_expect_fail" in gate
+    assert "soak_monitor.yml" in gate
+    assert "enforce_production.yml -e change_ticket=DEMO\"" in gate
+    assert "force_enforce=true" not in gate
+    clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
+    assert "soak-clean" in clean
+    assert "force_enforce=true" in clean
+    assert "day count" in clean
+    talk = mac.split("Part 6 —", 1)[1]
+    dirty = talk.find("mac_ship_prod soak_demo")
+    fix = talk.find("--part generate --skip-export")
+    recanary = talk.find("mac_ship_prod recanary")
+    rollback = talk.find("emergency_rollback.yml")
+    assert -1 not in (dirty, fix, recanary, rollback)
+    assert dirty < fix < recanary < rollback
+    assert "/feature-spool" in prod
+    assert "part_soak()" in prod
+    assert "lab_signing_setup.sh" in guide
+    assert "gpgcheck=1" in guide
+    script = PROJECT_ROOT / "scripts" / "lab_signing_setup.sh"
+    body = script.read_text(encoding="utf-8")
+    assert "gpgcheck=1" in body
+    assert "--export-secret-keys" not in body
+    refused = subprocess.run(
+        [BASH, str(script), "--print-secret"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert refused.returncode != 0
+    assert "private key" in (refused.stdout + refused.stderr).lower()
+
+
 def test_demo_e2e_scripts_dry_run() -> None:
     """Mac/QA/prod talk tracks: shopapi, not Flask. QA/prod scripts refuse Darwin."""
     mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
@@ -3307,6 +3348,7 @@ def main() -> int:
         ("demo_present_dry_run", test_demo_present_dry_run),
         ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
+        ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),
