@@ -6,15 +6,42 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/dist"
 RPMBUILD="${ROOT}/packaging/rpmbuild"
 
+stamp_spec_commit() {
+    local spec="$1"
+    local sha="$2"
+    python3 - "${spec}" "${sha}" <<'PY'
+import pathlib
+import sys
+
+path, sha = sys.argv[1], sys.argv[2]
+text = pathlib.Path(path).read_text(encoding="utf-8")
+line = f"Built from git commit {sha}.\n"
+if "Built from git commit" not in text:
+    text = text.replace("%description\n", "%description\n" + line, 1)
+    pathlib.Path(path).write_text(text, encoding="utf-8")
+PY
+}
+
+if [[ "${1:-}" == "--stamp-spec" ]]; then
+    stamp_spec_commit "$2" "$3"
+    exit 0
+fi
+
+if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
+    echo "Refusing to build RPMs from a dirty git tree." >&2
+    exit 1
+fi
+
 if ! command -v rpmbuild >/dev/null 2>&1; then
     if [[ "$(uname -s)" == Darwin && "${BUILD_RPMS_LOCAL:-0}" != 1 ]]; then
         echo "rpmbuild is not on macOS — compiling and packing on rhel-qa, then copying dist/*.rpm back here." >&2
         exec bash "${ROOT}/scripts/build_rpms_on_dev.sh"
     fi
-    echo "Note: rpmbuild not found; validating spec parity only" >&2
-    bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
-    exit 0
+    echo "rpmbuild is required. Refusing to report success after a parity-only check." >&2
+    exit 1
 fi
+
+GIT_COMMIT="$(git -C "${ROOT}" rev-parse HEAD)"
 
 # shellcheck source=../scripts/lib/version.sh
 source "${ROOT}/scripts/lib/version.sh"
@@ -52,6 +79,9 @@ SHOPAPI_VERSION="$(policy_version "${ROOT}/selinux/shopapi/policy_version.txt")"
 cp "${ROOT}/packaging/selinux-policy-ops.spec" "${RPMBUILD}/SPECS/"
 cp "${ROOT}/packaging/myapp-selinux.spec" "${RPMBUILD}/SPECS/"
 cp "${ROOT}/packaging/shopapi-selinux.spec" "${RPMBUILD}/SPECS/"
+stamp_spec_commit "${RPMBUILD}/SPECS/selinux-policy-ops.spec" "${GIT_COMMIT}"
+stamp_spec_commit "${RPMBUILD}/SPECS/myapp-selinux.spec" "${GIT_COMMIT}"
+stamp_spec_commit "${RPMBUILD}/SPECS/shopapi-selinux.spec" "${GIT_COMMIT}"
 cp "${ROOT}/selinux/myapp.pp" "${RPMBUILD}/SOURCES/myapp.pp"
 cp "${ROOT}/selinux/myapp.te" "${RPMBUILD}/SOURCES/myapp.te"
 cp "${ROOT}/selinux/myapp.fc" "${RPMBUILD}/SOURCES/myapp.fc"

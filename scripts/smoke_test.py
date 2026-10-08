@@ -48,6 +48,105 @@ def assert_mentions(text: str, *needles: str) -> None:
     assert not missing, f"talk output missing {missing}"
 
 
+def test_rpm_signing_tree_and_shopapi_ports() -> None:
+    publish = PROJECT_ROOT / "packaging" / "publish_internal.sh"
+    build = PROJECT_ROOT / "packaging" / "build_rpms.sh"
+    spec = (PROJECT_ROOT / "packaging" / "shopapi-selinux.spec").read_text(encoding="utf-8")
+    assert "8091" not in spec
+    assert "port -m" not in spec
+    assert "%selinux_modules_install" in spec
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        stamped = tmp_path / "sample.spec"
+        stamped.write_text("%description\nCustom module.\n", encoding="utf-8")
+        stamp = subprocess.run(
+            [BASH, str(build), "--stamp-spec", str(stamped), "abc123def"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert stamp.returncode == 0, stamp.stderr
+        assert "Built from git commit abc123def." in stamped.read_text(encoding="utf-8")
+
+        bindir = tmp_path / "bin"
+        bindir.mkdir()
+        fake_git = bindir / "git"
+        fake_git.write_text(
+            "#!/bin/bash\n"
+            "while [[ \"$1\" == \"-C\" ]]; do shift 2; done\n"
+            "case \"$1\" in\n"
+            "  status) printf '%s\\n' \"${FAKE_GIT_STATUS-}\"; exit 0 ;;\n"
+            "  rev-parse) printf '%s\\n' \"${FAKE_GIT_SHA:-abc}\"; exit 0 ;;\n"
+            "  *) echo unexpected >&2; exit 1 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bindir}:{env.get('PATH', '')}"
+        env["BUILD_RPMS_LOCAL"] = "1"
+        env["FAKE_GIT_STATUS"] = " M Makefile"
+        dirty = subprocess.run(
+            [BASH, str(build)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert dirty.returncode != 0
+        assert "dirty git tree" in dirty.stderr
+
+        env["FAKE_GIT_STATUS"] = ""
+        missing = subprocess.run(
+            [BASH, str(build)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert missing.returncode != 0, missing.stdout + missing.stderr
+        assert "rpmbuild is required" in missing.stderr
+        assert "validating spec parity only" not in (missing.stderr + missing.stdout)
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        dist = PROJECT_ROOT / "dist"
+        dist.mkdir(exist_ok=True)
+        dummy = dist / "smoke-unsigned.rpm"
+        dummy.write_bytes(b"not-a-real-rpm")
+        sudo = bindir / "sudo"
+        sudo.write_text("#!/bin/bash\nexec \"$@\"\n", encoding="utf-8")
+        sudo.chmod(0o755)
+        pub_env = os.environ.copy()
+        pub_env["PATH"] = f"{bindir}:/usr/bin:/bin"
+        pub_env["SELINUX_INTERNAL_ENV"] = str(tmp_path / "no-such.env")
+        pub_env.pop("SELINUX_GPG_NAME", None)
+        pub_env.pop("SELINUX_ALLOW_UNSIGNED", None)
+        pub_env["SELINUX_RPM_REPO"] = str(repo)
+        blocked = subprocess.run(
+            [BASH, str(publish)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=pub_env,
+        )
+        assert blocked.returncode != 0
+        assert "signing is not configured" in blocked.stderr
+        pub_env["SELINUX_ALLOW_UNSIGNED"] = "1"
+        warned = subprocess.run(
+            [BASH, str(publish)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=pub_env,
+        )
+        dummy.unlink(missing_ok=True)
+        assert warned.returncode == 0, warned.stderr
+        assert "UNSIGNED" in warned.stderr
+        assert "labs only" in warned.stderr
+
+
 def test_selinux_ports_and_canary_refuses_modify() -> None:
     sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
     from app_manifest import (
@@ -2265,6 +2364,7 @@ def test_soak_daily_history_and_other_app_guard() -> None:
 
 def main() -> int:
     tests = [
+        ("rpm_signing_tree_and_shopapi_ports", test_rpm_signing_tree_and_shopapi_ports),
         ("selinux_ports_and_canary_refuses_modify", test_selinux_ports_and_canary_refuses_modify),
         ("codeowners_covers_policy_surface", test_codeowners_covers_policy_surface),
         ("ci_runs_full_suite_with_stable_names", test_ci_runs_full_suite_with_stable_names),

@@ -36,17 +36,10 @@ install -m 0644 %{SOURCE2} %{buildroot}%{_datadir}/doc/%{name}-%{version}/shopap
 
 %post
 %selinux_modules_install -s targeted %{_datadir}/selinux/packages/shopapi.pp
-if command -v semanage >/dev/null 2>&1; then
-    semanage port -a -t shopapi_port_t -p tcp 8091 2>/dev/null || \
-        semanage port -m -t shopapi_port_t -p tcp 8091 2>/dev/null || true
-fi
 
 %postun
 if [ $1 -eq 0 ]; then
     %selinux_modules_uninstall -s targeted shopapi
-    if command -v semanage >/dev/null 2>&1; then
-        semanage port -d -p tcp 8091 2>/dev/null || true
-    fi
 fi
 
 %posttrans
