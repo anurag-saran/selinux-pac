@@ -11,7 +11,7 @@ EnvironmentFile=-/etc/shopapi.env
 WorkingDirectory=/opt/shopapi
 Environment=JAVA_HOME=/opt/shopapi
 # Private copy of the JRE launcher at /opt/shopapi/bin/java is labeled
-# shopapi_exec_t. /usr/bin/java is shared bin_t and 203/EXEC under enforcing.
+# shopapi_exec_t. /usr/bin/java is shared java_exec_t and 203/EXEC under enforcing.
 SELinuxContext=system_u:system_r:shopapi_t:s0
 ExecStart=/opt/shopapi/bin/java -jar /opt/shopapi/shopapi.jar
 Restart=on-failure

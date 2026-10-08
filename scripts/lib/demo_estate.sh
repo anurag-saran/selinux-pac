@@ -172,7 +172,7 @@ demo_write_variant() {
 }
 
 # Copy a private OpenJDK launcher + lib/conf under install_root so ExecStart is
-# shopapi_exec_t. /usr/bin/java is shared bin_t; enforcing shopapi_t cannot exec it.
+# shopapi_exec_t. /usr/bin/java is shared java_exec_t; enforcing shopapi_t cannot exec it.
 demo_install_shopapi_jre() {
     local root="${1:?}"
     local java_bin java_home
@@ -271,7 +271,7 @@ EnvironmentFile=-/etc/shopapi.env
 WorkingDirectory={install_root}
 Environment=JAVA_HOME={install_root}
 # Private copy of the JRE launcher at install_root/bin/java is labeled
-# shopapi_exec_t (see .fc). /usr/bin/java is shared bin_t and 203/EXEC under
+# shopapi_exec_t (see .fc). /usr/bin/java is shared java_exec_t and 203/EXEC under
 # enforcing shopapi_t. SELinuxContext= still sets the domain at exec.
 {selinux_line}ExecStart={install_root}/bin/java -jar {install_root}/shopapi.jar
 Restart=on-failure

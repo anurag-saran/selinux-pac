@@ -51,7 +51,7 @@ Customers run Tomcat, JBoss, Python, Node, and Spring Boot. Red Hat already ship
 | **App B** | A second Tomcat. Port 8080 was taken, so it listens on **8090**. Its files were dropped in `/opt/appdata`. It calls a payment service. | Fix the host with one command per problem, or say there was no denial. Write no policy file. |
 | **shopapi** | A Spring Boot service started by systemd. Red Hat does not ship a module for it. | This is the only app that gets a new `.te`. |
 
-App A and App B share one process type, `tomcat_t` or `jws6_tomcat_t`. SELinux treats them as the same kind of program. To keep them apart, run them as separate Tomcat instances or in containers.
+App A and App B both run as `tomcat_t` (or both as `jws6_tomcat_t` on JWS). A second Tomcat instance does not get its own type ([`tomcat_domain_template(tomcat)`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te) declares one domain). SELinux treats them as the same kind of program. Separating them needs a distinct domain for each, or MCS categories, which is what containers use.
 
 **What this RHEL host will show.** Bootstrap installs the Tomcat that comes with RHEL. Its type is `tomcat_t`. A module named `tomcat` is loaded, and that type still does not confine the process. In Act 1 the forbidden page is readable (`UNEXPECTED_READ`) and there is no denial. In Act 2 the three probes produce no denial, so you skip the fixes and say so. Say that out loud. It is the honest result on this host.
 
@@ -71,7 +71,7 @@ bash scripts/demo_present.sh --dry-run --profile customer
 
 ### Order for the meeting
 
-**1. On the Mac**, only when this VM already ran **101**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, clears the audit log (so Act 3 does not compile-fail on the old `bin_t` entrypoint denial), and removes the three App B tunings so Act 2 still has something to show.
+**1. On the Mac**, only when this VM already ran **101**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, clears the audit log (so Act 3 does not compile-fail on an old `java_exec_t` entrypoint denial), and removes the three App B tunings so Act 2 still has something to show.
 
 ```bash
 bash scripts/reset_demo_vms.sh --dev-only
@@ -333,7 +333,7 @@ Then stop. The checkpoint on screen is: this is the first time we authored polic
 - App A and App B come before the generator. That order is the point.
 - Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
 - Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
-- Shopapi allows come from the denials just produced. `execmem` is written only because it was in the log and `--allow-needs-review` is on the command. The shared `/usr/bin/java` is `bin_t` and cannot be the program that enters `shopapi_t`. The private copy can.
+- Shopapi allows come from the denials just produced. `execmem` is written only because it was in the log and `--allow-needs-review` is on the command. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)) and cannot be the program that enters `shopapi_t`. The private copy, after `restorecon`, can.
 - Do not open `/feature-spool` in this meeting.
 
 ## Self-service

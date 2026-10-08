@@ -103,7 +103,7 @@ flowchart LR
   pp --> load["semodule -i and label port 8091"]
 ```
 
-`restorecon` paints `shopapi_exec_t` onto the private Java before generate reads the log. `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. If the compile stops on `allow shopapi_t bin_t:file { entrypoint }`, the audit log still has a denial from before that relabel. Reset from the Mac and start this lab again.
+`restorecon` paints `shopapi_exec_t` onto the private Java before generate reads the log. `/usr/bin/java` is `java_exec_t`, not `bin_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. An `entrypoint` denial on `java_exec_t` for a path the `.fc` already covers is `fc_drift` (`restorecon`). The generator does not write that allow.
 
 Then the script compiles, loads the package with `semodule -i`, and labels TCP 8091 as `shopapi_port_t`. A good end is `Built …/shopapi.pp`. Go back to the Mac. Do not canary yet.
 

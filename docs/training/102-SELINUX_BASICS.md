@@ -215,7 +215,7 @@ Then `ps -eZ | grep shopapi` should show `shopapi_t`.
 
 **`tomcat_t`**
 
-The type of Tomcat from the RHEL package, used in the **202** talk (App A / App B). On this practice RHEL, `tomcat_t` is unconfined: the process is not held to a tight allow list. That is why the talk's "forbidden" page can still be read. You are seeing the vendor type behave as this operating system defines it.
+The type of Tomcat from the RHEL package, used in the **202** talk (App A / App B). Both instances run as this one type. [`tomcat_domain_template(tomcat)`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te) declares a single `tomcat_t`. A second instance does not get a second domain. Separating them needs a distinct domain for each, or MCS categories (what containers use). The same module contains `unconfined_domain(tomcat_t)`, so on this practice RHEL the process is not held to a tight allow list. That is why the talk's "forbidden" page can still be read.
 
 **`jws6_tomcat_t`**
 
@@ -358,6 +358,8 @@ The compile script (`scripts/compile_and_validate.sh`) also rejects a short list
 
 Installing a module updates the kernel's rule book and address book. Files that were created earlier keep whatever label they already had. A new directory under `/var/log` is born as `var_log_t`. After you install a module that says "`/var/log/shopapi` should be `shopapi_log_t`," the directory on disk is still `var_log_t` until you relabel it.
 
+`cp` creates a new file, so the copy gets a label from its new location. `mv` renames the existing file and keeps the old label. NEEDS_LIVE_CHECK: `echo x > /tmp/label-src && sudo chcon -t etc_t /tmp/label-src && sudo cp /tmp/label-src /var/log/shopapi/from-cp && sudo mv /tmp/label-src /var/log/shopapi/from-mv && ls -Z /var/log/shopapi/from-cp /var/log/shopapi/from-mv` — `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`.
+
 The app runs as `shopapi_t`. The allow rule permits writes to `shopapi_log_t`. The file is still `var_log_t`. The kernel denies the write. `chmod` can look perfectly fine at the same time, because Unix permissions and SELinux are separate checks.
 
 ### See the gap
@@ -372,7 +374,7 @@ $ ls -Z /var/log/shopapi
 system_u:object_r:var_log_t:s0    /var/log/shopapi
 ```
 
-Those two types differ. That is the gap.
+Those two types differ. That is the gap. `matchpathcon` answers for a path that is not on disk yet. NEEDS_LIVE_CHECK: `sudo rm -rf /run/shopapi && matchpathcon /run/shopapi` should print `shopapi_var_run_t` after the shopapi module is loaded.
 
 ### Close it
 
@@ -449,7 +451,7 @@ Read this after lab 6. The labs stop at "the new URL works under Enforcing." Pro
 
 **Canary** means: install the new module on a host and watch it, with the app domain still on the log-only list.
 
-**Soak** means: leave it that way for 7–14 days. The point is to catch work that does not happen during a demo (a weekly cron job, log rotation, a certificate renewal).
+**Soak** means: leave it that way for 7–14 days. The point is to catch work that does not happen during a demo (a weekly cron job, log rotation, a certificate renewal). Those jobs do not run as `shopapi_t`. On RHEL 9 they have their own domains, and those domains stay enforcing. The cron daemon is `crond_t` and a system cron job is `system_cronjob_t` ([`policy/modules/contrib/cron.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/cron.te)), logrotate is `logrotate_t` ([`logrotate.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/logrotate.te)), and certmonger is `certmonger_t` ([`certmonger.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/certmonger.te)). Soak compares the log to the shopapi module, so it only counts `shopapi_t`. A denial in `crond_t` is not a shopapi gap.
 
 **Net-new** means: a permission the installed module does not already allow. The same denial printed again tomorrow is not net-new if the module already has that allow. The wait fails only when something new shows up.
 
@@ -528,7 +530,7 @@ The generator then does three things before it writes a `.te`:
 2. **Drop** actions the current `.te` already allows. Those are **baseline**: already covered. Lab 4 expects the `/log` write to land here.
 3. **Write** only what is still missing.
 
-So "the log has AVC lines" and "the `.te` needs a new allow" are different statements. A line can be in the log because the domain is permissive, even after the allow exists.
+So "the log has AVC lines" and "the `.te` needs a new allow" are different statements. A line the module already allows is baseline. It is not written again.
 
 ---
 
@@ -585,7 +587,7 @@ The sample policy tells this same story with `GET /save-log` writing `/var/log/m
 
 A process does not pick its own label. The kernel assigns one from how the process was started.
 
-**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared. If every Java process inherited a label from that one file, every Java app would share a domain. The systemd unit therefore sets the process label itself:
+**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared, type `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). If every Java process inherited a label from that one file, every Java app would share a domain. The systemd unit therefore sets the process label itself:
 
 ```text
 SELinuxContext=system_u:system_r:shopapi_t:s0

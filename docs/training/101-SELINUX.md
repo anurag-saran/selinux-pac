@@ -95,7 +95,7 @@ sudo chown -R shopapi:shopapi /opt/shopapi /var/lib/shopapi /var/log/shopapi /va
 cd ~/selinux-pac
 ```
 
-**5. Give shopapi its own `java`, and tell systemd the process label.** `/usr/bin/java` is a shared binary, type `bin_t`. A confined `shopapi_t` process is not allowed to execute it. Copying Java under `/opt/shopapi` lets that copy be labeled `shopapi_exec_t`.
+**5. Give shopapi its own `java`, and tell systemd the process label.** `/usr/bin/java` is a shared binary, type `java_exec_t`, not `bin_t`. RHEL 9 file contexts label it that way, and they label a copy at `/opt/*/bin/java*` the same way until this module's `.fc` overrides that path ([`policy/modules/contrib/java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc): `/usr/(.*/)?bin/java[^-]*`, `/usr/lib/jvm/java(.*/)bin(/.*)?`, `/opt/(.*/)?bin/java[^/]*`). Copying Java under `/opt/shopapi` lets `restorecon` label that copy `shopapi_exec_t`.
 
 ```bash
 java_bin=$(readlink -f /usr/bin/java)
@@ -167,13 +167,13 @@ ls -Z /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 matchpathcon /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 ```
 
-Before `restorecon`, expect `usr_t` or `bin_t` on `/opt/shopapi` (the copied `java` is still wearing the shared-binary type), `var_lib_t` under `/var/lib/shopapi`, and `var_log_t` under `/var/log/shopapi`. `matchpathcon` should already say `shopapi_exec_t`, `shopapi_var_lib_t`, and `shopapi_log_t`. `/run/shopapi` may not exist yet (`RuntimeDirectory` creates it when the service starts). `ls` then says "No such file or directory", and `matchpathcon` can print `var_run_t`, the type of `/run` itself, because the directory is absent.
+Before `restorecon`, the directory `/opt/shopapi` may still be `usr_t`. The copied `java` is `java_exec_t` (the shared JDK type above), `var_lib_t` under `/var/lib/shopapi`, and `var_log_t` under `/var/log/shopapi`. `cp` creates a new file, so the copy takes a label from its new location. `mv` renames the existing file and keeps the old label. NEEDS_LIVE_CHECK: `echo x > /tmp/label-src && sudo chcon -t etc_t /tmp/label-src && sudo cp /tmp/label-src /var/log/shopapi/from-cp && sudo mv /tmp/label-src /var/log/shopapi/from-mv && ls -Z /var/log/shopapi/from-cp /var/log/shopapi/from-mv` — `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. `matchpathcon` should already say `shopapi_exec_t`, `shopapi_var_lib_t`, and `shopapi_log_t`. `/run/shopapi` may not exist yet (`RuntimeDirectory` creates it when the service starts). `ls` then says "No such file or directory". `matchpathcon` still answers for a path that is not on disk. NEEDS_LIVE_CHECK: `sudo rm -rf /run/shopapi && matchpathcon /run/shopapi` should print `shopapi_var_run_t` after this module is loaded.
 
 ```bash
 sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
 ```
 
-`-R` walks directories. `-v` prints only paths whose label changed. A `Relabeled` line for `/opt/shopapi/bin/java` should go from `bin_t` to `shopapi_exec_t`. This command cannot relabel `/run/shopapi` until that directory exists, and it does not touch `/var/spool/shopapi`. That path is lab 6.
+`-R` walks directories. `-v` prints only paths whose label changed. A `Relabeled` line for `/opt/shopapi/bin/java` should go from `java_exec_t` to `shopapi_exec_t`. `restorecon` needs the directory to exist, so it cannot relabel `/run/shopapi` until systemd creates it. It does not touch `/var/spool/shopapi`. That path is lab 6.
 
 **8. Label port 8091, and put only `shopapi_t` on the log-only list.** Loading `shopapi.pp` created the type `shopapi_port_t`. It did not attach that type to TCP 8091. `semanage port -a` writes that assignment. `-t` is the type, `-p tcp` is the protocol. Check first with `sudo semanage port -l | grep 8091`. If the port is already listed, skip `-a`.
 
@@ -383,7 +383,7 @@ avc:  denied  { write } for ... path="..." \
 
 **Why:** the seed already exists. This lab adds the missing `allow` lines to that same module. It does not create a second policy.
 
-`selinux/shopapi/shopapi.te` and `shopapi.fc` are already on disk. They name `shopapi_t`, `shopapi_log_t`, and the other types. They do not yet allow the `/log` write from lab 2. The generator reads those files, compares them with the denial log, and writes an updated copy. An access the `.te` already allows is marked `baseline` and is not written again. An access that is missing becomes a new line. `--apply` copies that result back onto the same two paths, so the module name stays `shopapi`. Typing an `allow` by hand would edit the same file. The generator chooses the line from the denial you just read. Lab 4 checks that `/log` works with this module loaded. It does not run the generator a second time.
+`selinux/shopapi/shopapi.te` and `shopapi.fc` are already on disk. They name `shopapi_t`, `shopapi_log_t`, and the other types. They do not yet allow the `/log` write from lab 2. The generator reads those files, compares them with the denial log, and writes an updated copy. An access the `.te` already allows is marked `baseline` and is not written again. An access that is missing becomes a new line. `--apply` copies that result back onto the same two paths, so the module name stays `shopapi`. Typing an `allow` by hand would edit the same file. The generator chooses the line from the denial you just read. Lab 4 curls `/log` again, then runs the generator a second time. The verdict for what this lab already wrote is `baseline`, and the `.te` does not grow.
 
 `semodule -i` afterward replaces the loaded `shopapi` module in place. `-i` on a module that is already installed is an upgrade.
 
@@ -424,7 +424,7 @@ Wrote .../policy_out/findings.json (generation_blocked=true)
 Read it in three parts:
 
 - The vendor line means Red Hat does not already confine this app, so generation was allowed to start.
-- `8991 AVC lines` is the same denial written many times. Permissive mode logs every attempt. It is not 8991 different rules.
+- `8991 AVC lines` is not one denial written on every attempt. A permissive domain logs each distinct denial once. The kernel keeps that decision in the AVC cache until any policy reload flushes it (`semodule -i`, `semodule -R`, or another policy load). A second identical attempt is not written again until that flush. NEEDS_LIVE_CHECK: with `shopapi_t` permissive, `curl` `/log` twice and run `sudo ausearch -m avc -ts recent --subject shopapi_t` (one line for that pair). Then `sudo semodule -R`, `curl` once more, and the same denial is logged again.
 - `GENERATION BLOCKED` means Java asked for `execmem`: memory that is both writable and executable. The tool recorded that in `findings.json` and refused to put it in the `.te`. `shopapi.te` and `shopapi.fc` are still the seed. `--apply` did not copy anything.
 
 For this 101 only, run the same command with one more flag. `--allow-needs-review` writes that permission because it was in the log. Do not type `execmem` into the `.te` yourself if it was not in the log.
@@ -433,28 +433,15 @@ For this 101 only, run the same command with one more flag. `--allow-needs-revie
 sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)" --allow-needs-review
 ```
 
-That second run can still fail at the compiler, after `Forbidden-pattern checks passed`. The error names this line:
-
-```text
-allow shopapi_t bin_t:file { entrypoint };
-```
-
-`entrypoint` means this file type may be the program that enters `shopapi_t`. The seed already allows that for `shopapi_exec_t`. The denial is from before `restorecon`, when `/opt/shopapi/bin/java` was still `bin_t`, the type a copied `/usr/bin/java` keeps. The audit line has `path="/opt/shopapi/bin/java"` and `tcontext=...:bin_t:s0`. `permissive=0` and a new pid every few seconds is systemd retrying that start. The forbidden-pattern check looks for `bin_t:file execute`, so `entrypoint` gets through. The compiler then says `unknown type bin_t` because this module never declares that type. The `insights_core.if` lines above the error are duplicate-definition warnings from the RHEL policy package.
-
-Check the file now:
+An `entrypoint` denial for `/opt/shopapi/bin/java` names `java_exec_t` (or, on an older label, `bin_t`). That path is already in the `.fc` as `shopapi_exec_t`. The generator classifies it `fc_drift`: the label on disk is stale, and the fix is `restorecon`. It does not write an allow for `java_exec_t` or `bin_t`. Do not filter those lines out of the log.
 
 ```bash
 ls -Z /opt/shopapi/bin/java
 ```
 
-`shopapi_exec_t` means the label is already correct and those audit lines are old. Leave them out of the log and generate again. `--skip-export` reads the file you pass and does not reread the audit log. `--allow-needs-review` is still required, because `execmem` is still in the kept lines.
+`shopapi_exec_t` means `restorecon` already ran. The audit lines are old. They stay in the log, and the verdict for them is `fc_drift`.
 
-```bash
-grep -v 'denied  { entrypoint } for .* path="/opt/shopapi/bin/java".*object_r:bin_t' policy_out/avc.log > /tmp/shopapi-avc.log
-sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --skip-export --avc-log /tmp/shopapi-avc.log --app-name shopapi --app-root "$(pwd)"
-```
-
-A good run prints `14 net-new denial(s)` (the `bin_t` line is the one you removed), `Built .../policy_out/shopapi.pp`, `AVC coverage OK`, and `Updated .../selinux/shopapi/shopapi.te`. The version in the diff goes from `1.0.0` to `1.0.1`. `allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission.
+A good run prints `Built .../policy_out/shopapi.pp`, `AVC coverage OK`, and `Updated .../selinux/shopapi/shopapi.te`. The version in the diff goes from `1.0.0` to `1.0.1`. `allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission. `findings.json` has an `fc_drift` row for the stale entrypoint and no `allow` line for `java_exec_t`.
 
 The script then prints `Next steps (Git PR handoff)` and may warn `no selinux/shopapi.te at merge-base`. That block is the pull-request helper. It looks for `selinux/shopapi.te` at the repository root. This lab's file is `selinux/shopapi/shopapi.te`. Do not commit, push, or run `gh pr create`. The next commands are step 6. They compile the copy `--apply` just wrote and load it.
 
@@ -569,9 +556,21 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 5
 **Good sign**
 
 - The curl prints `LOG /var/log/shopapi/shopapi.log`.
-- `ausearch` prints no `shopapi_t` lines. An allow does not produce an AVC. Permissive mode only logs access the rules still refuse.
+- `ausearch` prints no `shopapi_t` lines for that write. An allow is not a denial. A permissive domain logs each distinct denial once, until a policy reload flushes the AVC cache. It does not log an access the module already allows.
 
-Do not run `dev_generate_policy.sh` again in this lab. The `execmem` line already in the file is `allow shopapi_t self:process execmem;`, with no braces. The generator only treats a rule as already present when the permissions sit inside `{ }`, and it records the target word `self` separately from the type `shopapi_t`. A second run therefore stops on `execmem` again. Adding `--allow-needs-review` this time would append a second copy of that line. The blocked run does not change `selinux/shopapi/shopapi.te`. Leave the loaded `1.0.1` module as it is and go to lab 5.
+Run the generator again on the same log. `--allow-needs-review` is still required because `execmem` is in the log. That line is already in the `.te` (`allow shopapi_t self:process execmem;`, braces or not; `self` is `shopapi_t`). The verdict is `baseline`, and the file does not gain a second copy.
+
+```bash
+cp selinux/shopapi/shopapi.te /tmp/shopapi.te.before
+sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
+diff -u /tmp/shopapi.te.before selinux/shopapi/shopapi.te
+python3 -c 'import json; rows=json.load(open("policy_out/findings.json"))["findings"]; print([r for r in rows if "execmem" in r.get("perms", [])])'
+```
+
+- `diff` prints nothing. No new line, and no second `execmem`.
+- The `execmem` finding has `"verdict": "baseline"`.
+
+The loaded `1.0.1` module is unchanged. Go to lab 5.
 
 **Checkpoint:** If curl prints the log line and `ausearch` is empty, what does that say about the `/log` allow?
 
@@ -627,22 +626,20 @@ sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 15
 
 **Why:** a second generate should add **`/var/spool/shopapi`** (label + allow), not replay lab 3.
 
-The lab 5 denials are new, so `/tmp/shopapi-avc.log` from lab 3 does not contain them. Export again, then drop the old `bin_t` entrypoint lines the same way as lab 3. Those lines are still in the audit log. `--allow-needs-review` is required because `execmem` is still in the kept lines. `--skip-export` stops the script from putting the `bin_t` lines back.
+The lab 5 denials are new. Generate once. Allows this module already has (`execmem`, the `/log` write) are `baseline`. The spool path is the new surface. An old `entrypoint` denial on `java_exec_t` for `/opt/shopapi/bin/java` is `fc_drift`. It is not a new allow, and you do not filter it out of the log. `--allow-needs-review` is required because `execmem` is still in the log.
 
 ```bash
-sudo bash scripts/dev_generate_policy.sh --app-name shopapi --app-root "$(pwd)" --allow-needs-review || true
-grep -v 'denied  { entrypoint } for .* path="/opt/shopapi/bin/java".*object_r:bin_t' policy_out/avc.log > /tmp/shopapi-avc.log
-sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --skip-export --avc-log /tmp/shopapi-avc.log --app-name shopapi --app-root "$(pwd)"
+sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
 ```
 
-The first command may exit 1 at the compiler on the `bin_t` line. `|| true` keeps the shell going so the export it already wrote can be filtered. Before `semodule -i`, look at the rule book:
+Before `semodule -i`, look at the rule book:
 
 ```bash
 grep -n execmem selinux/shopapi/shopapi.te
 grep -n 'shopapi_log_t:file open' selinux/shopapi/shopapi.te
 ```
 
-One match for each is the lab 3 line. A second match means the generator appended a copy of a one-permission allow it did not recognize. The new spool lines are the ones this lab adds. A repeated `execmem` or `/log` allow is the same recognition gap as lab 4.
+One match for each is the lab 3 line. The new spool lines are the ones this lab adds. A second `execmem` or `/log` allow means the second generate did not treat the existing rule as `baseline`.
 
 Then compile, load, relabel, and retry. One at a time, or as this block. `restorecon` now includes `/var/spool/shopapi`, the path lab 5 wrote. `curl -sf` should print the page and exit 0. `echo` prints a blank line after it.
 
@@ -659,7 +656,7 @@ echo
 
 - `/feature-spool` returns **200** under enforcing (`shopapi_t` still **not** permissive).
 - The new `.te` / `.fc` rows mention the spool path or its type.
-- `execmem` and `shopapi_log_t:file open` each appear once. A second copy is the lab 4 recognition gap, not a new spool rule.
+- `execmem` and `shopapi_log_t:file open` each appear once. A second copy is a failed `baseline` match, not a new spool rule.
 
 **Checkpoint:** What is the difference between “there were AVCs in the log” and “net-new access the `.te` does not already allow”?
 

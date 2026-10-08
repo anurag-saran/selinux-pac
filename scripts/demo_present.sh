@@ -485,7 +485,7 @@ act2_app_b() {
 
 act3_generate() {
     e2e_banner "Act 3 — Spring Boot shopapi: the generator is allowed"
-    tlab_explain "No vendor module for Spring Boot. ExecStart is a private copy of the JRE launcher at /opt/shopapi/bin/java (shopapi_exec_t). /usr/bin/java is shared bin_t and cannot be the entrypoint. SELinuxContext= still sets shopapi_t."
+    tlab_explain "No vendor module for Spring Boot. ExecStart is a private copy of the JRE launcher at /opt/shopapi/bin/java (shopapi_exec_t). /usr/bin/java is shared java_exec_t and cannot be the entrypoint. SELinuxContext= still sets shopapi_t."
     e2e_run "systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'"
     demo_expect "SELinuxContext=system_u:system_r:shopapi_t:s0"
     e2e_run "ps -o label=,comm= -C java | head"

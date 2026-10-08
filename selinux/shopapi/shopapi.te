@@ -10,7 +10,7 @@ policy_module(shopapi, 1.0.0)
 # not add it (needs_review if it does).
 #
 # Live start: systemd SELinuxContext=system_u:system_r:shopapi_t:s0
-# (java is a shared bin_t/java_exec_t binary). Alternative: labelled wrapper
+# (java is a shared java_exec_t binary). Alternative: labelled wrapper
 # at the app install_root labeled shopapi_exec_t + type_transition.
 #############################################
 
