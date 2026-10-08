@@ -1,6 +1,35 @@
 # Live checks
 
-These commands need rhel-qa with the shopapi module loaded. They are not part of the on-screen demo.
+These commands need rhel-qa. They are not part of the on-screen demo. [102](training/102-COMMANDS.md) names each one. Paste the output here after a run. Nothing below was captured in this repo.
+
+## Command catalog
+
+```bash
+getenforce
+sestatus
+ls -Z /opt/shopapi/bin/shopapi
+ls -dZ /opt/shopapi /var/log/shopapi /var/lib/shopapi
+ps -eZ | grep shopapi
+id -Z
+matchpathcon /opt/shopapi/bin/shopapi /opt/shopapi/shopapi.jar /var/lib/shopapi /var/log/shopapi
+matchpathcon /run/shopapi/no-such-file
+sudo restorecon -Rvn /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi
+sudo semanage fcontext -l -C
+sudo semanage port -l | grep -E '8091|8090'
+sudo getsebool -a | head
+sudo semanage boolean -l | head
+sudo semanage permissive -l
+sudo semodule -l | grep shopapi
+sudo semodule --list-modules=full | head
+seinfo -t shopapi_t -x
+seinfo --permissive
+sesearch -A -s shopapi_t -t shopapi_log_t -c file -p write
+sesearch --dontaudit -s shopapi_t | head
+sudo ausearch -m avc -ts recent --subject shopapi_t
+sudo aureport -a
+```
+
+`ausearch -ts` with one argument `MM/DD/YYYY HH:MM:SS` prints `Invalid start time`. The date and the time are two arguments. Do not pass an epoch to `-ts`.
 
 ## Process label
 

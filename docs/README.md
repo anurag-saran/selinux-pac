@@ -14,7 +14,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | **Where** | Which machine and directory (controller vs RHEL server vs repo root) |
 | **What / good sign** | What the command does and how you know it worked |
 
-**Terms** like domain, AVC, `.te`, and **`semanage`** are defined in **[102](training/102-SELINUX_BASICS.md)**.
+**Terms** are in **[101](training/101-CONCEPTS.md)**. **Commands** are in **[102](training/102-COMMANDS.md)**.
 
 | You are | Start here |
 |---------|------------|
@@ -30,7 +30,7 @@ Three folders. **training** is the lab. **demo** is the talks and how the tool w
 | # | Guide | You need |
 |---|--------|----------|
 | **101** | [Concepts](training/101-CONCEPTS.md) | Labels, enforcing, an AVC line. Commands: `getenforce`, `ls -Z`, `ps -eZ` |
-| **102** | [SELinux basics](training/102-SELINUX_BASICS.md) | What the words mean (lab 0 is §1–4) |
+| **102** | [Commands](training/102-COMMANDS.md) | One question per command: mode, labels, ports, booleans, modules, policy query, audit |
 | **202** | [Customer talk](demo/202-DEMO_GUIDE.md) | `demo_present.sh` — one host, ~20 min. Finish **101** first |
 | **203** | [Two Linux VMs](demo/203-RHEL_TWO_HOST.md) | `demo_e2e_*.sh` — three windows, ~45 min |
 | **201** | [How the tool works](demo/201-CODE_WALKTHROUGH.md) | Folders, generate, a second app, what a PR must not contain |

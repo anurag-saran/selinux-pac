@@ -1303,7 +1303,7 @@ def test_narration_live_checks_and_enforce_paths() -> None:
     assert "myapp.service" not in body
     assert "PATHS_CSV" in body
     assert "PRIMARY_SERVICE" in body
-    basics = (PROJECT_ROOT / "docs" / "training" / "102-SELINUX_BASICS.md").read_text(encoding="utf-8")
+    basics = (PROJECT_ROOT / "docs" / "training" / "102-COMMANDS.md").read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in basics
     assert "ps -o label,args -C java" in basics
 
