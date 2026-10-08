@@ -980,6 +980,12 @@ def test_demo_present_dry_run() -> None:
     assert "tomcat_can_network_connect" not in out
     assert "Already enforcing" not in out
     assert "httpd_can_network_connect" not in out
+    assert "Tomcat is vendor-covered" not in out
+    assert "covered / tune / generate" not in out
+    assert "Covered → tuned → generated" not in out
+    assert "NEEDS_LIVE_CHECK" not in out
+    assert "no name_bind denial on distro tomcat_t" in out
+    assert "no mislabel denial on distro tomcat_t" in out
     jws = subprocess.run(
         [
             BASH,
@@ -1002,6 +1008,9 @@ def test_demo_present_dry_run() -> None:
     assert "jws6_tomcat" in jws_out
     assert "DENIED" in jws_out
     assert "loaded_unconfined" not in jws_out
+    assert "Tomcat is vendor-covered" in jws_out
+    assert "name_bind on unreserved_port_t" in jws_out
+    assert "Covered → tuned → generated" in jws_out
     help_run = subprocess.run(
         [BASH, str(script), "--help"],
         cwd=PROJECT_ROOT,
@@ -1304,6 +1313,43 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
     assert result.returncode == 0, out
     assert "WRAP_OK" in result.stdout
     assert "Bad substitution" not in out
+
+
+def test_narration_live_checks_and_enforce_paths() -> None:
+    """Distro narration, one live-check list, and enforce-check uses the manifest."""
+    live = PROJECT_ROOT / "docs" / "demo" / "LIVE_CHECKS.md"
+    text = live.read_text(encoding="utf-8")
+    assert "matchpathcon /run/shopapi/no-such-file" in text
+    assert "ps -o label,args -C java" in text
+    assert "rm -rf /run/shopapi" not in text
+    assert "ps -eZ -C java" not in text
+    hits = []
+    for path in PROJECT_ROOT.rglob("*"):
+        if not path.is_file() or path == live or path.name == "smoke_test.py" or ".git" in path.parts:
+            continue
+        if path.suffix not in {".md", ".sh", ".yml", ".py", ".service"} and path.name != "boolean_hints.yml":
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if "NEEDS_LIVE_CHECK" in body:
+            hits.append(str(path.relative_to(PROJECT_ROOT)))
+    assert hits == [], hits
+    hints = (PROJECT_ROOT / "config" / "boolean_hints.yml").read_text(encoding="utf-8")
+    assert "jws6_can_network_connect" not in hints
+    assert "httpd_can_network_connect" in hints
+    gen = (PROJECT_ROOT / "scripts" / "dev_generate_policy.sh").read_text(encoding="utf-8")
+    start = gen.index("run_enforce_check()")
+    end = gen.index("print_pr_steps()", start)
+    body = gen[start:end]
+    assert "/opt/myapp" not in body
+    assert "myapp.service" not in body
+    assert "PATHS_CSV" in body
+    assert "PRIMARY_SERVICE" in body
+    basics = (PROJECT_ROOT / "docs" / "training" / "102-SELINUX_BASICS.md").read_text(encoding="utf-8")
+    assert "matchpathcon /run/shopapi/no-such-file" in basics
+    assert "ps -o label,args -C java" in basics
 
 
 def test_demo_present_preflight_names_bootstrap() -> None:
@@ -3259,6 +3305,7 @@ def main() -> int:
         ("monitor_avc_skip", test_monitor_avc_skip),
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
+        ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),

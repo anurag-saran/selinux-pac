@@ -10,12 +10,3 @@ hints:
       tgt_type: http_port_t
       tclass: tcp_socket
       perms: [name_connect]
-  - boolean: jws6_can_network_connect
-    note: >-
-      JWS outbound HTTP is gated by this boolean. Enable it on the host;
-      do not generate a .te allow that duplicates vendor policy.
-    match:
-      src_type: jws6_tomcat_t
-      tgt_type: http_port_t
-      tclass: tcp_socket
-      perms: [name_connect]

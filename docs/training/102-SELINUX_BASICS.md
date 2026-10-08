@@ -358,7 +358,7 @@ The compile script (`scripts/compile_and_validate.sh`) also rejects a short list
 
 Installing a module updates the kernel's rule book and address book. Files that were created earlier keep whatever label they already had. A new directory under `/var/log` is born as `var_log_t`. After you install a module that says "`/var/log/shopapi` should be `shopapi_log_t`," the directory on disk is still `var_log_t` until you relabel it.
 
-`cp` creates a new file, so the copy gets a label from its new location. `mv` renames the existing file and keeps the old label. NEEDS_LIVE_CHECK: `echo x > /tmp/label-src && sudo chcon -t etc_t /tmp/label-src && sudo cp /tmp/label-src /var/log/shopapi/from-cp && sudo mv /tmp/label-src /var/log/shopapi/from-mv && ls -Z /var/log/shopapi/from-cp /var/log/shopapi/from-mv` — `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`.
+`cp` creates a new file, so the copy gets a label from its new location. `mv` renames the existing file and keeps the old label. `from-cp` wears the type of `/var/log/shopapi`; `from-mv` is still `etc_t`. The commands are in [LIVE_CHECKS.md](../demo/LIVE_CHECKS.md).
 
 The app runs as `shopapi_t`. The allow rule permits writes to `shopapi_log_t`. The file is still `var_log_t`. The kernel denies the write. `chmod` can look perfectly fine at the same time, because Unix permissions and SELinux are separate checks.
 
@@ -374,7 +374,7 @@ $ ls -Z /var/log/shopapi
 system_u:object_r:var_log_t:s0    /var/log/shopapi
 ```
 
-Those two types differ. That is the gap. `matchpathcon` answers for a path that is not on disk yet. NEEDS_LIVE_CHECK: `sudo rm -rf /run/shopapi && matchpathcon /run/shopapi` should print `shopapi_var_run_t` after the shopapi module is loaded.
+Those two types differ. That is the gap. `matchpathcon` answers for a path that is not on disk yet. `matchpathcon /run/shopapi/no-such-file` should print `shopapi_var_run_t` after the shopapi module is loaded.
 
 ### Close it
 
@@ -587,7 +587,7 @@ The sample policy tells this same story with `GET /save-log` writing `/var/log/m
 
 A process does not pick its own label. The kernel assigns one from how the process was started.
 
-**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared, type `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). If every Java process inherited a label from that one file, every Java app would share a domain. systemd executes `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) transitions `initrc_domain` on that type to `shopapi_t`, and `init_t` is an `initrc_domain`. The unit does not set `SELinuxContext=`. The wrapper then execs `/usr/bin/java`. That execute is `java_exec(shopapi_t)`, not an entrypoint. NEEDS_LIVE_CHECK: `ps -eZ -C java` prints `shopapi_t`.
+**Shopapi, the way the lab starts it.** The `java` binary on the machine is shared, type `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). If every Java process inherited a label from that one file, every Java app would share a domain. systemd executes `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) transitions `initrc_domain` on that type to `shopapi_t`, and `init_t` is an `initrc_domain`. The unit does not set `SELinuxContext=`. The wrapper then execs `/usr/bin/java`. That execute is `java_exec(shopapi_t)`, not an entrypoint. `ps -o label,args -C java` prints `shopapi_t`.
 
 **The sample app, the other pattern.** `myapp` is started from a program file labeled `myapp_exec_t`. The helper `init_daemon_domain(myapp_t, myapp_exec_t)` tells the kernel: "systemd is starting that file, so the new process is `myapp_t`." That is a **type transition**: the file type plus the parent process decide the child process type.
 
