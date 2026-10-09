@@ -310,6 +310,9 @@ def parse_avc_file(
     return entries, paths, ports
 
 
+_SEPOLGEN_IFSETS: dict[str, object] = {}
+
+
 def try_sepolgen_interface(
     src: str, tgt: str, tclass: str, perms: frozenset[str]
 ) -> tuple[str, str] | None | object:
@@ -322,12 +325,16 @@ def try_sepolgen_interface(
         return SEPOLGEN_UNAVAILABLE
 
     if_path = defaults.interface_info()
-    try:
-        with open(if_path, encoding="utf-8") as fd:
-            ifset = interfaces.InterfaceSet()
-            ifset.from_file(fd)
-    except OSError:
-        return SEPOLGEN_UNAVAILABLE
+    ifset = _SEPOLGEN_IFSETS.get(if_path)
+    if ifset is None:
+        # Parsing interface_info takes seconds. Do it once per run, not per denial.
+        try:
+            with open(if_path, encoding="utf-8") as fd:
+                ifset = interfaces.InterfaceSet()
+                ifset.from_file(fd)
+        except OSError:
+            return SEPOLGEN_UNAVAILABLE
+        _SEPOLGEN_IFSETS[if_path] = ifset
 
     try:
         av = access_mod.AccessVector([src, tgt, tclass, *sorted(perms)])

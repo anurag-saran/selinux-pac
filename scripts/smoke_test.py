@@ -3193,6 +3193,112 @@ def test_system_jvm_exec_bin_exception() -> None:
     assert "java_exec_t mono_exec_t" in rules
 
 
+def test_boolean_triage_loads_policy_once() -> None:
+    """One policy load or one sesearch per denial, one semanage per run, one interface parse."""
+    import types
+    from unittest import mock
+
+    import boolean_hints as bh
+    import deterministic_gen as dg
+
+    need = AccessNeed("myapp_t", "http_port_t", "tcp_socket", frozenset({"name_connect"}))
+    two = AccessNeed("myapp_t", "var_t", "file", frozenset({"read", "open"}))
+    lines = [
+        "allow httpd_t http_port_t:tcp_socket name_connect; [ httpd_can_network_connect ]:True",
+        "allow domain port_type:tcp_socket name_connect; [ nis_enabled || httpd_x ]:True",
+        "allow myapp_t http_port_t:tcp_socket name_connect;",
+        "allow myapp_t var_t:file read; [ split_bool ]:True",
+        "allow myapp_t var_t:file { open getattr }; [ split_bool ]:False",
+        "allow myapp_t var_t:file read; [ ! half_bool ]:True",
+    ]
+    assert bh.booleans_from_sesearch_lines(lines, need) == {
+        "httpd_can_network_connect",
+        "nis_enabled",
+        "httpd_x",
+    }
+    assert bh.booleans_from_sesearch_lines(lines, two) == {"split_bool"}
+
+    listing = "SELinux boolean State Default Description\n" + "\n".join(
+        f"{n} (off , off) desc {n}" for n in ("httpd_can_network_connect", "nis_enabled", "split_bool")
+    )
+    calls: list[str] = []
+
+    def fake_run(cmd: list[str]) -> subprocess.CompletedProcess:
+        calls.append(cmd[0])
+        out = listing if cmd[0] == "semanage" else "\n".join(lines)
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    with tempfile.NamedTemporaryFile() as kern:
+        bh._list_booleans_cached.cache_clear()
+        with mock.patch.object(bh, "_run", fake_run), mock.patch.dict(
+            sys.modules, {"setools": None}
+        ), mock.patch.object(bh.shutil, "which", return_value="/usr/bin/sesearch"):
+            first = bh.lookup_booleans_for_need(need, policy_kern=Path(kern.name))
+            second = bh.lookup_booleans_for_need(two, policy_kern=Path(kern.name))
+        assert first.status == "matched"
+        assert [m.name for m in first.matches] == ["httpd_can_network_connect", "nis_enabled"]
+        assert [m.name for m in second.matches] == ["split_bool"]
+        assert calls.count("semanage") == 1, calls
+        assert calls.count("sesearch") == 2, calls
+
+        loads: list[str] = []
+
+        class Rule:
+            def __init__(self, perms: set[str], booleans: set[str] | None) -> None:
+                self.perms = perms
+                self._booleans = booleans
+
+            @property
+            def conditional(self) -> object:
+                if self._booleans is None:
+                    raise ValueError("not conditional")
+                return types.SimpleNamespace(booleans=self._booleans)
+
+        def fake_policy(path: str) -> object:
+            loads.append(path)
+            return object()
+
+        def fake_query(policy: object, **kw: object) -> object:
+            rules = [Rule({"name_connect"}, {"httpd_can_network_connect"}), Rule({"name_connect"}, None)]
+            return types.SimpleNamespace(results=lambda: iter(rules))
+
+        fake = types.SimpleNamespace(SELinuxPolicy=fake_policy, TERuleQuery=fake_query)
+        bh._SETOOLS_POLICY.clear()
+        with mock.patch.dict(sys.modules, {"setools": fake}):
+            for _ in range(3):
+                got = bh.booleans_covering_need(Path(kern.name), need)
+                assert got == {"httpd_can_network_connect"}
+        assert len(loads) == 1, loads
+        bh._SETOOLS_POLICY.clear()
+    bh._list_booleans_cached.cache_clear()
+
+    parses: list[str] = []
+
+    class IfSet:
+        def from_file(self, fd: object) -> None:
+            parses.append("parse")
+
+    with tempfile.NamedTemporaryFile("w", suffix="interface_info") as info:
+        sep = types.ModuleType("sepolgen")
+        modules = {
+            "sepolgen": sep,
+            "sepolgen.access": types.SimpleNamespace(AccessVector=lambda av: av),
+            "sepolgen.defaults": types.SimpleNamespace(interface_info=lambda: info.name),
+            "sepolgen.interfaces": types.SimpleNamespace(InterfaceSet=IfSet),
+            "sepolgen.matching": types.SimpleNamespace(
+                Match=lambda: types.SimpleNamespace(search=lambda ifset, av: [])
+            ),
+        }
+        for name in ("access", "defaults", "interfaces", "matching"):
+            setattr(sep, name, modules[f"sepolgen.{name}"])
+        dg._SEPOLGEN_IFSETS.clear()
+        with mock.patch.dict(sys.modules, modules):
+            for _ in range(4):
+                assert dg.try_sepolgen_interface("myapp_t", "etc_t", "file", frozenset({"read"})) is None
+        dg._SEPOLGEN_IFSETS.clear()
+    assert parses == ["parse"], parses
+
+
 def test_forbidden_exec_bin_needs_manifest_reason() -> None:
     """Raw bin_t execute always fails. The macros pass only with the manifest reason."""
     checker = PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh"
@@ -4452,6 +4558,7 @@ def main() -> int:
         ("fc_labeling_drift_detection", test_fc_labeling_drift_detection),
         ("system_jvm_exec_bin_exception", test_system_jvm_exec_bin_exception),
         ("forbidden_exec_bin_needs_manifest_reason", test_forbidden_exec_bin_needs_manifest_reason),
+        ("boolean_triage_loads_policy_once", test_boolean_triage_loads_policy_once),
         ("rhel_runtime_file_contexts", test_rhel_runtime_file_contexts),
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),
