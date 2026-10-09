@@ -86,6 +86,16 @@ mac_canary_enforce_dev() {
     tlab_checkpoint "failed=0. Host getenforce is still Enforcing; shopapi_t is no longer permissive."
 }
 
+mac_serve_repo() {
+    local repo_host="${REPO_HOST:-${DEV_HOST}}"
+    tlab_explain "UTM does not route one VM to the other. rsync the published repo to this Mac and serve it on ${repo_host}. The private key stays on rhel-qa."
+    e2e_run "mkdir -p dist/lab-repo && rsync -az --delete -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' ${E2E_SSH_USER}@${DEV_HOST}:~/selinux-pac/dist/lab-repo/ dist/lab-repo/"
+    e2e_run "test -f dist/lab-repo/RPM-GPG-KEY && test -d dist/lab-repo/repodata && ls dist/lab-repo/*.rpm >/dev/null && test -z \"\$(find dist/lab-repo \\( -name '*private*' -o -name '*secring*' \\) -print -quit)\" && echo 'public key, signed RPMs, repodata; no private key'"
+    e2e_run "pkill -f \"[h]ttp.server 8765\" || true; nohup python3 -m http.server 8765 --bind 0.0.0.0 --directory \"${PROJECT_ROOT}/dist/lab-repo\" >/tmp/selinux-pac-repo.log 2>&1 & sleep 2 && head -3 /tmp/selinux-pac-repo.log"
+    e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'curl -sfI http://${repo_host}:8765/RPM-GPG-KEY | head -1'"
+    tlab_checkpoint "prod prints HTTP/1.0 200 OK for http://${repo_host}:8765/RPM-GPG-KEY. If it does not, check /tmp/selinux-pac-repo.log on this Mac."
+}
+
 mac_ship_prod() {
     local mode="${1:-soak_demo}"
     tlab_explain "Ship only after the PR is merged. rhel-qa builds, signs, and publishes. The private key stays on rhel-qa. This lab rsyncs the tree, so we do not git checkout main and pull: that would replace the generated module with the types-only seed."
@@ -95,14 +105,10 @@ mac_ship_prod() {
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && BUILD_RPMS_ALLOW_DIRTY=1 bash packaging/build_rpms.sh'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash scripts/lab_signing_setup.sh'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash packaging/publish_internal.sh'"
-    tlab_explain "The repo server runs in the background on rhel-qa. Its log is /tmp/selinux-pac-repo.log. firewalld does not allow 8765 by default; the rule below is runtime only."
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'pkill -f \"[h]ttp.server 8765\" || true; cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && (setsid nohup bash scripts/serve_lab_repo.sh >/tmp/selinux-pac-repo.log 2>&1 < /dev/null &) && sleep 2 && head -3 /tmp/selinux-pac-repo.log'"
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'if systemctl is-active --quiet firewalld; then sudo firewall-cmd --add-port=8765/tcp; fi'"
-    e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'curl -sfI http://${DEV_HOST}:8765/RPM-GPG-KEY | head -1'"
-    tlab_checkpoint "prod prints HTTP/1.0 200 OK for the key. If it does not, check /tmp/selinux-pac-repo.log and firewall-cmd --list-ports on rhel-qa."
+    mac_serve_repo
     tlab_pause
 
-    tlab_explain "Prod installs from that HTTP repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand. No signing key is copied to the Mac or to prod."
+    tlab_explain "Prod installs from that HTTP repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand. The private key stays on rhel-qa."
     tlab_explain "deploy_canary.yml installs the RPMs with dnf and sets shopapi_t permissive before it restarts the service."
 
     e2e_handoff "On the PROD VM window run:
@@ -156,9 +162,8 @@ Press Enter here when you have seen that." \
 
 mac_copy_prod_avc_to_dev() {
     tlab_explain "Prod has no generator. Copy the AVC export to rhel-qa ~/selinux-pac/policy_out/avc.log."
-    e2e_run "scp ${E2E_SSH_USER}@${PROD_HOST}:/tmp/prod-feature-spool.avc /tmp/prod-feature-spool.avc"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'mkdir -p ~/selinux-pac/policy_out'"
-    e2e_run "scp /tmp/prod-feature-spool.avc ${E2E_SSH_USER}@${DEV_HOST}:~/selinux-pac/policy_out/avc.log"
+    e2e_run "scp -3 ${E2E_SSH_USER}@${PROD_HOST}:/tmp/prod-feature-spool.avc ${E2E_SSH_USER}@${DEV_HOST}:~/selinux-pac/policy_out/avc.log"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'wc -l ~/selinux-pac/policy_out/avc.log'"
 }
 
@@ -201,7 +206,7 @@ Press Enter here when ausearch shows shopapi denials." \
 
 tlab_explain "Copy the JAR QA just built so prod does not need Maven."
 e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'mkdir -p ~/e2e-demo/demo/shopapi/target'"
-e2e_run "scp ${E2E_SSH_USER}@${DEV_HOST}:/opt/shopapi/shopapi.jar ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/demo/shopapi/target/shopapi.jar"
+    e2e_run "scp -3 ${E2E_SSH_USER}@${DEV_HOST}:/opt/shopapi/shopapi.jar ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/demo/shopapi/target/shopapi.jar"
 
 e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part app

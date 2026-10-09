@@ -157,7 +157,7 @@ After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permi
 
 ```mermaid
 flowchart TD
-  rpm["rhel-qa builds and signs RPMs"] --> repo["HTTP repo on rhel-qa, gpgcheck=1"]
+  rpm["rhel-qa builds and signs RPMs"] --> repo["HTTP repo on the Mac, gpgcheck=1"]
   repo --> canary["Mac: deploy_canary.yml"]
   canary --> soak["Prod: curl /feature-spool during soak"]
   soak --> mon["Mac: soak_monitor fails"]
@@ -178,7 +178,7 @@ On the machine that publishes, create the lab key and the local repo once. The s
 bash scripts/lab_signing_setup.sh
 ```
 
-Run that on rhel-qa. The private key stays there. rhel-qa checks out merged `main`, runs `bash packaging/build_rpms.sh`, signs with `rpmsign`, runs `createrepo_c`, and serves the directory over HTTP. The conductor installs `rpm-build`, `rpm-sign`, and `createrepo_c` on rhel-qa if they are missing, starts the server in the background (log: `/tmp/selinux-pac-repo.log`), opens 8765 in firewalld for this boot only, and checks the key URL from prod. Expected from prod: `HTTP/1.0 200 OK`. [100 Part 7](../training/100-RHEL-HOST-COMMANDS.md#between-the-vms-the-rpm-repository) has the same checks by hand. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
+Run that on rhel-qa. The private key stays there. rhel-qa builds and signs the RPMs. UTM does not route one VM to the other, so the conductor rsyncs `dist/lab-repo` onto the Mac and serves it there. The copy has the public key, the signed RPMs, and repodata, and not the private key. Prod curls `http://<REPO_HOST>:8765/RPM-GPG-KEY` and should print `HTTP/1.0 200 OK`. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
 
 Switch to prod:
 

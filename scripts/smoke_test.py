@@ -295,8 +295,10 @@ def test_signed_repo_published_on_qa() -> None:
     serve = (PROJECT_ROOT / "scripts" / "serve_lab_repo.sh").read_text(encoding="utf-8")
     assert 'pkill -f \\"[h]ttp.server 8765\\"' in mac
     assert "rpm-sign" in mac and "createrepo_c" in mac
-    assert "firewall-cmd --add-port=8765/tcp" in mac
-    assert "curl -sfI http://${DEV_HOST}:8765/RPM-GPG-KEY" in mac
+    assert "mac_serve_repo" in mac
+    assert "scp -3" in mac
+    assert "public key, signed RPMs, repodata; no private key" in mac
+    assert "curl -sfI http://${repo_host}:8765/RPM-GPG-KEY" in mac
     assert "exec python3 -m http.server" in serve
 
 

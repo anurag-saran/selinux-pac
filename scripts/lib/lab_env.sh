@@ -30,7 +30,7 @@ lab_env_load() {
             value="${value%\'}"
             value="${value#\'}"
             case "${key}" in
-                QA_HOST|PROD_HOST|SSH_USER|DEV_HOST) lab_env_set_if_empty "${key}" "${value}" ;;
+                QA_HOST|PROD_HOST|SSH_USER|DEV_HOST|REPO_HOST) lab_env_set_if_empty "${key}" "${value}" ;;
             esac
         done <"${file}"
     fi
@@ -53,6 +53,7 @@ lab_env_load() {
     : "${SSH_USER:=}"
     : "${E2E_SSH_USER:=}"
     : "${ANSIBLE_SSH_USER:=}"
+    : "${REPO_HOST:=}"
 }
 
 lab_env_require() {

@@ -57,6 +57,7 @@ require_write_args() {
     lab_env_require
     DEV_HOST="${DEV_HOST:-${QA_HOST}}"
     ANSIBLE_USER="${SSH_USER}"
+    REPO_HOST="${REPO_HOST:-${DEV_HOST}}"
 }
 
 write_inventories() {
@@ -138,8 +139,8 @@ all:
     soak_use_net_new: true
     rollback_dnf_version: ""
     http_probe_host: "127.0.0.1"
-    selinux_rpm_repo_baseurl: "http://${DEV_HOST}:8765"
-    selinux_rpm_gpgkey: "http://${DEV_HOST}:8765/RPM-GPG-KEY"
+    selinux_rpm_repo_baseurl: "http://${REPO_HOST}:8765"
+    selinux_rpm_gpgkey: "http://${REPO_HOST}:8765/RPM-GPG-KEY"
 EOF
 
     echo "Wrote ${DEV_INVENTORY} (qa=${DEV_HOST}, host rhel-qa)"
