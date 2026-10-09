@@ -27,7 +27,7 @@ if [[ "${1:-}" == "--stamp-spec" ]]; then
     exit 0
 fi
 
-if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
+if [[ -n "$(git -C "${ROOT}" status --porcelain)" && "${BUILD_RPMS_ALLOW_DIRTY:-0}" != 1 ]]; then
     echo "Refusing to build RPMs from a dirty git tree." >&2
     exit 1
 fi

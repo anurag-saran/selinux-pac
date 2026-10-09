@@ -536,11 +536,15 @@ def classify(
         )
 
     if tgt == "tmp_t":
-        rendered = (
-            f"files_manage_generic_tmp_dirs({src})"
-            if tclass == "dir"
-            else f"files_manage_generic_tmp_files({src})"
-        )
+        if tclass == "dir":
+            rendered = f"files_manage_generic_tmp_dirs({src})"
+        else:
+            parts: list[str] = []
+            if "map" in perms:
+                parts.append(f"files_map_generic_tmp_files({src})")
+            if perms - {"map"}:
+                parts.append(f"files_manage_generic_tmp_files({src})")
+            rendered = "\n".join(parts) or f"files_manage_generic_tmp_files({src})"
         return Finding(
             need,
             VERDICT_INTERFACE,

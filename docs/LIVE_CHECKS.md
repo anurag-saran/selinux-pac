@@ -4,6 +4,16 @@ These commands need rhel-qa. They are not part of the on-screen demo. [102](trai
 
 Captured 2026-10-09 on rhel-qa after `demo_bootstrap.sh` (`getenforce` was Enforcing, `shopapi.service` was active, `shopapi_t` was permissive). The VM clock was behind the laptop: `date` on the host printed `Wed Oct  7 11:36:12 PM EDT 2026`. That is why `aureport` dates say 10/07/2026.
 
+Customer talk the same day, after the one-query boolean change. Each time below is `cli/deterministic_gen.py` only, run with sudo because `policy.kern` is root-only. A separate `sudo` explain of `policy_out/avc.log` took 5.036 seconds.
+
+| Generate | Result | Seconds |
+|----------|--------|---------|
+| Act 3, no `--allow-needs-review` | stopped on `execmem` only | 5.6 |
+| Act 3, `--allow-needs-review` | wrote `corecmd_exec_bin(shopapi_t)`; passwd refused and absent from the `.te` | 5.4 |
+| Act 6 | spool rule only; passwd refused again | 0.1 |
+
+`compile_and_validate.sh` printed `bin_t execute accepted: reviewed exception`. Act 6: `getenforce` was Enforcing, `/feature-spool` was denied `permissive=0` on `/var/spool/shopapi/feature.log`, then the spool allow made the curl print `SPOOL /var/spool/shopapi/feature.log`. `shopapi_t` was not permissive at the end.
+
 ## Command catalog
 
 ```bash

@@ -1358,6 +1358,12 @@ def test_lab_env_required() -> None:
     ):
         text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
         assert "192.168.64" not in text, rel
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    assert "scripts/lib/lab_env.sh" in mac
+    assert "scripts/lab.env" in mac
+    boot = (PROJECT_ROOT / "scripts" / "demo_bootstrap.sh").read_text(encoding="utf-8")
+    assert "systemctl restart shopapi.service" in boot
+    assert "enable --now shopapi.service ||" not in boot
 
 
 def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
@@ -3182,6 +3188,30 @@ def test_system_jvm_exec_bin_exception() -> None:
         [],
     )
     assert commented.verdict == VERDICT_NEEDS_REVIEW
+
+    tmp_map = classify(
+        AccessNeed("shopapi_t", "tmp_t", "file", frozenset({"map"})),
+        manifest,
+        ("/tmp/hsperfdata_shopapi/1",),
+        "",
+        "",
+        False,
+        None,
+        [],
+    )
+    assert tmp_map.rendered == "files_map_generic_tmp_files(shopapi_t)"
+    tmp_both = classify(
+        AccessNeed("shopapi_t", "tmp_t", "file", frozenset({"map", "write"})),
+        manifest,
+        ("/tmp/hsperfdata_shopapi/1",),
+        "",
+        "",
+        False,
+        None,
+        [],
+    )
+    assert "files_map_generic_tmp_files(shopapi_t)" in tmp_both.rendered
+    assert "files_manage_generic_tmp_files(shopapi_t)" in tmp_both.rendered
 
     seed = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
     seed_rules = re.sub(r"#.*", "", seed)

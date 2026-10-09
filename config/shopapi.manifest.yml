@@ -51,3 +51,16 @@ policy:
 deploy:
   soak_marker_file: /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at
   deploy_report_file: /var/lib/selinux-policy-ops/shopapi/selinux_deploy_report.json
+
+# Canary disables dontaudit. These denials still appear and are not allows:
+# passwd_file_t is refused, cgroup_t is omitted (undeclared type).
+soak:
+  ignore:
+    - tclass: file
+      target_type: passwd_file_t
+    - tclass: filesystem
+      target_type: cgroup_t
+    - tclass: dir
+      target_type: cgroup_t
+    - tclass: file
+      target_type: cgroup_t

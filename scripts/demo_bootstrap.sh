@@ -220,7 +220,10 @@ start_services() {
         systemctl enable --now "${svc}"
         systemctl restart "${svc}" || true
     fi
-    systemctl enable --now shopapi.service || systemctl restart shopapi.service
+    # Reset restarts shopapi before this module exists, so that process is
+    # unconfined_service_t. enable --now does not recycle an active unit.
+    systemctl enable shopapi.service
+    systemctl restart shopapi.service
 }
 
 wait_shopapi() {

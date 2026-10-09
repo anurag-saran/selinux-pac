@@ -107,8 +107,13 @@ part_app() {
     e2e_run "ps -o label=,comm= -C java | head"
     tlab_pause
 
+    tlab_explain "Canary runs semodule -DB, so startup denials that dontaudit would hide have to be in this log. Restart shopapi once with dontaudit off, curl the first-ship URLs, then turn dontaudit back on. passwd_file_t is refused and cgroup_t is omitted; soak.ignore records both so they are not a canary failure."
+    e2e_run "sudo semodule -DB"
+    e2e_run "sudo systemctl restart shopapi.service"
+    e2e_run "ok=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do if curl -sf http://127.0.0.1:$(shop_port)/health >/dev/null; then ok=1; break; fi; sleep 2; done; test \"\${ok}\" = 1"
     tlab_explain "First-ship URLs: /health /state /log. Not /feature-spool — that is the outage on prod."
     e2e_run "$(first_ship_cmd)"
+    e2e_run "sudo semodule -B"
     tlab_pause
 
     tlab_explain "These shopapi_t AVC lines are the input to generate."
