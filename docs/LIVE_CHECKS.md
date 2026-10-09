@@ -26,6 +26,7 @@ sudo semodule --list-modules=full | head
 seinfo -t shopapi_t -x
 seinfo -t bin_t -x | head -3
 sudo semodule -l | grep -x java || echo 'no java module'
+seinfo -t unconfined_java_t
 matchpathcon "$(readlink -f /usr/bin/java)"
 seinfo --permissive
 sesearch -A -s shopapi_t -t shopapi_log_t -c file -p write
@@ -40,6 +41,8 @@ sudo aureport -a --summary
 `sesearch -A -s shopapi_t -t shopapi_log_t -c file -p write` printed no lines. An `open` allow exists; a `write` allow does not.
 
 `ausearch -m avc -ts recent --subject shopapi_t` printed `<no matches>`.
+
+`seinfo -t unconfined_java_t` on rhel-qa (2026-10-09) printed `Types: 0`. `sudo semodule -l | grep -x java` printed nothing, so the page records `no java module`. The type is not in this policy.
 
 `sudo aureport -a` printed 17377 AVC lines, all `init_t` `file` `execute` on `unlabeled_t`. First and last records:
 

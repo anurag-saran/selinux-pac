@@ -176,6 +176,7 @@ sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml \
 | `semanage`, `audit2why`, `audit2allow` | `policycoreutils-python-utils` |
 | `sesearch`, `seinfo` | `setools-console` |
 | `ausearch`, `aureport`, `auditctl` | `audit` |
+| `sealert` | `setroubleshoot-server` |
 | `/usr/share/selinux/devel/Makefile` | `selinux-policy-devel` |
 | `sepolicy-generate`, `sepolgen-ifgen` | `policycoreutils-devel` |
 | `rpmbuild` / `rpmsign` / `createrepo_c` | `rpm-build` / `rpm-sign` / `createrepo_c` |
@@ -488,6 +489,6 @@ Every command you type in the labs and talks, and where it is explained.
 | `semanage permissive` | VMs | [102 Permissive domains](102-COMMANDS.md#permissive-domains) | 104, canary, enforce, rollback |
 | `semodule`, `make -f /usr/share/selinux/devel/Makefile`, `sepolicy-generate` | VMs | [102 Modules](102-COMMANDS.md#modules) | 104, compile scripts, RPM install |
 | `seinfo`, `sesearch` | VMs | [102 Querying policy](102-COMMANDS.md#querying-policy) | Vendor check, CI gate, soak |
-| `ausearch`, `audit2why`, `audit2allow`, `aureport` | VMs | [102 Audit](102-COMMANDS.md#audit) | 104, generator, soak monitor |
+| `ausearch`, `audit2why`, `audit2allow`, `aureport`, `sealert` | VMs | [102 Audit](102-COMMANDS.md#audit) | 104, generator, soak monitor |
 
 Next: [101 — SELinux concepts](101-CONCEPTS.md).

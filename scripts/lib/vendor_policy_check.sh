@@ -6,8 +6,9 @@
 #
 # JWS and EAP ship SELinux in a separate RPM that is not installed by default
 # (jws6-tomcat-selinux, eap7-selinux / eap8-selinux). Until that RPM is
-# installed the process runs unconfined_java_t — "no module loaded" does not
-# mean "no policy exists".
+# installed the process runs unconfined_service_t — "no module loaded" does not
+# mean "no policy exists". unconfined_java_t is not declared on RHEL 9.
+# Distro Tomcat is tomcat_t and unconfined.
 #
 # Source from other scripts:
 #   source "${SCRIPT_DIR}/lib/vendor_policy_check.sh"
@@ -358,7 +359,7 @@ _vpc_refuse_package() {
     local detail="$2"
     _vpc_error "vendor SELinux package ${detail}: ${pkg}"
     _vpc_error "Install or enable the vendor package; do not generate a duplicate module."
-    _vpc_error "Until that RPM is installed, Tomcat/EAP often runs as unconfined_java_t — that is not confinement."
+    _vpc_error "Until that RPM is installed, Tomcat/EAP on RHEL 9 runs as unconfined_service_t — that is not confinement. Distro Tomcat is tomcat_t and unconfined."
     _vpc_error "Escape hatch: re-run with --force \"reason\" if this app genuinely differs from the vendor policy."
     return 1
 }

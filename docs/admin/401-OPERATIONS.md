@@ -77,10 +77,10 @@ ps -eZ | grep -E 'unconfined_java_t|unconfined_service_t'
 | Loaded vendor module whose domain is unconfined (`situation=loaded_unconfined`, `action=confine`) | Install the vendor's confining package, or generate with `--force "reason"`. Do not tune denials this domain will not produce. |
 | The vendor SELinux RPM is installed and the module is not loaded | Enable that package. Do not generate. |
 | The RPM is available and not installed | `dnf install` it (`jws6-tomcat-selinux`, `eap7-selinux`, or `eap8-selinux`). Do not generate. |
-| Tomcat or JBoss is `unconfined_java_t` | The vendor package was never enabled. Install it. Do not generate. |
+| Tomcat or JBoss is `unconfined_service_t` | The vendor package was never enabled. Install it. Do not generate. On RHEL 9 that process is `unconfined_service_t`. Distro Tomcat is `tomcat_t` and unconfined. |
 | No vendor module (Spring Boot, Node, shopapi) | Generate. |
 
-JWS and EAP policy is a separate package. It is not installed with the server. Until it is, the JVM runs `unconfined_java_t`. That is not confinement.
+JWS and EAP policy is a separate package. It is not installed with the server. Until it is, a Tomcat or EAP process on RHEL 9 runs `unconfined_service_t`. That is not confinement. Distro Tomcat stays `tomcat_t` and is unconfined. `unconfined_java_t` is not a type in this policy (`seinfo -t unconfined_java_t` prints `Types: 0`; `semodule -l` has no `java` module). The process check still matches both names.
 
 ## Booleans
 

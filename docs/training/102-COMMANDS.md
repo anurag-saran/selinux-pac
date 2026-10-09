@@ -494,6 +494,25 @@ sudo ausearch -m avc -ts recent --subject shopapi_t | audit2why
 
 **Common mistake.** A zero from `aureport` while `ausearch` was pointed at the wrong start time. Read the lines.
 
+### sealert
+
+**Answers.** A plain-language suggestion for an AVC: a boolean, a relabel, or a local policy module.
+
+**Reads or writes.** Reads the audit log. `sealert -l "*"` lists stored alerts. `sealert -a` reads a log file you name. It does not install a module unless you run the `semodule -i` line it prints.
+
+**Example.**
+
+```bash
+sudo sealert -l "*"
+sudo sealert -a /var/log/audit/audit.log
+```
+
+The package is `setroubleshoot-server`.
+
+**Used in.** Not by this tool. The deck's "old way" slide.
+
+**Common mistake.** Running its `audit2allow -M` suggestion, then `semodule -i`, on a production host. That is the step this tool replaces.
+
 ---
 
 Further reading on the practice host: `man selinux`, `man semodule`, `man restorecon`, `man ausearch`. The RHEL 9 book is [Using SELinux](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/9/html/using_selinux/index).

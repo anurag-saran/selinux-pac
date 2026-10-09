@@ -18,7 +18,7 @@ Source3:        selinux-manifest.yml
 
 %description
 Custom SELinux policy module (shopapi) for the Spring Boot demo JVM.
-Process domain shopapi_t is set with systemd SELinuxContext= (java is shared bin_t).
+ExecStart is the wrapper /opt/shopapi/bin/shopapi (shopapi_exec_t); init_daemon_domain moves it to shopapi_t; the system JVM is bin_t and runs under the reviewed corecmd_exec_bin exception.
 
 %prep
 
