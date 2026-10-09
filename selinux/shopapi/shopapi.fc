@@ -5,3 +5,6 @@
 /var/lib/shopapi(/.*)?              gen_context(system_u:object_r:shopapi_var_lib_t,s0)
 /var/log/shopapi(/.*)?              gen_context(system_u:object_r:shopapi_log_t,s0)
 /run/shopapi(/.*)?                  gen_context(system_u:object_r:shopapi_var_run_t,s0)
+
+# deterministic_gen labeling fixes
+/var/spool/shopapi(/.*)?    gen_context(system_u:object_r:shopapi_var_lib_t,s0)
