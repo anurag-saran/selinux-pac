@@ -21,6 +21,8 @@ source "${SCRIPT_DIR}/lib/e2e_demo.sh"
 
 TLAB_PS1='${USER}@mac selinux-pac %'
 DEMO_PROD_FORCE_ENFORCE="${DEMO_PROD_FORCE_ENFORCE:-true}"
+# Talk rehearsals open draft PRs. A real review PR is demo_open_generated_pr.sh with DEMO_REHEARSAL unset.
+export DEMO_REHEARSAL=1
 
 usage() {
     cat <<EOF

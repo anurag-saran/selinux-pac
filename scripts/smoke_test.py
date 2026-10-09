@@ -1261,6 +1261,103 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert_mentions(boot_out, "demo_bootstrap.sh --shopapi-only")
 
 
+def _open_pr_fixture(root: Path) -> None:
+    """Temp clone whose shopapi sources differ from HEAD, so the PR script commits."""
+    module = root / "selinux" / "shopapi"
+    module.mkdir(parents=True)
+    (module / "shopapi.te").write_text("policy_module(shopapi, 1.0.0)\n", encoding="utf-8")
+    (module / "shopapi.fc").write_text("# seed\n", encoding="utf-8")
+    (module / "policy_version.txt").write_text("1.0.0\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "smoke@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "smoke"], cwd=root, check=True)
+    subprocess.run(["git", "add", "selinux/shopapi"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True)
+    (module / "shopapi.te").write_text("policy_module(shopapi, 1.0.1)\n", encoding="utf-8")
+    (module / "policy_version.txt").write_text("1.0.1\n", encoding="utf-8")
+
+
+def _pr_path_tools(root: Path) -> tuple[Path, dict[str, str]]:
+    bindir = root / "bin"
+    bindir.mkdir()
+    log = root / "gh.log"
+    log.write_text("", encoding="utf-8")
+    git_real = shutil.which("git")
+    assert git_real
+    (bindir / "git").write_text(
+        f"""#!/bin/bash
+set -euo pipefail
+if [[ "${{1:-}}" == "push" ]]; then
+  exit 0
+fi
+exec {git_real} "$@"
+""",
+        encoding="utf-8",
+    )
+    (bindir / "gh").write_text(
+        f"""#!/bin/bash
+printf '%s\\n' "$*" >> {log}
+if [[ "${{1:-}}" == "pr" && "${{2:-}}" == "list" ]]; then
+  exit 0
+fi
+exit 0
+""",
+        encoding="utf-8",
+    )
+    (bindir / "git").chmod(0o755)
+    (bindir / "gh").chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+    env["POLICY_PR_ROOT"] = str(root)
+    env["DEMO_POLICY_BRANCH"] = "policy/shopapi-smoke"
+    env.pop("DEMO_POLICY_PR_TITLE", None)
+    env.pop("DEMO_REHEARSAL", None)
+    return log, env
+
+
+def test_rehearsal_and_review_pr_paths() -> None:
+    """Rehearsal opens a draft; a normal run stays a review PR."""
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    assert "export DEMO_REHEARSAL=1" in mac
+    script = PROJECT_ROOT / "scripts" / "demo_open_generated_pr.sh"
+    prefix = "[rehearsal - do not merge] "
+
+    def run(root: Path, args: list[str], rehearsal: str | None) -> str:
+        _open_pr_fixture(root)
+        log, env = _pr_path_tools(root)
+        if rehearsal is not None:
+            env["DEMO_REHEARSAL"] = rehearsal
+        proc = subprocess.run(
+            [BASH, str(script), *args],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        return log.read_text(encoding="utf-8") + out
+
+    with tempfile.TemporaryDirectory() as flag_dir, tempfile.TemporaryDirectory() as env_dir, tempfile.TemporaryDirectory() as review_dir:
+        flagged = run(Path(flag_dir), ["--rehearsal"], "0")
+        assert "--draft" in flagged
+        assert prefix in flagged
+        assert "do-not-merge" in flagged
+        assert "pending-admin-review" not in flagged
+
+        from_env = run(Path(env_dir), [], "1")
+        assert "--draft" in from_env
+        assert prefix in from_env
+        assert "do-not-merge" in from_env
+        assert "pending-admin-review" not in from_env
+
+        review = run(Path(review_dir), [], "0")
+        assert "--draft" not in review
+        assert prefix not in review
+        assert "pending-admin-review" in review
+        assert "do-not-merge" not in review
+
+
 def test_lab_env_required() -> None:
     """Talk scripts need QA_HOST, PROD_HOST, and SSH_USER, or scripts/lab.env."""
     reset = PROJECT_ROOT / "scripts" / "reset_demo_vms.sh"
@@ -4548,6 +4645,7 @@ def main() -> int:
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
         ("demo_outage_before_fix_dry_run", test_demo_outage_before_fix_dry_run),
+        ("rehearsal_and_review_pr_paths", test_rehearsal_and_review_pr_paths),
         ("lab_env_required", test_lab_env_required),
         ("e2e_quiet_ssh_wrap_skips_when_ssh_missing", test_e2e_quiet_ssh_wrap_skips_when_ssh_missing),
         ("demo_present_preflight_names_bootstrap", test_demo_present_preflight_names_bootstrap),
