@@ -531,7 +531,7 @@ act2_app_b() {
 
 act3_generate() {
     e2e_banner "Act 3 — Spring Boot shopapi: the generator is allowed"
-    tlab_explain "No vendor module for Spring Boot. ExecStart is /opt/shopapi/bin/shopapi, labeled shopapi_exec_t. That wrapper execs /usr/bin/java, which stays java_exec_t. There is no SELinuxContext= line. init_daemon_domain transitions init_t to shopapi_t when the wrapper runs."
+    tlab_explain "No vendor module for Spring Boot. ExecStart is /opt/shopapi/bin/shopapi, labeled shopapi_exec_t. That wrapper execs /usr/bin/java. On RHEL 9 that file is bin_t, because java_exec_t is an alias of bin_t. There is no SELinuxContext= line. init_daemon_domain transitions init_t to shopapi_t when the wrapper runs."
     e2e_run "systemctl cat shopapi.service | grep -E 'SELinuxContext|ExecStart'"
     demo_expect "ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar and no SELinuxContext= line"
     e2e_run "ps -o label=,comm= -C java | head"
@@ -543,7 +543,7 @@ act3_generate() {
     e2e_run "curl -sS http://127.0.0.1:${shop_port}/state || true"
     e2e_run "curl -sS http://127.0.0.1:${shop_port}/log || true"
     e2e_run "sudo ausearch -m avc -ts recent | grep shopapi_t | tail -n 20 || true"
-    e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root ${PROJECT_ROOT}"
+    e2e_run_expect_fail "sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root ${PROJECT_ROOT}"
     demo_expect "GENERATION BLOCKED — execmem needs review; shopapi.te unchanged"
     tlab_explain "execmem is memory that is both writable and executable. The generator recorded the denial and refused to write the allow. The log showed it, so the next command opts in."
     e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${PROJECT_ROOT}"

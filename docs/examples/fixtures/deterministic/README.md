@@ -27,6 +27,8 @@ CI compares generator output to `expected.json` (`make test-fixtures` / `bash sc
 | `12-execmem-review` | **`needs_review`** — `self:process execmem` is a security decision (exit 1 without `--allow-needs-review`) |
 | `13-cgroup-omit` | **`baseline`** — JVM `cgroup_t` filesystem getattr is omitted (no allow; type often undeclared) |
 | `14-stale-entrypoint` | **`fc_drift`** — `entrypoint` on `bin_t` / `java_exec_t` / `usr_t` at a path the `.fc` already covers; fix is `restorecon`, never an allow |
+| `15-system-jvm-exec-bin` | **`needs_review`** — execute on `bin_t` (the RHEL 9 JVM) with no manifest reason; renders `corecmd_exec_bin(myapp_t)` and blocks. `--allow-needs-review` does not unlock it |
+| `16-system-jvm-reviewed` | **`interface`** — the same AVCs with `selinux_exceptions.exec_bin` in the manifest; writes `corecmd_exec_bin(myapp_t)` |
 
 Run classification without writing policy:
 

@@ -1,6 +1,6 @@
 # 102 — SELinux commands
 
-Each entry answers one question. The words are in [101](101-CONCEPTS.md). The files these commands read and write are in [103](103-CONFIG-FILES.md). None of these commands is a repo script.
+Each entry answers one question. The words are in [101](101-CONCEPTS.md). The files these commands read and write are in [103](103-CONFIG-FILES.md). None of these commands is a repo script. The RHEL host commands around them (`dnf`, `rpm`, `systemctl`, `journalctl`, `auditctl`, `ss`, `firewall-cmd`, Ansible) are in [100](100-RHEL-HOST-COMMANDS.md).
 
 A line of output that has not been captured on rhel-qa is listed in [LIVE_CHECKS.md](../LIVE_CHECKS.md) with the command to run. Types named below are the ones [`selinux/shopapi/shopapi.fc`](../../selinux/shopapi/shopapi.fc) and the c9s policy assign, not a pasted terminal transcript.
 
@@ -382,7 +382,7 @@ sepolicy-generate -a payments_t -t unconfined_t
 
 **Reads or writes.** Reads the active policy (`-x` expands attributes). The binary is `setools-console`.
 
-**Example.** `seinfo -t shopapi_t -x` after the module is loaded. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md). `tomcat_t` carries `unconfined_domain` on c9s.
+**Example.** `seinfo -t shopapi_t -x` after the module is loaded. Capture: [LIVE_CHECKS.md](../LIVE_CHECKS.md). `tomcat_t` carries `unconfined_domain` on c9s. `seinfo -t bin_t -x` lists `java_exec_t` among the aliases of `bin_t`. That is why the JVM under `/usr/lib/jvm` is `bin_t` on RHEL 9, and why `java_exec()` compiles to execute on `bin_t`.
 
 **Used in.** `scripts/validate_policy_semantics.sh` diffs attributes against a control domain.
 

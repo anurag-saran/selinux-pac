@@ -341,6 +341,8 @@ sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name
 
 `--apply` copies the result onto `selinux/shopapi/`. The module name stays `shopapi`. If `execmem` had not been in the log, we would not add the flag.
 
+The module also has `corecmd_exec_bin(shopapi_t)`. Say: on RHEL 9 the system JVM is `bin_t`, because `java_exec_t` is another name for `bin_t`. This is the same rule Red Hat's own Tomcat policy uses. We accepted it once, in writing, in `config/shopapi.manifest.yml` under `selinux_exceptions.exec_bin`, and a code owner approves that file. A raw `allow … bin_t:file execute` is still refused, and `--allow-needs-review` alone would not have written this line.
+
 This is the QA host. Compile and load the module here. Production does not `semodule -i`.
 
 ```bash
@@ -391,7 +393,7 @@ sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissiv
 - App A and App B come before the generator. That order is the point.
 - Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
 - Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
-- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The shared `/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). The generator writes `java_exec(shopapi_t)` for that execute. It does not write an entrypoint on `java_exec_t`. The wrapper, after `restorecon`, is the entrypoint.
+- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The JVM is `bin_t` on RHEL 9 (`java_exec_t` is an alias of `bin_t` in [`corecommands.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)). The generator writes `corecmd_exec_bin(shopapi_t)` for that execute only because the manifest records `selinux_exceptions.exec_bin`. It does not write an entrypoint on `bin_t`. The wrapper, after `restorecon`, is the entrypoint.
 - Act 6 opens `/feature-spool` after `shopapi_t` leaves the permissive list. `getenforce` still prints `Enforcing`.
 
 ## Self-service

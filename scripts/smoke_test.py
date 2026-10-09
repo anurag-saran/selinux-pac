@@ -291,6 +291,13 @@ def test_signed_repo_published_on_qa() -> None:
         signed = log.read_text(encoding="utf-8")
         assert "--key-id" not in signed
         assert "_gpg_name selinux-pac-lab" in signed
+    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    serve = (PROJECT_ROOT / "scripts" / "serve_lab_repo.sh").read_text(encoding="utf-8")
+    assert 'pkill -f \\"[h]ttp.server 8765\\"' in mac
+    assert "rpm-sign" in mac and "createrepo_c" in mac
+    assert "firewall-cmd --add-port=8765/tcp" in mac
+    assert "curl -sfI http://${DEV_HOST}:8765/RPM-GPG-KEY" in mac
+    assert "exec python3 -m http.server" in serve
 
 
 def test_selinux_ports_and_canary_refuses_modify() -> None:
@@ -3119,47 +3126,156 @@ def test_fc_labeling_drift_detection() -> None:
     assert "/var/lib/myapp(/.*)?" in trimmed
 
 
-def test_java_exec_interface_not_entrypoint() -> None:
-    """execute on java_exec_t becomes java_exec(); entrypoint does not."""
-    from deterministic_gen import classify
-    from policy_rules import VERDICT_BASELINE, VERDICT_INTERFACE
+def test_system_jvm_exec_bin_exception() -> None:
+    """The system JVM is bin_t on RHEL 9. Only the manifest exception allows it."""
+    import argparse
+
+    from deterministic_gen import classify, finding_needs_review_allowed
+    from policy_rules import (
+        EXEC_BIN_EXCEPTION,
+        VERDICT_BASELINE,
+        VERDICT_INTERFACE,
+        VERDICT_NEEDS_REVIEW,
+    )
 
     manifest = {
         "app_name": "shopapi",
         "domain": "shopapi_t",
         "paths": {"install_root": "/opt/shopapi"},
     }
-    need = AccessNeed(
-        "shopapi_t",
-        "java_exec_t",
-        "file",
-        frozenset({"execute", "read", "open", "getattr", "map"}),
-    )
-    finding = classify(need, manifest, ("/usr/bin/java",), "", "", False, None, [])
-    assert finding.verdict == VERDICT_INTERFACE
-    assert finding.rendered == "java_exec(shopapi_t)"
-    assert not finding.rendered.startswith("allow ")
+    jvm = ("/usr/lib/jvm/java-17-openjdk/bin/java",)
+    perms = frozenset({"execute", "execute_no_trans", "read", "open", "getattr", "map"})
+    for tgt in ("bin_t", "java_exec_t"):
+        need = AccessNeed("shopapi_t", tgt, "file", perms)
+        finding = classify(need, manifest, jvm, "", "", False, None, [])
+        assert finding.verdict == VERDICT_NEEDS_REVIEW, (tgt, finding)
+        assert finding.rendered == "corecmd_exec_bin(shopapi_t)"
+        assert finding.review_key == EXEC_BIN_EXCEPTION
+        assert "selinux_exceptions.exec_bin" in finding.note
+        assert "java_exec(" not in finding.rendered
+        opt_in = argparse.Namespace(allow_needs_review=True, allow_needs_review_perm=["execute"])
+        assert not finding_needs_review_allowed(finding, opt_in)
 
-    entry = AccessNeed("shopapi_t", "java_exec_t", "file", frozenset({"entrypoint"}))
-    blocked = classify(entry, manifest, ("/usr/bin/java",), "", "", False, None, [])
-    assert "java_exec(" not in blocked.rendered
+    reviewed = {**manifest, "selinux_exceptions": {"exec_bin": "Reviewed: system JVM is bin_t."}}
+    need = AccessNeed("shopapi_t", "bin_t", "file", perms)
+    accepted = classify(need, reviewed, jvm, "", "", False, None, [])
+    assert accepted.verdict == VERDICT_INTERFACE
+    assert accepted.rendered == "corecmd_exec_bin(shopapi_t)"
+    assert "Reviewed: system JVM is bin_t." in accepted.note
+
+    entry = AccessNeed("shopapi_t", "bin_t", "file", frozenset({"entrypoint"}))
+    blocked = classify(entry, reviewed, jvm, "", "", False, None, [])
+    assert "corecmd_exec_bin(" not in blocked.rendered
     assert not blocked.rendered.startswith("allow ")
 
-    again = classify(
+    for existing in ("corecmd_exec_bin(shopapi_t)\n", "java_exec(shopapi_t)\n"):
+        again = classify(need, manifest, jvm, existing, "", False, None, [])
+        assert again.verdict == VERDICT_BASELINE, existing
+    commented = classify(
         need,
         manifest,
-        ("/usr/bin/java",),
-        "java_exec(shopapi_t)\n",
+        jvm,
+        "# generator writes corecmd_exec_bin(shopapi_t) only because\n",
         "",
         False,
         None,
         [],
     )
-    assert again.verdict == VERDICT_BASELINE
+    assert commented.verdict == VERDICT_NEEDS_REVIEW
 
     seed = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
-    assert "java_exec(" not in seed
+    seed_rules = re.sub(r"#.*", "", seed)
+    assert "java_exec(" not in seed_rules and "corecmd_exec_bin(" not in seed_rules
     assert "type shopapi_lib_t;" in seed
+    shop = (PROJECT_ROOT / "config" / "shopapi.manifest.yml").read_text(encoding="utf-8")
+    assert "exec_bin:" in shop and "alias of bin_t" in shop
+    rules = (PROJECT_ROOT / "cli" / "policy_rules.py").read_text(encoding="utf-8")
+    assert "java_exec_t mono_exec_t" in rules
+
+
+def test_forbidden_exec_bin_needs_manifest_reason() -> None:
+    """Raw bin_t execute always fails. The macros pass only with the manifest reason."""
+    checker = PROJECT_ROOT / "scripts" / "validate_forbidden_patterns.sh"
+    semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "grant_beyond_control bin_t file execute" in semantics
+    assert "selinux_exceptions.exec_bin" in semantics
+
+    def run(root: Path, rule: str, manifest: Path) -> subprocess.CompletedProcess:
+        (root / "probe.te").write_text(
+            "policy_module(probe, 1.0.0)\n"
+            "type probe_t;\n"
+            "type probe_exec_t;\n"
+            "type probe_var_lib_t;\n"
+            "# corecmd_exec_bin(probe_t) in a comment is not a rule\n"
+            f"{rule}\n",
+            encoding="utf-8",
+        )
+        (root / "probe.fc").write_text(
+            "/opt/probe    gen_context(system_u:object_r:probe_exec_t,s0)\n"
+            "/var/lib/probe(/.*)?    gen_context(system_u:object_r:probe_var_lib_t,s0)\n",
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            [BASH, str(checker), str(root)],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "POLICY_MODULE": "probe",
+                "SELINUX_DOMAIN": "probe_t",
+                "APP_MANIFEST": str(manifest),
+            },
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        none = root / "none.manifest.yml"
+        none.write_text("app_name: probe\n", encoding="utf-8")
+        reviewed = root / "reviewed.manifest.yml"
+        reviewed.write_text(
+            "app_name: probe\n"
+            "selinux_exceptions:\n"
+            "  exec_bin: The system JVM is bin_t on RHEL 9; reviewed by the owner.\n",
+            encoding="utf-8",
+        )
+        short = root / "short.manifest.yml"
+        short.write_text("selinux_exceptions:\n  exec_bin: ok\n", encoding="utf-8")
+
+        clean = run(root, "allow probe_t probe_var_lib_t:file { read };", none)
+        assert clean.returncode == 0, clean.stderr
+        for raw in (
+            "allow probe_t bin_t:file { execute execute_no_trans map };",
+            "allow probe_t bin_t:file execute;",
+            "allow probe_t java_exec_t:file { execute };",
+        ):
+            for manifest in (none, reviewed):
+                out = run(root, raw, manifest)
+                assert out.returncode != 0, (raw, manifest.name)
+                assert "raw allow of execute on bin_t" in out.stderr
+        for macro in (
+            "corecmd_exec_bin(probe_t)",
+            "java_exec(probe_t)",
+            "can_exec(probe_t, java_exec_t)",
+        ):
+            refused = run(root, macro, none)
+            assert refused.returncode != 0, macro
+            assert "selinux_exceptions.exec_bin" in refused.stderr
+            accepted = run(root, macro, reviewed)
+            assert accepted.returncode == 0, (macro, accepted.stderr)
+            malformed = run(root, macro, short)
+            assert malformed.returncode != 0, macro
+
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "lib"))
+    from app_manifest import validate_selinux_exceptions
+
+    assert validate_selinux_exceptions(None) == []
+    assert validate_selinux_exceptions({"exec_bin": "The system JVM is bin_t on RHEL 9."}) == []
+    assert validate_selinux_exceptions({"exec_bin": ""})
+    assert validate_selinux_exceptions({"bin_t": "The system JVM is bin_t on RHEL 9."})
+    assert validate_selinux_exceptions(["exec_bin"])
 
 
 def test_rhel_runtime_file_contexts() -> None:
@@ -3565,6 +3681,7 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         "can-load-policy",
         "can-read-shadow-passwords",
         "can-write-shadow-passwords",
+        "exec-bin-alias",
     ]
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-bypasses"
     script = (PROJECT_ROOT / "scripts" / "reject_compiled_bypasses.sh").read_text(encoding="utf-8")
@@ -4333,7 +4450,8 @@ def main() -> int:
         ("boolean_curated_when_policy_unavailable", test_boolean_curated_when_policy_unavailable),
         ("boolean_hint_yaml_still_documents_patterns", test_boolean_hint_yaml_still_documents_patterns),
         ("fc_labeling_drift_detection", test_fc_labeling_drift_detection),
-        ("java_exec_interface_not_entrypoint", test_java_exec_interface_not_entrypoint),
+        ("system_jvm_exec_bin_exception", test_system_jvm_exec_bin_exception),
+        ("forbidden_exec_bin_needs_manifest_reason", test_forbidden_exec_bin_needs_manifest_reason),
         ("rhel_runtime_file_contexts", test_rhel_runtime_file_contexts),
         ("tune_report", test_tune_report),
         ("tune_report_skip_no_selinux", test_tune_report_skip_no_selinux),

@@ -17,7 +17,7 @@ Read [101](101-CONCEPTS.md) before this prep. The lab uses four of those ideas:
 - An AVC line names the source type, the target type, the class, and the permission. `permissive=1` means the action still happened.
 - The seed in `selinux/shopapi/shopapi.te` declares types and `init_daemon_domain(shopapi_t, shopapi_exec_t)`. It has almost no `allow` lines. The file-context lines are in `shopapi.fc`, which is a file on disk, not part of the kernel.
 
-`/usr/bin/java` is `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). Do not copy a JDK under `/opt/shopapi`. The unit has no `SELinuxContext=` line.
+`/usr/bin/java` is a symlink. The JVM it points to under `/usr/lib/jvm` is `bin_t`. On RHEL 9 `java_exec_t` is another name for `bin_t`, an alias in the base `corecommands` module ([`corecommands.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)), so there is no narrower type for the JVM. Do not copy a JDK under `/opt/shopapi`. The unit has no `SELinuxContext=` line.
 
 ---
 
@@ -261,7 +261,15 @@ allow shopapi_t shopapi_log_t:file { create write append open getattr };
 
 The directory line is what lets the process look up `/var/log/shopapi` and create a file in it. The file line is the write.
 
-If the AVC included `execmem`, that permission is domain-weakening. Add `allow shopapi_t self:process execmem;` only because the log showed it. Do not add it from memory. An execute on `java_exec_t` is not an entrypoint. Leave `/usr/bin/java` as `java_exec_t`.
+If the AVC included `execmem`, that permission is domain-weakening. Add `allow shopapi_t self:process execmem;` only because the log showed it. Do not add it from memory.
+
+The startup lines also show `execute`, `execute_no_trans`, and `map` on `bin_t`. That is the wrapper starting the JVM. Never write a raw allow on `bin_t`. Add the interface Red Hat's own tomcat policy uses ([`tomcat.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/tomcat.te)):
+
+```text
+corecmd_exec_bin(shopapi_t)
+```
+
+The scripts and CI accept it only because `config/shopapi.manifest.yml` records the reviewed reason under `selinux_exceptions.exec_bin`. Without it, the next restart under enforcing cannot start Java. It is not an entrypoint. The wrapper is.
 
 **3.2.**
 

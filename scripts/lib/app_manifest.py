@@ -150,6 +150,7 @@ def normalize(raw: dict[str, Any]) -> dict[str, Any]:
         },
         "selinux_ports": raw.get("selinux_ports") or [],
         "selinux_booleans": raw.get("selinux_booleans") or [],
+        "selinux_exceptions": raw.get("selinux_exceptions") or {},
         "soak": {"ignore": _normalize_soak_ignore(raw.get("soak"))},
         "policy": {"module_dir": str(module_dir), "service_name": str(primary_unit)},
         "deploy": {
@@ -246,6 +247,43 @@ def classify_port_assignment(listing: str, port: int, proto: str, want_type: str
         f"port {port}/{proto} is already assigned to {', '.join(owners)}, not {want_type}. "
         "Refusing to run semanage port -m."
     )
+
+
+# Reviewed exceptions to the house rules. Keep in sync with
+# cli/policy_rules.py MANIFEST_EXCEPTION_KEYS.
+SELINUX_EXCEPTION_KEYS = frozenset({"exec_bin"})
+
+
+def validate_selinux_exceptions(exceptions: Any) -> list[str]:
+    """Each key is a known exception. Each value is the reviewer's written reason."""
+    if exceptions is None or exceptions == {}:
+        return []
+    if not isinstance(exceptions, dict):
+        return ["selinux_exceptions must be a mapping of exception name to reason"]
+    errors: list[str] = []
+    for key, reason in exceptions.items():
+        if key not in SELINUX_EXCEPTION_KEYS:
+            errors.append(
+                f"selinux_exceptions.{key} is not a known exception "
+                f"(known: {', '.join(sorted(SELINUX_EXCEPTION_KEYS))})"
+            )
+            continue
+        if not isinstance(reason, str) or len(reason.strip()) < 20:
+            errors.append(
+                f"selinux_exceptions.{key} needs a written reason (at least 20 characters)"
+            )
+    return errors
+
+
+def manifest_exception_reason(path: Path, key: str) -> str:
+    """Reason for one exception, read without the rest of the schema. '' when absent."""
+    raw = load_raw(path)
+    exceptions = raw.get("selinux_exceptions")
+    errors = validate_selinux_exceptions(exceptions)
+    if errors:
+        raise ValueError(f"{path}: " + "; ".join(errors))
+    reason = (exceptions or {}).get(key)
+    return reason.strip() if isinstance(reason, str) else ""
 
 
 def validate_selinux_booleans(booleans: Any, domain: str) -> list[str]:
@@ -364,6 +402,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     declared = port_types_declared(te.read_text(encoding="utf-8")) if te else None
     errors.extend(validate_selinux_ports(manifest["selinux_ports"], declared))
     errors.extend(validate_selinux_booleans(manifest["selinux_booleans"], str(manifest["domain"])))
+    errors.extend(validate_selinux_exceptions(raw.get("selinux_exceptions")))
     soak_raw = raw.get("soak")
     if soak_raw is not None and not isinstance(soak_raw, dict):
         errors.append("soak must be a mapping")
@@ -495,8 +534,10 @@ def main() -> int:
             "paths-csv",
             "domains-csv",
             "check-port",
+            "exception",
         ),
     )
+    parser.add_argument("--key", default="", help="exception name for the exception command")
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--proto", default="tcp")
     parser.add_argument("--type", dest="port_type", default="")
@@ -515,6 +556,25 @@ def main() -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
+        return 0
+
+    if args.command == "exception":
+        # Exit 0 and print the reason when the manifest records it. Exit 1 when
+        # the manifest or the exception is absent. Exit 2 on a malformed entry.
+        if not args.key or not args.path:
+            print("usage: exception MANIFEST --key NAME", file=sys.stderr)
+            return 2
+        manifest_path = Path(args.path)
+        if not manifest_path.is_file():
+            return 1
+        try:
+            reason = manifest_exception_reason(manifest_path, args.key)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if not reason:
+            return 1
+        print(reason)
         return 0
 
     if args.command == "resolve":

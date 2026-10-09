@@ -28,6 +28,7 @@ fixtures=(
     can-load-policy
     can-read-shadow-passwords
     can-write-shadow-passwords
+    exec-bin-alias
 )
 
 root="${PROJECT_ROOT}/docs/examples/fixtures/compiled-bypasses"

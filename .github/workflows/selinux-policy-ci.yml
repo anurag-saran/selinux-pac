@@ -25,15 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install PyYAML (manifest exceptions and the source audit)
+        run: pip install pyyaml
       - name: Validate forbidden SELinux patterns
         run: |
           bash scripts/validate_forbidden_patterns.sh selinux
           POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
           POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_forbidden_patterns.sh selinux/payments
       - name: Audit dontaudit rules and file-context paths
-        run: |
-          pip install pyyaml
-          python3 cli/policy_audit.py --selinux-dir selinux
+        run: python3 cli/policy_audit.py --selinux-dir selinux
 
   compiled-policy:
     name: compiled-policy

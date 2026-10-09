@@ -109,7 +109,7 @@ flowchart LR
   pp --> load["semodule -i and label port 8091"]
 ```
 
-`restorecon` paints `shopapi_exec_t` onto `/opt/shopapi/bin/shopapi` and `shopapi_lib_t` onto the jar before generate reads the log. `/usr/bin/java` is `java_exec_t`, not `bin_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)). `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. An execute of `java_exec_t` becomes `java_exec(shopapi_t)`. An `entrypoint` denial on `java_exec_t` is not an allow.
+`restorecon` paints `shopapi_exec_t` onto `/opt/shopapi/bin/shopapi` and `shopapi_lib_t` onto the jar before generate reads the log. `/usr/bin/java` points to a `bin_t` file under `/usr/lib/jvm`. On RHEL 9 `java_exec_t` is an alias of `bin_t` ([`corecommands.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)). `--allow-needs-review` is on because this JVM log contains `execmem`. `--apply` writes the allows into `selinux/shopapi/`. The module name stays `shopapi`. The JVM execute becomes `corecmd_exec_bin(shopapi_t)`, accepted only because `config/shopapi.manifest.yml` records `selinux_exceptions.exec_bin`. An `entrypoint` denial on `bin_t` is not an allow.
 
 Then the script compiles, loads the package with `semodule -i`, and labels TCP 8091 as `shopapi_port_t`. A good end is `Built …/shopapi.pp`. Go back to the Mac. Do not canary yet.
 
@@ -178,7 +178,7 @@ On the machine that publishes, create the lab key and the local repo once. The s
 bash scripts/lab_signing_setup.sh
 ```
 
-Run that on rhel-qa. The private key stays there. rhel-qa checks out merged `main`, runs `bash packaging/build_rpms.sh`, signs with `rpmsign`, runs `createrepo_c`, and serves the directory over HTTP. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
+Run that on rhel-qa. The private key stays there. rhel-qa checks out merged `main`, runs `bash packaging/build_rpms.sh`, signs with `rpmsign`, runs `createrepo_c`, and serves the directory over HTTP. The conductor installs `rpm-build`, `rpm-sign`, and `createrepo_c` on rhel-qa if they are missing, starts the server in the background (log: `/tmp/selinux-pac-repo.log`), opens 8765 in firewalld for this boot only, and checks the key URL from prod. Expected from prod: `HTTP/1.0 200 OK`. [100 Part 7](../training/100-RHEL-HOST-COMMANDS.md#between-the-vms-the-rpm-repository) has the same checks by hand. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
 
 Switch to prod:
 

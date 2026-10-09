@@ -112,6 +112,16 @@ grant_beyond_control shadow_t file write "attribute grant beyond control: write 
 grant_beyond_control "" capability sys_admin "attribute grant beyond control: capability sys_admin"
 grant_beyond_control "" capability sys_module "attribute grant beyond control: capability sys_module"
 
+# java_exec_t is an alias of bin_t on RHEL 9, so java_exec(), corecmd_exec_bin(),
+# can_exec(x, java_exec_t) and a raw allow all land here. Only the reviewed
+# manifest exception accepts it.
+exec_bin_manifest="${APP_MANIFEST:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
+if python3 "${PROJECT_ROOT}/scripts/lib/app_manifest.py" exception "${exec_bin_manifest}" --key exec_bin >/dev/null 2>&1; then
+    log_info "bin_t execute is a reviewed exception (selinux_exceptions.exec_bin in ${exec_bin_manifest})"
+else
+    grant_beyond_control bin_t file execute "bin_t execute beyond control without selinux_exceptions.exec_bin in ${exec_bin_manifest}"
+fi
+
 # Attributes the control domain also has (domain, file_type, …) are base
 # policy. Membership in an attribute that exempts a neverallow is a grant
 # even when that attribute has no allow rule of its own.

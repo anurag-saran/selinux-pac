@@ -162,8 +162,8 @@ The generator already ran the same forbidden-pattern check, so these jobs are ex
 | Job name | What it runs | Pass criteria |
 |-----------|----------------|----------------|
 | `offline-tests` | `make test` | Deterministic fixtures, blast-radius fixtures, tune-report fixtures, smoke tests, and the static validators |
-| `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments`, then `cli/policy_audit.py` | No wildcards, forbidden target types, or `bin_t` execute |
-| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` on Stream 9, or on the `rhel9-utm` runner when `RUNNER` is set | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare |
+| `forbidden-patterns` | `validate_forbidden_patterns.sh` on `selinux`, `selinux/shopapi`, and `selinux/payments`, then `cli/policy_audit.py` | No wildcards, no forbidden target types, no raw `bin_t` execute. `corecmd_exec_bin`, `java_exec`, or `can_exec` on `bin_t` only with `selinux_exceptions.exec_bin` in the manifest |
+| `compiled-policy` | `validate_policy_semantics.sh` for `myapp`, `shopapi`, and `payments` on Stream 9, or on the `rhel9-utm` runner when `RUNNER` is set | Compiled allows match the house rules, including no `entrypoint` on a type the module does not declare, and no execute on `bin_t` (however it was written) without `selinux_exceptions.exec_bin` |
 | `version-consistency` | `scripts/validate_version_consistency.sh` | `policy_version.txt` matches `policy_module()` |
 
 Those four names are stable so branch protection can require them. `make check` on a laptop is `make test` plus linters. The Stream 9 job is the compile. A laptop without `selinux-policy-devel` does not compile.

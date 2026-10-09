@@ -48,8 +48,30 @@ if grep -qE 'allow\s+\w+\s+self:\*' "${te}"; then
     check_fail "Forbidden allow rule targeting self:* (over-broad)"
 fi
 
-if grep -qE 'allow\s+\w+\s+bin_t:file[[:space:]]+\{[^}]*execute' "${te}"; then
-    check_fail "Forbidden bin_t:file execute — label app binaries with dedicated exec types in .fc"
+# Rules only: a generated note in a comment line must not trip or satisfy a check.
+te_rules="$(sed 's/#.*//' "${te}")"
+
+# A raw allow on bin_t (or its alias java_exec_t) is always refused. App
+# binaries get their own exec type in the .fc.
+if grep -qE 'allow[[:space:]]+[^[:space:]]+[[:space:]]+(bin_t|java_exec_t):file[[:space:]]+(\{[^}]*\bexecute|execute)' <<<"${te_rules}"; then
+    check_fail "Forbidden raw allow of execute on bin_t — label app binaries with dedicated exec types in .fc; the system JVM needs the reviewed corecmd_exec_bin exception"
+fi
+
+# On RHEL 9 java_exec_t is an alias of bin_t, so these macros all compile to
+# execute on bin_t. They pass only with a reviewed reason in the app manifest.
+if grep -qE '\b(corecmd_exec_bin|java_exec)[[:space:]]*\(|\bcan_exec[[:space:]]*\([^,]+,[[:space:]]*(bin_t|java_exec_t)[[:space:]]*\)' <<<"${te_rules}"; then
+    manifest="${APP_MANIFEST:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
+    set +e
+    reason="$(python3 "${PROJECT_ROOT}/scripts/lib/app_manifest.py" exception "${manifest}" --key exec_bin 2>&1)"
+    rc=$?
+    set -e
+    if [[ "${rc}" -eq 0 ]]; then
+        log_info "bin_t execute accepted: reviewed exception selinux_exceptions.exec_bin in ${manifest}"
+    elif [[ "${rc}" -eq 1 ]]; then
+        check_fail "corecmd_exec_bin / java_exec / can_exec on bin_t needs a reviewed reason in the app manifest: selinux_exceptions.exec_bin (${manifest})"
+    else
+        check_fail "Cannot read selinux_exceptions from ${manifest}: ${reason}"
+    fi
 fi
 
 if grep -qE '^module\s+' "${te}"; then

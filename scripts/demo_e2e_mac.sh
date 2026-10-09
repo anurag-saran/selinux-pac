@@ -87,10 +87,16 @@ mac_ship_prod() {
     local mode="${1:-soak_demo}"
     tlab_explain "Ship only after the PR is merged. rhel-qa builds, signs, and publishes. The private key stays on rhel-qa."
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && git fetch origin main && git checkout main && git pull --ff-only origin main'"
+    tlab_explain "rpmsign comes from rpm-sign. Without createrepo_c the repo has no metadata and dnf on prod finds nothing."
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'rpm -q rpm-build rpm-sign createrepo_c >/dev/null 2>&1 || sudo dnf install -y rpm-build rpm-sign createrepo_c'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash packaging/build_rpms.sh'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash scripts/lab_signing_setup.sh'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash packaging/publish_internal.sh'"
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash scripts/serve_lab_repo.sh'"
+    tlab_explain "The repo server runs in the background on rhel-qa. Its log is /tmp/selinux-pac-repo.log. firewalld does not allow 8765 by default; the rule below is runtime only."
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'pkill -f \"[h]ttp.server 8765\" || true; cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && (setsid nohup bash scripts/serve_lab_repo.sh >/tmp/selinux-pac-repo.log 2>&1 < /dev/null &) && sleep 2 && head -3 /tmp/selinux-pac-repo.log'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'if systemctl is-active --quiet firewalld; then sudo firewall-cmd --add-port=8765/tcp; fi'"
+    e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'curl -sfI http://${DEV_HOST}:8765/RPM-GPG-KEY | head -1'"
+    tlab_checkpoint "prod prints HTTP/1.0 200 OK for the key. If it does not, check /tmp/selinux-pac-repo.log and firewall-cmd --list-ports on rhel-qa."
     tlab_pause
 
     tlab_explain "Prod installs from that HTTP repo with gpgcheck=1. Do not copy RPMs onto the host and install them by hand. No signing key is copied to the Mac or to prod."

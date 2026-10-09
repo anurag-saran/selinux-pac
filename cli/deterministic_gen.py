@@ -28,6 +28,9 @@ from boolean_hints import (  # noqa: E402
 )
 from policy_rules import (
     JAVA_EXEC_FILE_PERMS,  # noqa: E402
+    EXEC_BIN_EXCEPTION,
+    EXEC_BIN_REVIEW_NOTE,
+    EXEC_BIN_TYPES,
     FORBIDDEN_TARGET_TYPES,
     GENERIC_FILE_TYPES,
     GENERIC_PORT_TYPES,
@@ -45,6 +48,7 @@ from policy_rules import (
     VERDICT_NEEDS_REVIEW,
     NEXT_ACTION,
     format_needs_review_note,
+    manifest_exception,
     needs_review_hits,
 )
 from avc_parse import (  # noqa: E402
@@ -175,6 +179,7 @@ class Finding:
     bind_port: int | None = None
     bind_proto: str = ""
     port_type: str = ""
+    review_key: str = ""
 
     @property
     def next_action(self) -> str:
@@ -344,6 +349,9 @@ def baseline_macro_covers(need: AccessNeed, te_text: str) -> bool:
 
 
 def finding_needs_review_allowed(finding: Finding, args: argparse.Namespace) -> bool:
+    # bin_t execute is unlocked only by a reviewed reason in the app manifest.
+    if finding.review_key == EXEC_BIN_EXCEPTION:
+        return False
     if getattr(args, "allow_needs_review", False):
         return True
     allowed = {str(p).lower() for p in (getattr(args, "allow_needs_review_perm", None) or [])}
@@ -353,7 +361,7 @@ def finding_needs_review_allowed(finding: Finding, args: argparse.Namespace) -> 
 def generation_blockers(findings: list[Finding], args: argparse.Namespace) -> list[Finding]:
     blocked: list[Finding] = []
     for finding in findings:
-        if finding.verdict in (VERDICT_FORBIDDEN, VERDICT_TOOLCHAIN):
+        if finding.verdict == VERDICT_TOOLCHAIN:
             blocked.append(finding)
         elif finding.verdict == VERDICT_NEEDS_REVIEW and not finding_needs_review_allowed(
             finding, args
@@ -571,6 +579,35 @@ def classify(
             paths,
         )
 
+    if (
+        tgt in EXEC_BIN_TYPES
+        and tclass == "file"
+        and "execute" in need.perms
+        and "entrypoint" not in need.perms
+        and need.perms <= JAVA_EXEC_FILE_PERMS
+    ):
+        rendered = f"corecmd_exec_bin({src})"
+        ran = ", ".join(paths) if paths else "a program labeled bin_t"
+        reason = manifest_exception(manifest, EXEC_BIN_EXCEPTION)
+        if reason:
+            return Finding(
+                need,
+                VERDICT_INTERFACE,
+                rendered,
+                f"Reviewed exception (selinux_exceptions.exec_bin): {reason} Executed: {ran}.",
+                paths,
+                engine="house_rules",
+                review_key=EXEC_BIN_EXCEPTION,
+            )
+        return Finding(
+            need,
+            VERDICT_NEEDS_REVIEW,
+            rendered,
+            f"{EXEC_BIN_REVIEW_NOTE} Executed: {ran}.",
+            paths,
+            review_key=EXEC_BIN_EXCEPTION,
+        )
+
     module_types = private_types(manifest) | domains_from_manifest(manifest)
     review_hits = needs_review_hits(src, tgt, tclass, need.perms, module_types)
     if review_hits:
@@ -625,23 +662,6 @@ def classify(
         )
     if triage.status == "unavailable":
         boolean_unavailable_detail = triage.detail
-
-    # java.if on c9s: java_exec is corecmd_search_bin + can_exec. Not entrypoint.
-    if (
-        tgt == "java_exec_t"
-        and tclass == "file"
-        and need.perms
-        and need.perms <= JAVA_EXEC_FILE_PERMS
-        and "entrypoint" not in need.perms
-    ):
-        return Finding(
-            need,
-            VERDICT_INTERFACE,
-            f"java_exec({src})",
-            "Matched java_exec() (can_exec on java_exec_t, no entrypoint).",
-            paths,
-            engine="house_rules",
-        )
 
     iface = try_sepolgen_interface(src, tgt, tclass, need.perms)
     if iface is SEPOLGEN_UNAVAILABLE:
@@ -738,6 +758,24 @@ def render_fragment(findings: list[Finding], meta: dict) -> str:
         rows = sorted({f.rendered for f in findings if f.verdict == verdict and f.rendered})
         if rows:
             lines.append(heading)
+            if verdict == VERDICT_DIRECT:
+                # A raw allow on a base type does not compile until the module
+                # requires that type. Types this module declares do not.
+                external = sorted(
+                    {
+                        f.need.tgt_type
+                        for f in findings
+                        if f.verdict == VERDICT_DIRECT
+                        and f.rendered.startswith("allow ")
+                        and not f.note.startswith("Module-private")
+                        and f.need.tgt_type not in ("", "self")
+                    }
+                )
+                if external:
+                    lines.append("gen_require(`")
+                    for tgt_type in external:
+                        lines.append(f"\ttype {tgt_type};")
+                    lines.append("')")
             lines.extend(rows)
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
@@ -958,6 +996,7 @@ def write_findings_artifact(
                 "note": f.note,
                 "engine": f.engine,
                 **({"boolean": f.boolean} if f.boolean else {}),
+                **({"review_key": f.review_key} if f.review_key else {}),
                 **({"next_action": f.next_action} if f.next_action else {}),
                 **({"port": f.bind_port} if f.bind_port is not None else {}),
                 **({"proto": f.bind_proto} if f.bind_proto else {}),
@@ -1093,7 +1132,8 @@ def run(args: argparse.Namespace) -> int:
             if f.rendered:
                 print(f"               → {f.rendered}")
         emit_degraded_warning(findings)
-        if blockers:
+        refused = any(f.verdict == VERDICT_FORBIDDEN for f in findings)
+        if blockers or refused:
             args.out_dir.mkdir(parents=True, exist_ok=True)
             write_findings_artifact(
                 args.out_dir,
@@ -1102,7 +1142,7 @@ def run(args: argparse.Namespace) -> int:
                 generation_blocked=True,
                 vendor_override=vendor_override,
             )
-        return 1 if blockers else 0
+        return 1 if blockers or refused else 0
 
     if blockers:
         review = [f for f in blockers if f.verdict == VERDICT_NEEDS_REVIEW]
@@ -1112,10 +1152,17 @@ def run(args: argparse.Namespace) -> int:
                 "\n*** GENERATION BLOCKED — fix sepolgen or remove base-type denials from AVC log ***\n",
                 file=sys.stderr,
             )
-        if review:
+        exec_bin = [f for f in review if f.review_key == EXEC_BIN_EXCEPTION]
+        if len(exec_bin) < len(review):
             print(
                 "\n*** GENERATION BLOCKED — domain-weakening permission requires "
                 "--allow-needs-review (or --allow-needs-review-perm) ***\n",
+                file=sys.stderr,
+            )
+        if exec_bin:
+            print(
+                f"\n*** GENERATION BLOCKED — executing a bin_t program needs a reviewed reason "
+                f"in the app manifest: selinux_exceptions.exec_bin ({args.manifest}) ***\n",
                 file=sys.stderr,
             )
         for f in blockers:
@@ -1134,6 +1181,38 @@ def run(args: argparse.Namespace) -> int:
         )
         print(f"\nWrote {args.out_dir}/findings.json (generation_blocked=true)\n", file=sys.stderr)
         return 1
+
+    forbidden = [f for f in findings if f.verdict == VERDICT_FORBIDDEN]
+    emittable = [
+        f
+        for f in findings
+        if f.rendered
+        and f.verdict
+        in (VERDICT_INTERFACE, VERDICT_DIRECT, VERDICT_PORT, VERDICT_NEEDS_REVIEW, VERDICT_FC)
+    ]
+    if forbidden and not emittable:
+        print(
+            "\n*** GENERATION BLOCKED — fix sepolgen or remove base-type denials from AVC log ***\n",
+            file=sys.stderr,
+        )
+        for f in forbidden:
+            print(f"REFUSED: {f.note}", file=sys.stderr)
+        write_findings_artifact(
+            args.out_dir,
+            findings,
+            artifact_ctx,
+            generation_blocked=True,
+            vendor_override=vendor_override,
+        )
+        (args.out_dir / "pr_summary.md").write_text(
+            write_pr_summary(findings, app_name, meta),
+            encoding="utf-8",
+        )
+        print(f"\nWrote {args.out_dir}/findings.json (generation_blocked=true)\n", file=sys.stderr)
+        return 1
+    if forbidden:
+        for f in forbidden:
+            print(f"REFUSED: {f.note}", file=sys.stderr)
 
     if findings and all(f.verdict == VERDICT_BASELINE for f in findings):
         args.out_dir.mkdir(parents=True, exist_ok=True)

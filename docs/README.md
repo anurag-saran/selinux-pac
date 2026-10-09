@@ -1,10 +1,10 @@
 # SELinux PaC documentation
 
-Four folders, in reading order. **training** is concepts, commands, files, and a module typed by hand. **tool** is the scripts that run those commands. **demo** is the talks. **admin** is how you ship.
+Four folders, in reading order. **training** is the RHEL host commands, then concepts, SELinux commands, files, and a module typed by hand. **tool** is the scripts that run those commands. **demo** is the talks. **admin** is how you ship.
 
 | Folder | Start |
 |--------|--------|
-| [training/](training/101-CONCEPTS.md) | **[101](training/101-CONCEPTS.md)** then **[102](training/102-COMMANDS.md)**, **[103](training/103-CONFIG-FILES.md)**, **[104](training/104-HAND-BUILT-MODULE.md)** |
+| [training/](training/101-CONCEPTS.md) | **[100](training/100-RHEL-HOST-COMMANDS.md)** if RHEL is new, then **[101](training/101-CONCEPTS.md)**, **[102](training/102-COMMANDS.md)**, **[103](training/103-CONFIG-FILES.md)**, **[104](training/104-HAND-BUILT-MODULE.md)** |
 | [tool/](tool/201-TOOL-COMMANDS.md) | **[201](tool/201-TOOL-COMMANDS.md)** then **[202](tool/202-TOOL-LAB.md)** |
 | [demo/](demo/301-CUSTOMER.md) | **[301](demo/301-CUSTOMER.md)** (20 min), **[302](demo/302-TECHNICAL.md)** (45 min), **[303](demo/303-TESTING.md)** |
 | [admin/](admin/401-OPERATIONS.md) | **[401](admin/401-OPERATIONS.md)** canary, soak, enforce |
@@ -15,13 +15,14 @@ Four folders, in reading order. **training** is concepts, commands, files, and a
 | **Where** | Which machine and directory (controller vs RHEL server vs repo root) |
 | **What / good sign** | What the command does and how you know it worked |
 
-**Terms** are in **[101](training/101-CONCEPTS.md)**. **Commands** are in **[102](training/102-COMMANDS.md)**.
+**Terms** are in **[101](training/101-CONCEPTS.md)**. **SELinux commands** are in **[102](training/102-COMMANDS.md)**. **RHEL host commands** (SSH, `dnf`, `rpm`, `systemctl`, `auditctl`, ports, firewall, Ansible) are in **[100](training/100-RHEL-HOST-COMMANDS.md)**.
 
 | You are | Start here |
 |---------|------------|
+| **New to RHEL** | **[100](training/100-RHEL-HOST-COMMANDS.md)**, then the SELinux path below |
 | **New to SELinux** | **[101](training/101-CONCEPTS.md)** → **[102](training/102-COMMANDS.md)** → **[103](training/103-CONFIG-FILES.md)** → **[104](training/104-HAND-BUILT-MODULE.md)** |
 | **RHEL admin (customer env)** | **[401](admin/401-OPERATIONS.md)** |
-| **Trying this on a Mac** | [../README.md](../README.md#try-it-on-a-mac) — two RHEL VMs + `setup_rhel_hosts.sh` |
+| **Trying this on a Mac** | [../README.md](../README.md#try-it-on-a-mac) — two RHEL VMs + `setup_rhel_hosts.sh`. SSH keys, sudo, clock, and firewall: **[100](training/100-RHEL-HOST-COMMANDS.md)** |
 | **Laptop only (no VM)** | [202 — laptop](tool/202-TOOL-LAB.md#laptop-no-selinux) + `make check` (**303**) |
 
 ---
@@ -30,6 +31,7 @@ Four folders, in reading order. **training** is concepts, commands, files, and a
 
 | # | Guide | You need |
 |---|--------|----------|
+| **100** | [RHEL host commands](training/100-RHEL-HOST-COMMANDS.md) | SSH and sudo to the VMs, clock, `dnf` and `rpm`, `systemctl`, the audit daemon, ports, firewall, signed RPMs, Ansible. No SELinux |
 | **101** | [Concepts](training/101-CONCEPTS.md) | Labels, enforcing, an AVC line. Commands: `getenforce`, `ls -Z`, `ps -eZ` |
 | **102** | [Commands](training/102-COMMANDS.md) | One question per command: mode, labels, ports, booleans, modules, policy query, audit |
 | **103** | [Config files](training/103-CONFIG-FILES.md) | The files those commands read and write, including module priority |

@@ -1,6 +1,6 @@
 # 101 — SELinux concepts
 
-Read this before any command catalog, config file, or lab. Two names show up over and over:
+Read this before the SELinux command catalog, the config files, or a lab. The RHEL host commands (SSH, packages, services, the audit daemon) are in [100](100-RHEL-HOST-COMMANDS.md) and need no SELinux. Two names show up over and over:
 
 | Name | What it is |
 |------|------------|
@@ -91,7 +91,7 @@ The first field is an SELinux user. It is a different namespace from Unix users 
 
 The type is the category. `shopapi_t` and `sshd_t` can both be system processes and still be different programs.
 
-**`shopapi_t`** is the domain of the running shopapi process. The unit does not set `SELinuxContext=`. `init_daemon_domain(shopapi_t, shopapi_exec_t)` is the transition from `init_t` when systemd executes the wrapper. Labeling `/usr/bin/java` would put every Java process in the same domain, so that file stays `java_exec_t` ([`java.fc` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/contrib/java.fc)).
+**`shopapi_t`** is the domain of the running shopapi process. The unit does not set `SELinuxContext=`. `init_daemon_domain(shopapi_t, shopapi_exec_t)` is the transition from `init_t` when systemd executes the wrapper. The JVM file is shared by every Java program on the host, so the module does not relabel it. On RHEL 9 it is `bin_t`: `java_exec_t` is an alias of `bin_t` ([`corecommands.te` on c9s](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)).
 
 **`shopapi_exec_t`** is the type on the wrapper `/opt/shopapi/bin/shopapi`. The jar and config under `/opt/shopapi` are `shopapi_lib_t`. The wrapper type and the process type are a pair.
 
@@ -206,7 +206,7 @@ The audit log is the file `auditd` writes. Searching it is a later command. A pe
 
 A process does not pick its own label. The kernel assigns one from how the process was started.
 
-systemd executes `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) transitions `initrc_domain` on that type to `shopapi_t`, and `init_t` is an `initrc_domain`. The unit does not set `SELinuxContext=`. The wrapper then executes `/usr/bin/java` (`java_exec_t`). That execute is not an entrypoint on `java_exec_t`. `ps -eZ` shows `shopapi_t` on the Java process. The file `/usr/bin/java` stays `java_exec_t`.
+systemd executes `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). [`init_daemon_domain`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if) transitions `initrc_domain` on that type to `shopapi_t`, and `init_t` is an `initrc_domain`. The unit does not set `SELinuxContext=`. The wrapper then executes `/usr/bin/java`, a `bin_t` file. That execute is not an entrypoint, so the process stays `shopapi_t`. `ps -eZ` shows `shopapi_t` on the Java process. The JVM file stays `bin_t`.
 
 The sample app uses the same idea: `init_daemon_domain(myapp_t, myapp_exec_t)` means systemd starting a file of type `myapp_exec_t` creates a process of type `myapp_t`. That is a **type transition**.
 

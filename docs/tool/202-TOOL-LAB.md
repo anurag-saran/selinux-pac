@@ -48,7 +48,7 @@ Run it again with the flag, because the log showed the denial:
 sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
 ```
 
-`allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission. An execute on `java_exec_t` becomes `java_exec(shopapi_t)`, not an entrypoint. Then load it (104 steps 3.2–3.4):
+`allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission. The JVM execute on `bin_t` becomes `corecmd_exec_bin(shopapi_t)`, because `config/shopapi.manifest.yml` records the reviewed `selinux_exceptions.exec_bin`. Without that reason the generator stops with NEEDS REVIEW, and `--allow-needs-review` does not unlock it. It is not an entrypoint. Then load it (104 steps 3.2–3.4):
 
 ```bash
 sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi

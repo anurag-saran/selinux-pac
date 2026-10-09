@@ -13,8 +13,11 @@ policy_module(shopapi, 1.0.0)
 # init_daemon_domain transitions init_t, which is an initrc_domain
 # (init.te calls init_initrc_domain(init_t)), when that file is executed.
 # https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/system/init.if
-# The wrapper execs /usr/bin/java. The java_exec interface is discovered;
-# do not hand-write it. That interface is can_exec only, not an entrypoint.
+# The wrapper execs /usr/bin/java. On RHEL 9 the JVM file is bin_t:
+# java_exec_t is an alias of bin_t in the base corecommands module. The
+# generator writes corecmd_exec_bin(shopapi_t) only because
+# config/shopapi.manifest.yml records the reviewed selinux_exceptions.exec_bin.
+# Do not hand-write it, and never a raw allow on bin_t. It is not an entrypoint.
 # The unit has no SELinuxContext= line. The java process type is shopapi_t.
 # The host commands are in docs/LIVE_CHECKS.md.
 #############################################

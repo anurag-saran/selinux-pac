@@ -45,7 +45,7 @@ The soak gate fails closed when `sesearch` is missing. `cli/soak_net_new.py` set
 | `interface` | A refpolicy macro matched |
 | `direct` | A module-private type, or no macro fit |
 | `baseline` | Already allowed. Not written again |
-| `needs_review` | `execmem`, `dac_override`. Blocked unless `--allow-needs-review` |
+| `needs_review` | `execmem`, `dac_override`. Blocked unless `--allow-needs-review`. Executing `bin_t` (the system JVM) is unlocked only by `selinux_exceptions.exec_bin` in the manifest |
 | `forbidden` | `shadow_t` and the patterns CI rejects |
 | `toolchain_required` | Interface matching is not installed |
 
@@ -203,7 +203,7 @@ All of these run on the controller. The host does not clone git. Production inve
 | A custom module for JWS, EAP, httpd, named, or postgresql | Vendor or base policy already confines them |
 | `execmem` or `dac_override` without the review flag | Domain-weakening |
 | `allow … unreserved_port_t:tcp_socket name_bind` | Binds every high port |
-| `allow … bin_t:file execute` | Label the program with the app exec type |
+| `allow … bin_t:file execute` | Label an app program with the app exec type. The system JVM is `bin_t` on RHEL 9: `corecmd_exec_bin` with a reviewed `selinux_exceptions.exec_bin` |
 | `allow … *:*` | Unbounded |
 | `chcon` in a playbook | Lost on the next `restorecon` |
 | `setenforce 0` | Host-wide. Use `semanage permissive -a` |

@@ -82,8 +82,9 @@ collect_side() {
     sort -u -o "${allow_out}" "${allow_out}"
 
     errf="$(mktemp)"
-    sesearch -T "${kern}" >"${type_out}.raw" 2>"${errf}"
-    ec=$?
+    # set -e would abort on sesearch's exit 1 before the status check below.
+    ec=0
+    sesearch -T "${kern}" >"${type_out}.raw" 2>"${errf}" || ec=$?
     if [[ -s "${errf}" ]]; then
         cat "${errf}" >&2
         rm -f "${errf}" "${type_out}.raw"

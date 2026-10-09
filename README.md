@@ -45,7 +45,7 @@ Those are complementary, not substitutes: his loop detects and routes; this tool
 
 ## Value
 
-- **Developers own the allow list in git.** `.te` / `.fc` / `selinux_ports` are reviewed like application code. CI blocks `shadow_t`, wildcards, `bin_t` execute, and the rest of the forbidden set.
+- **Developers own the allow list in git.** `.te` / `.fc` / `selinux_ports` are reviewed like application code. CI blocks `shadow_t`, wildcards, `bin_t` execute (unless the manifest records a reviewed `selinux_exceptions.exec_bin`, which the system JVM needs on RHEL 9), and the rest of the forbidden set.
 - **Admins own production mutation.** The only control plane is AAP (same YAML on a laptop until the project is imported). Execution nodes SSH in; they never clone this repo onto prod.
 - **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship))
 - **Soak is evidence, not a calendar sticker.** Daily net-new vs the installed module. Fail closed if `sesearch` is missing (`setools-console` is an RPM require).

@@ -75,7 +75,13 @@ compile_policy_module() {
     if [[ -f "${if_file}" ]]; then
         cp "${if_file}" "${work_dir}/"
     fi
-    make -C "${work_dir}" -f /usr/share/selinux/devel/Makefile "${module_name}.pp"
+    # Callers often invoke this from `if !`, which disables set -e for the
+    # whole function. A failing make must still return non-zero; otherwise
+    # `rm -rf` below succeeds and the caller treats a missing .pp as success.
+    if ! make -C "${work_dir}" -f /usr/share/selinux/devel/Makefile "${module_name}.pp"; then
+        rm -rf "${work_dir}"
+        return 1
+    fi
     cp "${work_dir}/${module_name}.pp" "${output_pp}"
     rm -rf "${work_dir}"
 }

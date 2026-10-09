@@ -69,12 +69,18 @@ def merge_avc_entries(entries: list[AvcEntry]) -> list[AccessNeed]:
     return needs
 
 
+def _te_rules_only(te_text: str) -> str:
+    """Drop comments. A note that names a macro is not an allow."""
+    return "\n".join(line.split("#", 1)[0] for line in te_text.splitlines())
+
+
 def parse_existing_allows(te_text: str) -> dict[tuple[str, str, str], frozenset[str]]:
     """Parse allow rules from existing .te source into a lookup table.
 
     `self` is the source domain, so an AVC whose target type is that domain
     matches `allow domain self:class perm`.
     """
+    te_text = _te_rules_only(te_text)
     allows: dict[tuple[str, str, str], set[str]] = {}
 
     def add(src_type: str, tgt_type: str, tclass: str, perms: frozenset[str]) -> None:
@@ -88,9 +94,18 @@ def parse_existing_allows(te_text: str) -> dict[tuple[str, str, str], frozenset[
         add(src_type, tgt_type, tclass, perms)
         if tgt_type == "self":
             add(src_type, src_type, tclass, perms)
-    # java_exec(domain) expands to can_exec on java_exec_t, not an entrypoint.
-    for match in re.finditer(r"\bjava_exec\(([A-Za-z_][A-Za-z0-9_]*)\)", te_text):
-        add(match.group(1), "java_exec_t", "file", JAVA_EXEC_FILE_PERMS)
+    # corecmd_exec_bin(domain) and java_exec(domain) are can_exec on bin_t. On RHEL 9
+    # java_exec_t is an alias of bin_t, so an AVC names bin_t. Neither is an entrypoint.
+    for match in re.finditer(
+        r"\b(?:corecmd_exec_bin|java_exec)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)", te_text
+    ):
+        for exec_type in ("bin_t", "java_exec_t"):
+            add(match.group(1), exec_type, "file", JAVA_EXEC_FILE_PERMS)
+    for match in re.finditer(
+        r"\bcan_exec\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*(bin_t|java_exec_t)\s*\)", te_text
+    ):
+        for exec_type in ("bin_t", "java_exec_t"):
+            add(match.group(1), exec_type, "file", JAVA_EXEC_FILE_PERMS)
     return {key: frozenset(perms) for key, perms in allows.items()}
 
 

@@ -35,11 +35,10 @@ GENERIC_FILE_TYPES = frozenset(
     }
 )
 
-# java_exec() is can_exec only. c9s policy/support/misc_macros.spt:
+# can_exec() permissions. c9s policy/support/misc_macros.spt:
 #   define(`can_exec',`allow $1 $2:file { mmap_exec_file_perms ioctl lock execute_no_trans };')
 # mmap_exec_file_perms is { getattr open map read execute ioctl }.
-# policy/modules/contrib/java.if interface java_exec adds corecmd_search_bin.
-# There is no entrypoint on java_exec_t.
+# corecmd_exec_bin() and java_exec() both use can_exec. Neither grants entrypoint.
 JAVA_EXEC_FILE_PERMS = frozenset(
     {
         "getattr",
@@ -52,6 +51,38 @@ JAVA_EXEC_FILE_PERMS = frozenset(
         "execute_no_trans",
     }
 )
+
+# On RHEL 9 the system JVM is bin_t. java_exec_t is an alias of bin_t in the
+# base corecommands module (c9s policy/modules/kernel/corecommands.te:
+# "type bin_t alias { ... java_exec_t mono_exec_t };"), and the contrib java
+# module is not in the build. An AVC therefore names bin_t, and java_exec(),
+# corecmd_exec_bin() and can_exec(x, java_exec_t) all compile to execute on
+# bin_t. Red Hat's own tomcat, httpd and postgresql policies use
+# corecmd_exec_bin. This project allows it only as a reviewed exception written
+# in the app manifest (selinux_exceptions.exec_bin), never as a raw allow and
+# never from a command-line opt-in.
+EXEC_BIN_TYPES = frozenset({"bin_t", "java_exec_t"})
+EXEC_BIN_EXCEPTION = "exec_bin"
+MANIFEST_EXCEPTION_KEYS = frozenset({EXEC_BIN_EXCEPTION})
+EXEC_BIN_REVIEW_NOTE = (
+    "Security decision (needs review): this domain executed a program labeled bin_t. "
+    "On RHEL 9 the system JVM is bin_t (java_exec_t is an alias of bin_t), so there is "
+    "no narrower type to allow. corecmd_exec_bin() is the rule Red Hat's tomcat, httpd "
+    "and postgresql policies use. Programs run this way stay in this domain and gain no "
+    "rights, but a compromised app can run any bin_t program within its own limits. "
+    "To accept it, a reviewer writes the reason in the app manifest under "
+    "selinux_exceptions.exec_bin. --allow-needs-review does not unlock this finding."
+)
+
+
+def manifest_exception(manifest: dict, key: str) -> str:
+    """Reviewed reason for a house-rule exception, or '' when the manifest has none."""
+    exceptions = manifest.get("selinux_exceptions") or {}
+    if not isinstance(exceptions, dict):
+        return ""
+    reason = exceptions.get(key)
+    return reason.strip() if isinstance(reason, str) else ""
+
 
 # Shared executable types. An entrypoint denial on one of these, at a path
 # this module's .fc already covers, is a stale label (restorecon), not an allow.

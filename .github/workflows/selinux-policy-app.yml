@@ -19,6 +19,11 @@ on:
         description: Process domain for that module (shopapi_t)
         type: string
         required: true
+      manifest:
+        description: App manifest in the calling repo. Its selinux_exceptions are the only way to accept bin_t execute
+        type: string
+        required: false
+        default: ""
       tools_repo:
         description: Repository that contains the validators
         type: string
@@ -43,16 +48,20 @@ jobs:
           repository: ${{ inputs.tools_repo }}
           ref: ${{ inputs.tools_ref }}
           path: tools
+      - name: Install PyYAML (manifest exceptions and the source audit)
+        run: pip install pyyaml
       - name: Forbidden patterns, source audit, and version
         env:
           POLICY_DIR: ${{ inputs.policy_dir }}
           MODULE: ${{ inputs.module }}
           DOMAIN: ${{ inputs.domain }}
+          MANIFEST: ${{ inputs.manifest }}
         run: |
           set -euo pipefail
           src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
           [[ -d "${src}" ]]
           [[ -n "${MODULE}" && -n "${DOMAIN}" ]]
+          export APP_MANIFEST="${GITHUB_WORKSPACE}/app/${MANIFEST:-config/${MODULE}.manifest.yml}"
           POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
             bash "${GITHUB_WORKSPACE}/tools/scripts/validate_forbidden_patterns.sh" "${src}"
           PYTHONPATH="${GITHUB_WORKSPACE}/tools/cli" \
@@ -84,9 +93,11 @@ jobs:
           POLICY_DIR: ${{ inputs.policy_dir }}
           MODULE: ${{ inputs.module }}
           DOMAIN: ${{ inputs.domain }}
+          MANIFEST: ${{ inputs.manifest }}
         run: |
           set -euo pipefail
           src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
+          APP_MANIFEST="${GITHUB_WORKSPACE}/app/${MANIFEST:-config/${MODULE}.manifest.yml}" \
           POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
-            sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN \
+            sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN,APP_MANIFEST \
             bash "${GITHUB_WORKSPACE}/tools/scripts/validate_policy_semantics.sh" "${src}"
