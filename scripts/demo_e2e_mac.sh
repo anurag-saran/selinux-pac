@@ -86,7 +86,7 @@ mac_canary_enforce_dev() {
 
 mac_ship_prod() {
     local mode="${1:-soak_demo}"
-    tlab_explain "Ship only after the PR is merged. This lab rsyncs the tree onto rhel-qa, so that checkout is not a clean clone. The RPM is built from the module just generated there. Pulling main would replace it with the types-only seed."
+    tlab_explain "Ship only after the PR is merged. rhel-qa builds, signs, and publishes. The private key stays on rhel-qa. This lab rsyncs the tree, so we do not git checkout main and pull: that would replace the generated module with the types-only seed."
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && grep -q corecmd_exec_bin selinux/shopapi/shopapi.te && echo generated module stays on rhel-qa'"
     tlab_explain "rpmsign comes from rpm-sign. Without createrepo_c the repo has no metadata and dnf on prod finds nothing."
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'rpm -q rpm-build rpm-sign createrepo_c >/dev/null 2>&1 || sudo dnf install -y rpm-build rpm-sign createrepo_c'"
