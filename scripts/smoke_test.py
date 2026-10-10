@@ -1204,7 +1204,16 @@ def test_demo_e2e_scripts_dry_run() -> None:
     mac_text = mac.read_text(encoding="utf-8")
     prod_text = prod.read_text(encoding="utf-8")
     guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
-    assert "git checkout main" in mac_text
+    # No e2e_run line should pull or checkout main (would overwrite generated module with seed)
+    for line in mac_text.splitlines():
+        if "e2e_run" in line:
+            assert "git pull" not in line, f"e2e_run must not git pull: {line}"
+            assert "git checkout" not in line, f"e2e_run must not git checkout: {line}"
+    assert "BUILD_RPMS_ALLOW_DIRTY=1" in mac_text
+    # Bind address: never 0.0.0.0, never fall back to DEV_HOST
+    assert "--bind 0.0.0.0" not in mac_text
+    assert 'REPO_HOST:-${DEV_HOST}' not in mac_text
+    assert 'REPO_HOST:-$DEV_HOST' not in mac_text
     assert "gpgcheck=1" in mac_text
     assert "private key stays on rhel-qa" in mac_text
     assert "dnf repolist" in prod_text

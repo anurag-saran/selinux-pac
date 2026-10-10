@@ -239,6 +239,27 @@ wait_shopapi() {
     die "shopapi did not respond on :${port}. Check shopapi.service and journalctl."
 }
 
+verify_shopapi_label() {
+    if [[ "${LOAD_SEED}" -eq 0 ]]; then
+        return 0
+    fi
+    local pid label wrapper
+    pid="$(systemctl show -p MainPID --value shopapi.service 2>/dev/null || true)"
+    if [[ -z "${pid}" || "${pid}" == "0" ]]; then
+        log "WARN: shopapi.service MainPID not available; skipping label check"
+        return 0
+    fi
+    label="$(ps -o label= -p "${pid}" 2>/dev/null || true)"
+    if [[ "${label}" != *":shopapi_t:"* ]]; then
+        die "shopapi MainPID ${pid} label is '${label}', expected :shopapi_t:. The seed module may not be loaded."
+    fi
+    log "shopapi MainPID ${pid} label: ${label}"
+    wrapper="$(readlink -f /proc/"${pid}"/exe 2>/dev/null || true)"
+    if [[ -n "${wrapper}" ]]; then
+        ls -Z "$(dirname "${wrapper}")" 2>/dev/null || true
+    fi
+}
+
 wait_app_a() {
     local i
     for i in $(seq 1 30); do
@@ -265,6 +286,7 @@ main() {
         fi
         start_services
         wait_shopapi
+        verify_shopapi_label
         echo
         echo "=== shopapi-only bootstrap complete (confined=${DEMO_SHOPAPI_CONFINED} seed=${LOAD_SEED}) ==="
         return 0
@@ -283,6 +305,7 @@ main() {
     start_services
     wait_app_a
     wait_shopapi || true
+    verify_shopapi_label
     echo
     echo "=== bootstrap complete ==="
     echo "variant:  $(demo_variant) (process domain $(demo_tomcat_domain))"

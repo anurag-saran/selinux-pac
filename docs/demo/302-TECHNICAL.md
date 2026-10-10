@@ -172,6 +172,8 @@ flowchart TD
 
 Say: prod does not clone the repo. Policy arrives as two RPMs, `selinux-policy-ops` and `shopapi-selinux`, and only after the pull request is on `main`.
 
+Real use builds the RPMs only after the PR is on `main`. This rehearsal does not merge its PRs (main keeps the types-only seed), so rhel-qa builds from the module it just generated (`BUILD_RPMS_ALLOW_DIRTY=1`). Never `git pull` before that step — it would replace the generated module with the seed.
+
 On the machine that publishes, create the lab key and the local repo once. The script writes a public key and a repo file with `gpgcheck=1`. It does not print the private key.
 
 ```bash

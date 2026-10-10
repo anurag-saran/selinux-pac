@@ -372,25 +372,19 @@ Every lab `curl` goes to `127.0.0.1` on the same VM. The host firewall does not 
 
 ### Between the VMs: the RPM repository
 
-In 302, rhel-qa serves the signed repository over HTTP on port 8765 (`scripts/serve_lab_repo.sh`), and rhel-prod installs from `http://<rhel-qa>:8765`. On a default RHEL 9 install, firewalld is running and does not allow 8765.
+In 302, rhel-qa builds and signs the RPMs, then the Mac rsyncs `dist/lab-repo` and serves it locally. UTM shared networking keeps the two VMs apart: the bridge members are `PRIVATE`, and macOS `ifconfig` cannot clear that flag. Both VMs can reach the Mac's bridge address (`REPO_HOST`, typically `192.168.64.1`).
 
-**Where.** rhel-qa, then rhel-prod.
-
-```bash
-# rhel-qa
-sudo firewall-cmd --state
-sudo firewall-cmd --list-ports
-sudo firewall-cmd --add-port=8765/tcp      # runtime only: closed again after a reboot
-```
+**Where.** rhel-prod (to verify).
 
 ```bash
-# rhel-prod, while serve_lab_repo.sh is running on rhel-qa
-curl -sI "http://$QA_HOST:8765/RPM-GPG-KEY" | head -1
+# rhel-prod — check that the default route reaches the Mac
+ip route show default
+curl -sI "http://$REPO_HOST:8765/RPM-GPG-KEY" | head -1
 ```
 
-**Good sign.** `running`, then `8765/tcp` in the list, then `HTTP/1.0 200 OK` from rhel-prod.
+**Good sign.** The default route is via `192.168.64.1` (or whatever `ifconfig bridge100` reports on the Mac), and `HTTP/1.0 200 OK` from rhel-prod.
 
-**Note.** Run by hand, `serve_lab_repo.sh` stays in the foreground until Ctrl-C, so start it in its own SSH session. The 302 conductor (`demo_e2e_mac.sh`) starts it in the background with its log in `/tmp/selinux-pac-repo.log`, adds the runtime firewall rule, and runs the `curl` check from rhel-prod for you.
+**Note.** Run by hand, `serve_lab_repo.sh` stays in the foreground until Ctrl-C, so start it in its own terminal. The 302 conductor (`demo_e2e_mac.sh`) starts it in the background with its log in `/tmp/selinux-pac-repo.log` and runs the `curl` check from rhel-prod for you.
 
 ---
 
@@ -479,7 +473,7 @@ Every command you type in the labs and talks, and where it is explained.
 | `auditctl -s`, `service auditd restart`, `grep 'avc:  denied'` | VMs | [100 Part 5](#part-5--the-audit-log) | `check_audit_health.sh`, soak gate, 302 |
 | `getent`, `id`, `useradd`, `groupadd`, `chown`, `ls -l` | VMs | [100 Part 6](#part-6--users-files-and-unix-permissions) | [104](104-HAND-BUILT-MODULE.md) prep, `demo_bootstrap.sh` |
 | `ss -ltnp`, `lsof -iTCP`, `curl` | VMs | [100 Part 7](#part-7--ports-and-http) | 301 preflight, `wait_for_endpoints.sh`, every lab |
-| `firewall-cmd` | rhel-qa | [100 Part 7](#between-the-vms-the-rpm-repository) | 302 part 6 repository |
+| `ip route`, `curl` (cross-VM) | rhel-prod | [100 Part 7](#between-the-vms-the-rpm-repository) | 302 part 6 repository (Mac serves the repo) |
 | `rpmbuild`, `rpmsign`, `createrepo_c` | rhel-qa | [100 Part 3](#install-what-the-lab-needs) | `packaging/build_rpms.sh`, `publish_internal.sh` |
 | `ansible`, `ansible-galaxy`, `ansible-playbook` | Mac | [100 Part 9](#part-9--ansible-from-the-mac) | `setup_rhel_hosts.sh`, 302, 401 |
 | `getenforce`, `sestatus` | VMs | [102 Mode](102-COMMANDS.md#mode) | Every lab and talk |

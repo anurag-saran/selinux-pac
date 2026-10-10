@@ -87,11 +87,18 @@ mac_canary_enforce_dev() {
 }
 
 mac_serve_repo() {
-    local repo_host="${REPO_HOST:-${DEV_HOST}}"
+    local repo_host="${REPO_HOST:-}"
+    if [[ -z "${repo_host}" ]]; then
+        repo_host="$(ifconfig bridge100 2>/dev/null | awk '/inet /{print $2}')"
+    fi
+    if [[ -z "${repo_host}" ]]; then
+        echo "Set REPO_HOST in scripts/lab.env (the address both VMs can reach on this Mac)." >&2
+        exit 1
+    fi
     tlab_explain "UTM does not route one VM to the other. rsync the published repo to this Mac and serve it on ${repo_host}. The private key stays on rhel-qa."
     e2e_run "mkdir -p dist/lab-repo && rsync -az --delete -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' ${E2E_SSH_USER}@${DEV_HOST}:~/selinux-pac/dist/lab-repo/ dist/lab-repo/"
     e2e_run "test -f dist/lab-repo/RPM-GPG-KEY && test -d dist/lab-repo/repodata && ls dist/lab-repo/*.rpm >/dev/null && test -z \"\$(find dist/lab-repo \\( -name '*private*' -o -name '*secring*' \\) -print -quit)\" && echo 'public key, signed RPMs, repodata; no private key'"
-    e2e_run "pkill -f \"[h]ttp.server 8765\" || true; nohup python3 -m http.server 8765 --bind 0.0.0.0 --directory \"${PROJECT_ROOT}/dist/lab-repo\" >/tmp/selinux-pac-repo.log 2>&1 & sleep 2 && head -3 /tmp/selinux-pac-repo.log"
+    e2e_run "pkill -f \"[h]ttp.server 8765\" || true; nohup python3 -m http.server 8765 --bind ${repo_host} --directory \"${PROJECT_ROOT}/dist/lab-repo\" >/tmp/selinux-pac-repo.log 2>&1 & sleep 2 && head -3 /tmp/selinux-pac-repo.log"
     e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'curl -sfI http://${repo_host}:8765/RPM-GPG-KEY | head -1'"
     tlab_checkpoint "prod prints HTTP/1.0 200 OK for http://${repo_host}:8765/RPM-GPG-KEY. If it does not, check /tmp/selinux-pac-repo.log on this Mac."
 }
