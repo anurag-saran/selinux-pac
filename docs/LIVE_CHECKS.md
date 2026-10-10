@@ -14,6 +14,8 @@ Customer talk the same day, after the one-query boolean change. Each time below 
 
 `compile_and_validate.sh` printed `bin_t execute accepted: reviewed exception`. Act 6: `getenforce` was Enforcing, `/feature-spool` was denied `permissive=0` on `/var/spool/shopapi/feature.log`, then the spool allow made the curl print `SPOOL /var/spool/shopapi/feature.log`. `shopapi_t` was not permissive at the end.
 
+302 the same day, from a reset, finished 2026-10-09. rhel-qa built and signed the repo (`gpgcheck=1`). The Mac rsynced `dist/lab-repo` and printed `public key, signed RPMs, repodata; no private key`. From rhel-prod, `curl -sfI http://192.168.64.1:8765/RPM-GPG-KEY` printed `HTTP/1.0 200 OK`. Canary installed `selinux-policy-ops-1.1.0-2` and `shopapi-selinux-1.0.1-1` from that repo. Soak failed `raw=1 net_new=1`. Enforce without `force_enforce` refused (`0 day(s) elapsed; need 7`). Break-glass then denied `/var/spool/shopapi/feature.log` with `permissive=0`. After rollback, the spool fix shipped as `shopapi-selinux-1.0.2-1`. The clean soak was `Raw AVCs since marker: 0` and `Net-new access needs: 0`. Final enforce recap was `failed=0`. On rhel-prod afterwards: `getenforce=Enforcing`, `semanage permissive -l` had no `shopapi_t`, and `/etc/yum.repos.d/selinux-pac.repo` had `gpgcheck = 1`.
+
 ## Command catalog
 
 ```bash

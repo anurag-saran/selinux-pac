@@ -2,7 +2,7 @@
 
 **Finish [104](../training/104-HAND-BUILT-MODULE.md) and [202](../tool/202-TOOL-LAB.md) before Acts 0, 1, 2, 3, and 6.** Those guides are the typed shopapi loop and the same loop with the scripts. This talk assumes those commands. Each act links to the command that was taught in [102](../training/102-COMMANDS.md).
 
-**LAST_VERIFIED:** 2026-09-18 — live on RHEL with distro Tomcat (`tomcat_t`) + JDK 17. JWS 6 + `jws6-tomcat-selinux` is still the confined App A/B path.
+**LAST_VERIFIED:** 2026-10-09 — live shopapi customer talk on rhel-qa. The host stayed Enforcing. Distro Tomcat (`tomcat_t`) + JDK 17 is still the confined App A/B path. JWS 6 + `jws6-tomcat-selinux` was not rerun this day.
 
 ## Which demo
 

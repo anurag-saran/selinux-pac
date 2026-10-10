@@ -1094,7 +1094,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
     guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
-    assert "LAST_VERIFIED:** 2026-09-18" in guide
+    assert "LAST_VERIFIED:** 2026-10-09" in guide
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
     assert "/feature-spool" in gate
     assert "e2e_run_expect_fail" in gate
@@ -2306,7 +2306,7 @@ def test_docs_match_the_store() -> None:
     assert "labs 5 and 6 of **104**" in c301
     assert "JWS denies" in c301
     assert "JWS tunes the host" in c301
-    assert "LAST_VERIFIED:** 2026-09-18" in c301
+    assert "LAST_VERIFIED:** 2026-10-09" in c301
 
     c401 = (PROJECT_ROOT / "docs/admin/401-OPERATIONS.md").read_text(encoding="utf-8")
     assert "/var/lib/selinux-policy-ops/<app>/selinux_soak_last_fail.json" in c401

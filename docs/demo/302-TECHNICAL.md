@@ -2,7 +2,7 @@
 
 This is the meeting after [301](301-CUSTOMER.md). 301 is one host and about 20 minutes. This one is about 45 minutes and uses three windows. Do not open it for someone who has not seen 301. Commands were taught in [102](../training/102-COMMANDS.md) and [104](../training/104-HAND-BUILT-MODULE.md). The scripts are [201](../tool/201-TOOL-COMMANDS.md).
 
-**LAST_VERIFIED:** 2026-09-18 — live Mac + rhel-qa (`$QA_HOST`) + rhel-prod (`$PROD_HOST`). The host stayed Enforcing the whole way.
+**LAST_VERIFIED:** 2026-10-09 — live Mac + rhel-qa + rhel-prod. The host stayed Enforcing. Prod printed `HTTP/1.0 200 OK` for the repo key, then the soak gate refused, and the demo ended with `shopapi_t` enforcing.
 
 The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
 
