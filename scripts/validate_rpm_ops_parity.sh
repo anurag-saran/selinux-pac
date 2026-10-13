@@ -22,6 +22,7 @@ EXPECTED=(
     lib/avc_query.sh
     lib/manifest_shell.sh
     lib/app_manifest.py
+    lib/app_identity.sh
     lib/soak_net_new.py
 )
 
