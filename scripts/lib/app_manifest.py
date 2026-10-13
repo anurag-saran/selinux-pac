@@ -475,7 +475,11 @@ def service_units_ordered(manifest: dict[str, Any]) -> list[tuple[str, str, str]
     return items
 
 
-def shell_export(manifest: dict[str, Any]) -> str:
+def shell_export(
+    manifest: dict[str, Any],
+    *,
+    project_root: Path | None = None,
+) -> str:
     primary = manifest["services"]["primary"]
     backend = manifest["services"].get("backend")
     lines = [
@@ -489,6 +493,25 @@ def shell_export(manifest: dict[str, Any]) -> str:
         f"HTTP_PORT={manifest['http']['port']}",
         f"ENDPOINT_PATHS={json.dumps(json.dumps(manifest['http']['endpoints']))}",
     ]
+
+    # Identity keys (phase 2): every script gets these from one source.
+    app_name = manifest["app_name"]
+    lines.append(f"MODULE_NAME={json.dumps(app_name)}")
+    lines.append(f"DOMAINS_CSV={json.dumps(manifest_service_domains_csv(manifest))}")
+
+    ports_parts: list[str] = []
+    for entry in manifest.get("selinux_ports") or []:
+        ports_parts.append(f"{entry['port']}/{entry.get('proto', 'tcp')}/{entry['type']}")
+    lines.append(f"SELINUX_PORTS_CSV={json.dumps(','.join(ports_parts))}")
+
+    if project_root is not None:
+        paths = policy_source_paths(project_root, manifest)
+        lines.append(f"MODULE_DIR={json.dumps(str(paths['module_dir']))}")
+        lines.append(f"POLICY_TE={json.dumps(str(paths['te']))}")
+        lines.append(f"POLICY_FC={json.dumps(str(paths['fc']))}")
+        lines.append(f"POLICY_PP={json.dumps(str(paths['module_dir'] / f'{app_name}.pp'))}")
+        lines.append(f"POLICY_VERSION_FILE={json.dumps(str(paths['version_file']))}")
+
     if backend:
         lines.append(f"BACKEND_SERVICE={json.dumps(backend['unit'])}")
         lines.append(f"BACKEND_DOMAIN={json.dumps(backend['domain'])}")
@@ -615,7 +638,8 @@ def main() -> int:
         print(json.dumps(manifest, indent=2))
         return 0
     if args.command == "shell-export":
-        print(shell_export(manifest))
+        root = path.parent.parent if path.parent.name == "config" else Path.cwd()
+        print(shell_export(manifest, project_root=root))
         return 0
     if args.command == "paths-csv":
         print(manifest_paths_csv(manifest))
