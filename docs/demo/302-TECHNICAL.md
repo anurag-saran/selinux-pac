@@ -6,6 +6,8 @@ This is the meeting after [301](301-CUSTOMER.md). 301 is one host and about 20 m
 
 **Short happy path (~20 min):** `bash scripts/demo_e2e_mac.sh --short`. Generates a complete module (all four URLs including `/feature-spool`) on QA, then ships to prod. Soak passes on the first try. No outage, no rollback, no second generate. The demo still ends enforcing.
 
+**QA-only mini (~10 min):** `bash scripts/demo_e2e_mac.sh --mini`. Two windows (Mac + QA), no prod host needed. Generates a complete module on QA, opens a PR, canary, and enforce. Every command has a caption. Use this when the audience does not need the prod soak/RPM flow.
+
 The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
 
 ```mermaid

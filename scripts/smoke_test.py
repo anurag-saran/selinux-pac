@@ -1203,6 +1203,37 @@ def test_demo_e2e_scripts_dry_run() -> None:
         assert "break_glass_reason" not in mac_short_out
         assert "emergency_rollback" not in mac_short_out
         assert "enforce_production" in mac_short_out
+        # --mini: QA-only, no prod, captions
+        mac_mini_run = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto", "--mini"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=_lab_hosts(),
+        )
+        mac_mini_out = mac_mini_run.stdout + mac_mini_run.stderr
+        assert mac_mini_run.returncode == 0, mac_mini_out
+        assert "QA-only" in mac_mini_out
+        assert "No prod" in mac_mini_out
+        assert "--all-urls" in mac_mini_out
+        assert "demo_e2e_rhel_prod" not in mac_mini_out
+        assert "prod.example.com" not in mac_mini_out or "prod-host" in mac_mini_out
+        assert "deploy_canary.yml" in mac_mini_out
+        assert "enforce_production" in mac_mini_out
+        # --mini works without PROD_HOST
+        mini_qa_only_env = os.environ.copy()
+        mini_qa_only_env["QA_HOST"] = "qa.example.com"
+        mini_qa_only_env["SSH_USER"] = "ssh-user"
+        mini_qa_only_env.pop("PROD_HOST", None)
+        mini_qa_only_env.pop("DEV_HOST", None)
+        mac_mini_no_prod = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto", "--mini"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=mini_qa_only_env,
+        )
+        assert mac_mini_no_prod.returncode == 0, mac_mini_no_prod.stdout + mac_mini_no_prod.stderr
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,

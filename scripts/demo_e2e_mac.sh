@@ -24,6 +24,11 @@ DEMO_PROD_FORCE_ENFORCE="${DEMO_PROD_FORCE_ENFORCE:-true}"
 # Talk rehearsals open draft PRs. A real review PR is demo_open_generated_pr.sh with DEMO_REHEARSAL unset.
 export DEMO_REHEARSAL=1
 
+# Short caption above a command (same style as demo_present.sh).
+say() {
+    echo -e "${TLAB_DIM}# $*${TLAB_NC}"
+}
+
 usage() {
     cat <<EOF
 Usage: $(basename "$0") [options]
@@ -31,6 +36,7 @@ Usage: $(basename "$0") [options]
 Presenter script for THIS Mac. Demo application is shopapi (Spring Boot).
 Three-host production walkthrough (~45 min): this window + rhel-qa + rhel-prod.
 Happy-path only (~20 min): add --short.
+QA-only with captions (~10 min): add --mini (no prod host needed).
 Do not run this as the first customer conversation.
 
 $(e2e_usage_common)
@@ -178,6 +184,63 @@ mac_copy_prod_avc_to_dev() {
 e2e_parse_args "$@"
 e2e_require_mac
 cd "${PROJECT_ROOT}"
+
+# ── Mini: QA-only with captions (~10 min) ────────────────────────────────────
+if [[ "${E2E_MINI}" -eq 1 ]]; then
+    E2E_ALL_URLS=1
+
+    e2e_banner "MAC — QA-only walkthrough (no prod host)"
+    tlab_why "macOS cannot enforce SELinux. This window talks to one RHEL VM over SSH: QA ${DEV_HOST}."
+    say "Story: generate a complete shopapi module on QA, open a PR, canary, enforce. No prod host."
+    tlab_pause
+
+    tlab_print_section "Part 1 — Can the Mac reach QA?"
+    say "Write the Ansible inventory for QA"
+    e2e_run "bash scripts/setup_rhel_hosts.sh write --qa-host ${DEV_HOST} --prod-host ${PROD_HOST} --user ${E2E_SSH_USER}"
+    say "Check QA is Enforcing with the right tools"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'hostname; getenforce; command -v ausearch; command -v sesearch'"
+    say "Copy this checkout onto QA"
+    e2e_run "bash scripts/sync_rhel_dev.sh"
+    say "Install packages QA needs"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'sudo dnf install -y git java-17-openjdk-headless maven policycoreutils policycoreutils-python-utils setools-console audit selinux-policy-devel'"
+    tlab_pause
+
+    tlab_print_section "Part 2 — QA: install shopapi and collect denials"
+    say "Install shopapi with the types-only seed, curl all four URLs, show denials"
+    e2e_handoff "On the QA VM window run:
+  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app --all-urls
+That installs shopapi and curls /health /state /log AND /feature-spool.
+Press Enter here when ausearch shows shopapi denials." \
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+
+    tlab_print_section "Part 3 — QA: generate the module from denials"
+    say "Turn audit denials into shopapi.te, compile, load with semodule -i"
+    e2e_handoff "On the QA VM window run:
+  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate
+Press Enter here when compile_and_validate has built shopapi.pp." \
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate $(e2e_auto_flags)'"
+
+    tlab_print_section "Part 4 — Copy the policy and open a PR"
+    say "Copy generated .te, .fc, .pp back to this Mac"
+    mac_scp_generated_from_dev
+    tlab_pause
+    say "Validate forbidden patterns and open a GitHub PR"
+    mac_open_policy_pr
+    tlab_pause
+
+    tlab_print_section "Part 5 — Canary and enforce on QA"
+    say "Canary loads the module, sets shopapi_t permissive, then soak_min_days=0 enforces"
+    mac_canary_enforce_dev
+    tlab_pause
+
+    tlab_checkpoint "shopapi_t is enforcing on QA. No prod host was needed."
+    echo
+    echo -e "${TLAB_BOLD}End of the Mac mini talk track.${TLAB_NC} Full walkthrough: bash scripts/demo_e2e_mac.sh"
+    echo
+    exit 0
+fi
+
+# ── Full or --short flow ─────────────────────────────────────────────────────
 
 e2e_banner "MAC — the remote control (no SELinux on this laptop)"
 tlab_why "macOS cannot enforce SELinux. This window talks to two RHEL VMs over SSH: QA ${DEV_HOST} and prod ${PROD_HOST}."
