@@ -21,6 +21,7 @@ FORCE=0
 FORCE_REASON=""
 TUNE_REPORT=0
 ALLOW_NEEDS_REVIEW=0
+ALLOW_NEEDS_REVIEW_PERMS=()
 PRIMARY_SERVICE="${PRIMARY_SERVICE:-}"
 OUT_DIR_ARG=""
 AVC_LOG_ARG=""
@@ -99,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --allow-needs-review) ALLOW_NEEDS_REVIEW=1; shift ;;
+        --allow-needs-review-perm)
+            ALLOW_NEEDS_REVIEW_PERMS+=("$2")
+            shift 2
+            ;;
         --app-name) APP_NAME="$2"; DOMAIN="${APP_NAME}_t"; shift 2 ;;
         --unit) PRIMARY_SERVICE="$2"; shift 2 ;;
         --app-root) APP_ROOT="$2"; shift 2 ;;
