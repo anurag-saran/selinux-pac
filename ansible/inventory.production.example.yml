@@ -44,3 +44,4 @@ all:
     http_probe_host: "127.0.0.1"
     selinux_rpm_repo_baseurl: "http://rhel-qa.example.com:8765"
     selinux_rpm_gpgkey: "http://rhel-qa.example.com:8765/RPM-GPG-KEY"
+    selinux_pac_host_role: production

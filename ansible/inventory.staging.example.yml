@@ -33,3 +33,4 @@ all:
     soak_max_avc: 0
     soak_max_net_new: 0
     soak_use_net_new: true
+    selinux_pac_host_role: staging

@@ -36,3 +36,4 @@ all:
     soak_max_net_new: 0
     soak_use_net_new: true
     http_probe_host: "127.0.0.1"
+    selinux_pac_host_role: qa
