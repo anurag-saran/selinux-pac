@@ -134,7 +134,7 @@ part_fail() {
     tlab_why "Policy is live. /feature-spool writes /var/spool/shopapi/feature.log — not in the first module. We will not semodule -i on this box."
     e2e_run_expect_fail "curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool"
     e2e_run "curl -sS http://127.0.0.1:${SHOP_PORT}/feature-spool || true"
-    e2e_shopapi_avcs '|var_spool_t|/var/spool/shopapi'
+    e2e_run "sepac denials shopapi --since boot --last 20"
     e2e_run "sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null; sudo chmod a+r ${AVC_EXPORT}; wc -l ${AVC_EXPORT}"
     tlab_checkpoint "HTTP 500 + an AVC in ${AVC_EXPORT}. Go back to the Mac — admin rollback, then generate on rhel-qa."
 }
@@ -151,6 +151,7 @@ part_restore() {
 part_retest() {
     e2e_banner "PROD VM — the fix arrived as a new RPM"
     e2e_run "curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool"
+    e2e_run "sepac status shopapi"
     tlab_checkpoint "HTTP 200 under the new module (enforcing)."
 }
 

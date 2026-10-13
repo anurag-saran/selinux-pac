@@ -139,6 +139,20 @@ Install `selinux-policy-ops` + `<app>-selinux` from a **signed internal repo**. 
 
 ---
 
+## Install
+
+On QA hosts and controllers, install the `selinux-pac` RPM from the internal repo:
+
+```bash
+sudo dnf install selinux-pac
+```
+
+Managed hosts (staging, production) get `selinux-pac` automatically from the Ansible role. The role also writes `/etc/selinux-pac/role` and copies the app manifest to `/etc/selinux-pac/apps/`.
+
+In a development checkout, use `bin/sepac` directly or `make install-cli` to symlink it.
+
+---
+
 ## Try it on a Mac
 
 macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still runs on Linux.

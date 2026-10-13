@@ -190,7 +190,7 @@ Switch to prod:
 bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
 ```
 
-That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. It shows `dnf repolist` and `rpm -q gpg-pubkey`.
+That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. It shows `dnf repolist`, `rpm -q gpg-pubkey`, and `sepac status shopapi`.
 
 Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only then restarts the service:
 
@@ -198,7 +198,7 @@ Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only 
 sepac canary --env production --limit canary
 ```
 
-On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. The domain is permissive, so the page can still return 200. `ausearch` shows a `shopapi_t` denial for `/var/spool/shopapi`. The lines are saved in `/tmp/prod-feature-spool.avc`.
+On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. The domain is permissive, so the page can still return 200. `sepac denials shopapi` shows the denial for `/var/spool/shopapi`. The lines are saved in `/tmp/prod-feature-spool.avc`.
 
 The Mac then runs `sepac soak`. It must fail. `--part soak-avc` shows `/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc`. That directory is where the soak monitor writes the fail files. Leave them in place. A later canary writes a new marker, and daily files and fail files older than that marker do not count.
 
@@ -234,11 +234,11 @@ On the Mac:
 sepac rollback --env production
 ```
 
-That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason. We still do not run `semodule -i` on prod.
+That puts `shopapi_t` back in log-only mode so the app runs again. `sepac status shopapi` shows the host is still Enforcing and shopapi_t is permissive. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason. We still do not run `semodule -i` on prod.
 
 The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA, `--part generate --skip-export` writes the spool allow. Merge that PR. Recanary QA, rebuild the RPMs, and canary prod again.
 
-On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `sepac soak` passes (`failed=0`).
+On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `sepac denials shopapi` shows no new `shopapi` denial since this canary. `sepac soak` passes (`failed=0`).
 
 `soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `skip_soak_days` skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run.
 
