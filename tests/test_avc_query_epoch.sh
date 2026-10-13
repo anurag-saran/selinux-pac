@@ -6,8 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-# shellcheck source=lib/avc_query.sh
-source "${SCRIPT_DIR}/lib/avc_query.sh"
+# shellcheck source=../scripts/lib/avc_query.sh
+source "${PROJECT_ROOT}/scripts/lib/avc_query.sh"
 
 filtered="$(printf '%s\n' \
     'type=AVC msg=audit(1000.100:1): old path="/var/log/shopapi/old.log"' \
@@ -60,17 +60,17 @@ if grep -q -- '-ts' "${work}/args"; then
 fi
 
 if grep -n 'avc_epoch_to_ts' \
-    "${SCRIPT_DIR}/lib/avc_query.sh" \
-    "${SCRIPT_DIR}/monitor_avc.sh" \
-    "${SCRIPT_DIR}/check_soak_ready.sh" >/dev/null; then
+    "${PROJECT_ROOT}/scripts/lib/avc_query.sh" \
+    "${PROJECT_ROOT}/scripts/monitor_avc.sh" \
+    "${PROJECT_ROOT}/scripts/check_soak_ready.sh" >/dev/null; then
     echo "avc_epoch_to_ts is still used" >&2
     exit 1
 fi
-if ! grep -q 'date +%s' "${SCRIPT_DIR}/reset_demo_vms.sh"; then
+if ! grep -q 'date +%s' "${PROJECT_ROOT}/lab/reset_demo_vms.sh"; then
     echo "reset marker must be stored with date +%s" >&2
     exit 1
 fi
-if grep -q "date '+%m" "${SCRIPT_DIR}/reset_demo_vms.sh"; then
+if grep -q "date '+%m" "${PROJECT_ROOT}/lab/reset_demo_vms.sh"; then
     echo "reset marker still writes a formatted ausearch date" >&2
     exit 1
 fi
@@ -86,7 +86,7 @@ exit 0
 EOF
 export PATH="${work}:${PATH}"
 set +e
-json="$(bash "${SCRIPT_DIR}/monitor_avc.sh" \
+json="$(bash "${PROJECT_ROOT}/scripts/monitor_avc.sh" \
     --domain shopapi_t \
     --paths /var/log/shopapi \
     --manifest "${work}/no-manifest.yml" \

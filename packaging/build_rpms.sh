@@ -35,7 +35,7 @@ fi
 if ! command -v rpmbuild >/dev/null 2>&1; then
     if [[ "$(uname -s)" == Darwin && "${BUILD_RPMS_LOCAL:-0}" != 1 ]]; then
         echo "rpmbuild is not on macOS — compiling and packing on rhel-qa, then copying dist/*.rpm back here." >&2
-        exec bash "${ROOT}/scripts/build_rpms_on_dev.sh"
+        exec bash "${ROOT}/lab/build_rpms_on_dev.sh"
     fi
     echo "rpmbuild is required. Refusing to report success after a parity-only check." >&2
     exit 1
@@ -45,7 +45,7 @@ GIT_COMMIT="$(git -C "${ROOT}" rev-parse HEAD)"
 
 # shellcheck source=../scripts/lib/version.sh
 source "${ROOT}/scripts/lib/version.sh"
-VERSION="$(policy_version "${ROOT}/selinux/policy_version.txt")"
+VERSION="$(policy_version "${ROOT}/selinux/myapp/policy_version.txt")"
 # RPM Version comes from policy_version.txt only — do not hardcode in the .spec (rpmbuild cwd breaks fragile %define cat).
 
 mkdir -p "${DIST}" "${RPMBUILD}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
@@ -74,7 +74,7 @@ done < "${ROOT}/packaging/pac_cli.list"
 
 bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
 bash "${ROOT}/scripts/validate_rpm_sepac_parity.sh"
-bash "${ROOT}/scripts/compile_and_validate.sh" selinux
+bash "${ROOT}/scripts/compile_and_validate.sh" selinux/myapp --app myapp
 bash "${ROOT}/scripts/compile_and_validate.sh" "${ROOT}/selinux/shopapi" --app shopapi
 SHOPAPI_VERSION="$(policy_version "${ROOT}/selinux/shopapi/policy_version.txt")"
 
@@ -84,9 +84,9 @@ cp "${ROOT}/packaging/shopapi-selinux.spec" "${RPMBUILD}/SPECS/"
 stamp_spec_commit "${RPMBUILD}/SPECS/selinux-policy-ops.spec" "${GIT_COMMIT}"
 stamp_spec_commit "${RPMBUILD}/SPECS/myapp-selinux.spec" "${GIT_COMMIT}"
 stamp_spec_commit "${RPMBUILD}/SPECS/shopapi-selinux.spec" "${GIT_COMMIT}"
-cp "${ROOT}/selinux/myapp.pp" "${RPMBUILD}/SOURCES/myapp.pp"
-cp "${ROOT}/selinux/myapp.te" "${RPMBUILD}/SOURCES/myapp.te"
-cp "${ROOT}/selinux/myapp.fc" "${RPMBUILD}/SOURCES/myapp.fc"
+cp "${ROOT}/selinux/myapp/myapp.pp" "${RPMBUILD}/SOURCES/myapp.pp"
+cp "${ROOT}/selinux/myapp/myapp.te" "${RPMBUILD}/SOURCES/myapp.te"
+cp "${ROOT}/selinux/myapp/myapp.fc" "${RPMBUILD}/SOURCES/myapp.fc"
 cp "${ROOT}/config/myapp.manifest.yml" "${RPMBUILD}/SOURCES/selinux-manifest.yml"
 cp "${ROOT}/selinux/shopapi/shopapi.pp" "${RPMBUILD}/SOURCES/shopapi.pp"
 cp "${ROOT}/selinux/shopapi/shopapi.te" "${RPMBUILD}/SOURCES/shopapi.te"

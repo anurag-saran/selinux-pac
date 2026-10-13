@@ -5,11 +5,11 @@ Each directory has `avc.log` + `expected.json` (golden `verdict` / `tgt` rows). 
 - **`case.meta.json`** — `exit_code` (default 0), `stderr_substrings` for blocked runs
 - **`sepolgen_mock.json`** — in-process mock for CI hosts without `sepolgen-ifgen` (`behavior`: `match` | `no_match`)
 
-**Where to run:** **repo root** on any OS (no SELinux required). Full suite: `make test-fixtures` or `bash scripts/run_deterministic_fixtures.sh`.
+**Where to run:** **repo root** on any OS (no SELinux required). Full suite: `make test-fixtures` or `bash tests/run_deterministic_fixtures.sh`.
 
 **Why:** CI compares generator output to `expected.json` so verdict logic cannot drift silently.
 
-CI compares generator output to `expected.json` (`make test-fixtures` / `bash scripts/run_deterministic_fixtures.sh`). Not a GitHub Actions job.
+CI compares generator output to `expected.json` (`make test-fixtures` / `bash tests/run_deterministic_fixtures.sh`). Not a GitHub Actions job.
 
 | Case | Verdict exercised |
 |------|-------------------|
@@ -41,8 +41,8 @@ Run classification without writing policy:
 python3 cli/deterministic_gen.py --explain \
   --avc-log docs/examples/fixtures/deterministic/01-mislabeled-var-lib/avc.log \
   --manifest config/myapp.manifest.yml \
-  --existing-te selinux/myapp.te \
-  --existing-fc selinux/myapp.fc
+  --existing-te selinux/myapp/myapp.te \
+  --existing-fc selinux/myapp/myapp.fc
 ```
 
 On RHEL dev hosts, run once: **`sepolgen-ifgen`** (requires `policycoreutils-devel`) so live interface matching works. Without it, every generator run prints a **stderr banner** (`SEPOLGEN INTERFACE MATCHING IS NOT AVAILABLE`); base-type AVCs exit **1** unless you pass **`--allow-degraded`** (extra degraded banner; `engine=degraded` in `findings.json`).

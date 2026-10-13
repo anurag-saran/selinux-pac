@@ -5,10 +5,10 @@
 # Run on the Mac (Ansible controller) between rehearsals. Not part of the
 # customer talk. Does not uninstall the JVM. Does not setenforce 0.
 #
-#   bash scripts/reset_demo_vms.sh
-#   bash scripts/reset_demo_vms.sh --dry-run
-#   bash scripts/reset_demo_vms.sh --dev-only
-#   bash scripts/reset_demo_vms.sh --prod-only
+#   bash lab/reset_demo_vms.sh
+#   bash lab/reset_demo_vms.sh --dry-run
+#   bash lab/reset_demo_vms.sh --dev-only
+#   bash lab/reset_demo_vms.sh --prod-only
 #
 # After this, start docs/demo/302-TECHNICAL.md at Part 1 (write / ping / rsync).
 #
@@ -58,7 +58,7 @@ Options:
   --user NAME  SSH user
   -h, --help
 
-Hosts come from QA_HOST, PROD_HOST, and SSH_USER, or from scripts/lab.env.
+Hosts come from QA_HOST, PROD_HOST, and SSH_USER, or from lab/lab.env.
 Flags override those. There is no built-in address.
 EOF
 }
@@ -240,6 +240,6 @@ if [[ "${DO_PROD}" -eq 1 ]]; then
 fi
 
 echo
-echo "Next: customer talk → bash scripts/demo_present.sh --preflight (202)."
+echo "Next: customer talk → bash lab/demo_present.sh --preflight (202)."
 echo "      three-host ship → docs/demo/302-TECHNICAL.md at Part 1 (write / ping / rsync / scp)."
 echo "Do not canary until demo_bootstrap.sh --shopapi-only and generate --apply have run on rhel-qa."

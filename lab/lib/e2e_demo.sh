@@ -1,5 +1,5 @@
-# e2e_demo.sh — shared talk-track helpers for demo_e2e_*.sh (source only)
-# Requires scripts/lib/training_lab_runner.sh already sourced.
+# e2e_demo.sh — shared talk-track helpers for lab/demo_e2e_*.sh (source only)
+# Requires lab/lib/training_lab_runner.sh already sourced.
 
 E2E_DRY="${E2E_DRY:-0}"
 E2E_PART="${E2E_PART:-all}"
@@ -14,7 +14,7 @@ lab_env_load
 
 e2e_usage_common() {
     cat <<EOF
-For the ~20 min single-host customer talk, see scripts/demo_present.sh.
+For the ~20 min single-host customer talk, see lab/demo_present.sh.
 Guide: docs/demo/301-CUSTOMER.md  ·  docs/demo/302-TECHNICAL.md
 
 Options:

@@ -10,8 +10,8 @@ FIXTURE_ROOT="${PROJECT_ROOT}/tests/fixtures/blast_radius"
 CLASSIFY="${PROJECT_ROOT}/scripts/classify_policy_blast_radius.sh"
 COMMON="${FIXTURE_ROOT}/_common"
 
-# shellcheck source=lib/compile_policy.sh
-source "${SCRIPT_DIR}/lib/compile_policy.sh"
+# shellcheck source=../scripts/lib/compile_policy.sh
+source "${PROJECT_ROOT}/scripts/lib/compile_policy.sh"
 
 run_python_branch_tests() {
     python3 - <<'PY'

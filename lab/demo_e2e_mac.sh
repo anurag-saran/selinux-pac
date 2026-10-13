@@ -6,9 +6,9 @@
 # talk-only enforce → /feature-spool 500 → rollback → generate on rhel-qa →
 # second PR → recanary.
 #
-#   bash scripts/demo_e2e_mac.sh
-#   bash scripts/demo_e2e_mac.sh --dry-run
-#   bash scripts/demo_e2e_mac.sh --auto --no-type
+#   bash lab/demo_e2e_mac.sh
+#   bash lab/demo_e2e_mac.sh --dry-run
+#   bash lab/demo_e2e_mac.sh --auto --no-type
 #
 set -euo pipefail
 
@@ -36,7 +36,7 @@ Do not run this as the first customer conversation.
 $(e2e_usage_common)
 
 Other windows (do not run those scripts here unless using --auto):
-  ssh ${E2E_SSH_USER:-SSH_USER}@${DEV_HOST:-QA_HOST}   →  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh
+  ssh ${E2E_SSH_USER:-SSH_USER}@${DEV_HOST:-QA_HOST}   →  bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh
   ssh ${E2E_SSH_USER:-SSH_USER}@${PROD_HOST:-PROD_HOST}  →  bash ~/e2e-demo/demo_e2e_rhel_prod.sh
 EOF
 }
@@ -44,11 +44,11 @@ EOF
 mac_copy_prod_bundle() {
     tlab_explain "Prod gets shopapi and this talk track over scp — not a git clone."
     e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'mkdir -p ~/e2e-demo/lib ~/e2e-demo/scripts/lib ~/e2e-demo/config ~/e2e-demo/demo/shopapi/target'"
-    e2e_run "scp scripts/demo_e2e_rhel_prod.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/"
-    e2e_run "scp scripts/lib/e2e_demo.sh scripts/lib/training_lab_runner.sh scripts/lib/lab_env.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/lib/"
-    e2e_run "scp scripts/lab.env ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/lab.env"
-    e2e_run "scp scripts/demo_bootstrap.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/scripts/"
-    e2e_run "scp scripts/lib/demo_estate.sh scripts/lib/app_manifest.py scripts/lib/manifest_shell.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/scripts/lib/"
+    e2e_run "scp lab/demo_e2e_rhel_prod.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/"
+    e2e_run "scp lab/lib/e2e_demo.sh lab/lib/training_lab_runner.sh lab/lib/lab_env.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/lib/"
+    e2e_run "scp lab/lab.env ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/lab.env"
+    e2e_run "scp lab/demo_bootstrap.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/scripts/"
+    e2e_run "scp lab/lib/demo_estate.sh scripts/lib/app_manifest.py scripts/lib/manifest_shell.sh ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/scripts/lib/"
     e2e_run "scp config/shopapi.manifest.yml ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/config/"
     e2e_run "scp -r demo/shopapi/. ${E2E_SSH_USER}@${PROD_HOST}:~/e2e-demo/demo/shopapi/"
 }
@@ -63,7 +63,7 @@ mac_scp_generated_from_dev() {
 
 mac_open_policy_pr() {
     tlab_explain "Admin gate #1: a GitHub PR on selinux-pac for selinux/shopapi/. CODEOWNERS review selinux/."
-    e2e_run_allow_fail "bash scripts/demo_open_generated_pr.sh"
+    e2e_run_allow_fail "bash lab/demo_open_generated_pr.sh"
     tlab_checkpoint "If gh is logged in, a PR URL printed. Do not build RPMs until this PR is merged to main."
     tlab_pause
     mac_policy_best_practices
@@ -97,7 +97,7 @@ mac_serve_repo() {
         repo_host="REPO_HOST"
     fi
     if [[ -z "${repo_host}" ]]; then
-        echo "Set REPO_HOST in scripts/lab.env (the address both VMs can reach on this Mac)." >&2
+        echo "Set REPO_HOST in lab/lab.env (the address both VMs can reach on this Mac)." >&2
         exit 1
     fi
     tlab_explain "UTM does not route one VM to the other. rsync the published repo to this Mac and serve it on ${repo_host}. The private key stays on rhel-qa."
@@ -115,7 +115,7 @@ mac_ship_prod() {
     tlab_explain "rpmsign comes from rpm-sign. Without createrepo_c the repo has no metadata and dnf on prod finds nothing."
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'rpm -q rpm-build rpm-sign createrepo_c >/dev/null 2>&1 || sudo dnf install -y rpm-build rpm-sign createrepo_c'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && sepac build --allow-dirty'"
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash scripts/lab_signing_setup.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash lab/lab_signing_setup.sh'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && sepac publish --env-file dist/lab-signing.env'"
     mac_serve_repo
     tlab_pause
@@ -196,38 +196,38 @@ fi
 tlab_pause
 
 tlab_print_section "Part 1 — Can the Mac reach the VMs?"
-e2e_run "bash scripts/setup_rhel_hosts.sh write --qa-host ${DEV_HOST} --prod-host ${PROD_HOST} --user ${E2E_SSH_USER}"
+e2e_run "bash lab/setup_rhel_hosts.sh write --qa-host ${DEV_HOST} --prod-host ${PROD_HOST} --user ${E2E_SSH_USER}"
 tlab_checkpoint "You should see Wrote …inventory.dev.yml and …inventory.production.yml (app_name shopapi)."
 tlab_pause
 
-e2e_run "bash scripts/setup_rhel_hosts.sh ping"
+e2e_run "bash lab/setup_rhel_hosts.sh ping"
 tlab_checkpoint "SUCCESS / pong for rhel-qa and rhel-prod."
 tlab_pause
 
-e2e_run "bash scripts/setup_rhel_hosts.sh doctor"
+e2e_run "bash lab/setup_rhel_hosts.sh doctor"
 tlab_checkpoint "Each host prints Enforcing, then paths to ausearch and sesearch."
 tlab_pause
 
 tlab_explain "rsync copies this tool checkout onto rhel-qa (shopapi lives here). Prod gets the shopapi bundle — no git clone."
-e2e_run "bash scripts/sync_rhel_dev.sh"
+e2e_run "bash lab/sync_rhel_dev.sh"
 mac_copy_prod_bundle
 tlab_pause
 
-e2e_run "bash scripts/setup_rhel_hosts.sh bootstrap"
+e2e_run "bash lab/setup_rhel_hosts.sh bootstrap"
 tlab_pause
 
 if [[ "${E2E_SHORT}" -eq 1 ]]; then
     e2e_handoff "On the QA VM window run:
-  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app --all-urls
+  bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part app --all-urls
 That installs shopapi with the types-only seed and curls /health /state /log AND /feature-spool.
 Press Enter here when ausearch shows shopapi denials." \
-        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
 else
     e2e_handoff "On the QA VM window run:
-  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app
+  bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part app
 That installs shopapi with the types-only seed and curls /health /state /log (not /feature-spool).
 Press Enter here when ausearch shows shopapi denials." \
-        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
 fi
 
 tlab_explain "Copy the JAR QA just built so prod does not need Maven."
@@ -241,10 +241,10 @@ Press Enter here when curl /health returns 200." \
     "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part app $(e2e_auto_flags)'"
 
 e2e_handoff "On the QA VM window run:
-  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate
+  bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part generate
 That reads the audit log and writes the first real shopapi.te from those AVCs.
 Press Enter here when compile_and_validate has built selinux/shopapi/shopapi.pp." \
-    "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate $(e2e_auto_flags)'"
+    "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part generate $(e2e_auto_flags)'"
 
 tlab_print_section "Part 4 — Copy generated policy and open a GitHub PR"
 mac_scp_generated_from_dev
@@ -291,9 +291,9 @@ curl /health and /feature-spool should return 200 again. Press Enter here when t
     tlab_pause
 
     e2e_handoff "On the QA VM window generate from the prod log:
-  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export
+  bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part generate --skip-export
 Press Enter here when the second compile finishes." \
-        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part generate --skip-export $(e2e_auto_flags)'"
 
     mac_scp_generated_from_dev
     tlab_pause

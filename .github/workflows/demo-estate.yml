@@ -11,18 +11,18 @@ on:
       - main
     paths:
       - "demo/**"
-      - "scripts/demo_present.sh"
-      - "scripts/demo_bootstrap.sh"
-      - "scripts/lib/demo_estate.sh"
+      - "lab/demo_present.sh"
+      - "lab/demo_bootstrap.sh"
+      - "lab/lib/demo_estate.sh"
       - "selinux/shopapi/**"
       - "config/shopapi.manifest.yml"
       - ".github/workflows/demo-estate.yml"
   pull_request:
     paths:
       - "demo/**"
-      - "scripts/demo_present.sh"
-      - "scripts/demo_bootstrap.sh"
-      - "scripts/lib/demo_estate.sh"
+      - "lab/demo_present.sh"
+      - "lab/demo_bootstrap.sh"
+      - "lab/lib/demo_estate.sh"
       - "selinux/shopapi/**"
       - "config/shopapi.manifest.yml"
       - ".github/workflows/demo-estate.yml"
@@ -36,11 +36,11 @@ jobs:
       - name: Install Python deps for manifest parse
         run: pip3 install -q -r cli/requirements.txt
       - name: Customer dry-run (no SELinux, no JVM)
-        run: bash scripts/demo_present.sh --dry-run --no-type --auto --profile customer
+        run: bash lab/demo_present.sh --dry-run --no-type --auto --profile customer
       - name: Technical dry-run
-        run: bash scripts/demo_present.sh --dry-run --no-type --auto --profile technical
+        run: bash lab/demo_present.sh --dry-run --no-type --auto --profile technical
       - name: Syntax-check bootstrap
-        run: bash -n scripts/demo_bootstrap.sh && bash -n scripts/demo_present.sh && bash -n scripts/lib/demo_estate.sh
+        run: bash -n lab/demo_bootstrap.sh && bash -n lab/demo_present.sh && bash -n lab/lib/demo_estate.sh
       - name: Types-only module has no JVM cookbook allows
         run: |
           if grep -E '^[[:space:]]*allow.*(execmem|execstack|dac_override)' selinux/shopapi/shopapi.te; then

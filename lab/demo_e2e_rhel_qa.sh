@@ -4,13 +4,13 @@
 #
 # Run ON rhel-qa, not on the Mac. Demo app is Spring Boot shopapi.
 # This is one window of the ~45 min three-host walkthrough (see demo_e2e_mac.sh).
-# Single-host customer talk (~20 min): bash scripts/demo_present.sh
+# Single-host customer talk (~20 min): bash lab/demo_present.sh
 #
 # Legacy filename demo_e2e_rhel_dev.sh still execs this file (remove after 2026-12-31).
 #
-#   bash scripts/demo_e2e_rhel_qa.sh --part app
-#   bash scripts/demo_e2e_rhel_qa.sh --part generate
-#   bash scripts/demo_e2e_rhel_qa.sh --part generate --skip-export
+#   bash lab/demo_e2e_rhel_qa.sh --part app
+#   bash lab/demo_e2e_rhel_qa.sh --part generate
+#   bash lab/demo_e2e_rhel_qa.sh --part generate --skip-export
 #
 set -euo pipefail
 
@@ -22,16 +22,16 @@ if [[ -f "${SCRIPT_DIR}/lib/e2e_demo.sh" ]]; then
     source "${SCRIPT_DIR}/lib/e2e_demo.sh"
     # shellcheck source=lib/demo_estate.sh
     source "${SCRIPT_DIR}/lib/demo_estate.sh"
-elif [[ -f "${HOME}/selinux-pac/scripts/lib/e2e_demo.sh" ]]; then
+elif [[ -f "${HOME}/selinux-pac/lab/lib/e2e_demo.sh" ]]; then
     # shellcheck source=lib/training_lab_runner.sh
-    source "${HOME}/selinux-pac/scripts/lib/training_lab_runner.sh"
+    source "${HOME}/selinux-pac/lab/lib/training_lab_runner.sh"
     # shellcheck source=lib/e2e_demo.sh
-    source "${HOME}/selinux-pac/scripts/lib/e2e_demo.sh"
+    source "${HOME}/selinux-pac/lab/lib/e2e_demo.sh"
     # shellcheck source=lib/demo_estate.sh
-    source "${HOME}/selinux-pac/scripts/lib/demo_estate.sh"
-    SCRIPT_DIR="${HOME}/selinux-pac/scripts"
+    source "${HOME}/selinux-pac/lab/lib/demo_estate.sh"
+    SCRIPT_DIR="${HOME}/selinux-pac/lab"
 else
-    echo "Cannot find scripts/lib/e2e_demo.sh. On this VM: cd ~/selinux-pac && git pull" >&2
+    echo "Cannot find lab/lib/e2e_demo.sh. On this VM: cd ~/selinux-pac && git pull" >&2
     exit 1
 fi
 
@@ -106,7 +106,7 @@ part_app() {
     tlab_pause
 
     tlab_explain "--shopapi-only installs the system JVM, the shopapi_exec_t wrapper at /opt/shopapi/bin/shopapi, and the types-only seed. No SELinuxContext= line: init_daemon_domain transitions from init_t. Permissive shopapi_t logs denials without blocking. Do not curl /feature-spool yet."
-    e2e_run "sudo bash scripts/demo_bootstrap.sh --shopapi-only"
+    e2e_run "sudo bash lab/demo_bootstrap.sh --shopapi-only"
     tlab_pause
 
     e2e_run "getenforce"

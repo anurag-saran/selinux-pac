@@ -193,7 +193,7 @@ def _validate_env(env: str) -> Path:
     if not inv.is_file():
         print(
             f"No inventory for --env {env} (looked for {inv}).\n"
-            f"Create it: bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …",
+            f"Create it: bash lab/setup_rhel_hosts.sh write --qa-host … --prod-host …",
             file=sys.stderr,
         )
         raise SystemExit(2)

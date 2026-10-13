@@ -81,13 +81,13 @@ The soak gate fails closed when `sesearch` is missing. `cli/soak_net_new.py` set
 
 **Commands.** `sepolicy-generate -a <domain> -t unconfined_t`, then copy `.te`, `.fc`, and `.if` only when those files are missing.
 
-## scripts/demo_bootstrap.sh
+## lab/demo_bootstrap.sh
 
 **Replaces** 104 prep P1–P10. `--shopapi-only` skips Tomcat.
 
 **Commands, in order.** `dnf install`, `groupadd` / `useradd`, `mkdir`, Maven package and `cp` of the jar, install the wrapper, write the unit with no `SELinuxContext=`, `compile_and_validate.sh`, `semodule -i`, `restorecon -Rv`, `semanage port`, `semanage permissive -a`, `systemctl enable --now`.
 
-## scripts/demo_present.sh
+## lab/demo_present.sh
 
 **Replaces** the talk, not a 104 lab. The customer guide is [301](../demo/301-CUSTOMER.md).
 
@@ -119,19 +119,19 @@ The soak gate fails closed when `sesearch` is missing. `cli/soak_net_new.py` set
 
 **Commands.** `matchpathcon` against the manifest paths, and a `restorecon -n` style check. Exit non-zero when a path would still change.
 
-## scripts/reset_demo_vms.sh
+## lab/reset_demo_vms.sh
 
 **Replaces** nothing in 104. Between rehearsals, from the Mac.
 
 **Commands.** SSH to the VMs. `semodule -r` leftover shopapi modules. `semanage permissive -d`. `semanage port -d` and `semanage fcontext -d` for the App B tune. Writes an epoch into the ausearch-since marker. Does not stop `auditd` and does not delete `/var/log/audit/audit.log`.
 
-## scripts/lab_signing_setup.sh
+## lab/lab_signing_setup.sh
 
 **Replaces** nothing in 104.
 
 **Commands.** `gpg --quick-gen-key`, `gpg --armor --export` of the public key only, write a `dnf` repo file with `gpgcheck=1`. `--print-secret` exits 1. Do not commit the private key.
 
-## scripts/setup_rhel_hosts.sh
+## lab/setup_rhel_hosts.sh
 
 **Inputs.** `--qa-host`, `--prod-host`. **Outputs.** `ansible/inventory.dev.yml` and `inventory.production.yml` (gitignored). **Commands.** `ansible-playbook` ping. No `semodule`.
 

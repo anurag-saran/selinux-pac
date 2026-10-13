@@ -12,7 +12,7 @@ This document is the **single reference** for how this repository tests SELinux 
 
 Related: concepts in **[101](../training/101-CONCEPTS.md)**; commands in **[102](../training/102-COMMANDS.md)**; the hand-built lab in **[104](../training/104-HAND-BUILT-MODULE.md)**; the customer talk in **[301](301-CUSTOMER.md)**; tool commands in **[201](../tool/201-TOOL-COMMANDS.md)**. **Catalog:** [`README.md`](../README.md). The soak gate fails closed when `sesearch` is missing ([201](../tool/201-TOOL-COMMANDS.md#scriptsmonitor_avcsh)).
 
-**Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([302-TECHNICAL.md](302-TECHNICAL.md)).
+**Convention:** **Repo root** = directory with `Makefile` and `scripts/`. Offline `make check` uses deterministic goldens (`selinux/myapp/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules. Live probes run on **RHEL** against **shopapi** ([302-TECHNICAL.md](302-TECHNICAL.md)).
 
 ---
 
@@ -21,7 +21,7 @@ Related: concepts in **[101](../training/101-CONCEPTS.md)**; commands in **[102]
 Spring Boot **shopapi** exposes first-ship HTTP probes on port **8091**. Each path is a SELinux surface. They are exercised by:
 
 - [`scripts/wait_for_endpoints.sh`](../../scripts/wait_for_endpoints.sh) (canary, enforce, rollback — batch readiness, no AVC narration)
-- [`scripts/demo_present.sh`](../../scripts/demo_present.sh) / [`scripts/demo_bootstrap.sh`](../../scripts/demo_bootstrap.sh) on RHEL
+- [`lab/demo_present.sh`](../../lab/demo_present.sh) / [`lab/demo_bootstrap.sh`](../../lab/demo_bootstrap.sh) on RHEL
 - Manifest `http.endpoints` in [`config/shopapi.manifest.yml`](../../config/shopapi.manifest.yml)
 
 Do **not** curl `/feature-spool` during first-ship. That path is the outage beat after enforce.
@@ -36,7 +36,7 @@ Do **not** curl `/feature-spool` during first-ship. That path is the outage beat
 
 - Dedicated port type (`shopapi_port_t`), not blanket `unreserved_port_t`.
 - systemd starts `/opt/shopapi/bin/shopapi` (`shopapi_exec_t`). There is no `SELinuxContext=` line.
-- Offline generator tests use committed **`selinux/myapp.te`** / **`config/myapp.manifest.yml`** — that module is not a live app.
+- Offline generator tests use committed **`selinux/myapp/myapp.te`** / **`config/myapp.manifest.yml`** — that module is not a live app.
 
 **Manual run (RHEL host after `make demo-bootstrap`):**
 
@@ -77,7 +77,7 @@ python3 scripts/lib/app_manifest.py shell-export config/myapp.manifest.yml
 | **Where** | **Repo root** on your laptop or CI — macOS is fine |
 | **Why** | Same offline suite the `offline-tests` job runs, plus linters |
 
-`make deps` creates `.venv` and installs into it, so a host that blocks system pip still works. `make test` depends on that venv, then runs deterministic fixtures, blast-radius fixtures, tune-report fixtures, the static validators (forbidden patterns for `myapp`, `shopapi`, and `payments`, version, RPM parity, manifests), and `scripts/smoke_test.py`. `make check` is `make test` plus `make lint` (linters skip when they are not installed). No SELinux host is required.
+`make deps` creates `.venv` and installs into it, so a host that blocks system pip still works. `make test` depends on that venv, then runs deterministic fixtures, blast-radius fixtures, tune-report fixtures, the static validators (forbidden patterns for `myapp`, `shopapi`, and `payments`, version, RPM parity, manifests), and `tests/smoke_test.py`. `make check` is `make test` plus `make lint` (linters skip when they are not installed). No SELinux host is required.
 
 ```bash
 make check
@@ -87,14 +87,14 @@ make help
 
 ---
 
-## 2. `scripts/smoke_test.py` (`make test-smoke`)
+## 2. `tests/smoke_test.py` (`make test-smoke`)
 
 Runs offline — **no SELinux required** for most tests. The `offline-tests` job runs this file as part of `make test` on every pull request.
 
 ```bash
 make test-smoke
 # or:
-python3 scripts/smoke_test.py
+python3 tests/smoke_test.py
 ```
 
 | Test name | What it verifies |
@@ -139,7 +139,7 @@ python3 scripts/smoke_test.py
 
 | Step | Command | Needs SELinux host? |
 |------|---------|---------------------|
-| CLI + smoke | `python3 scripts/smoke_test.py` | No |
+| CLI + smoke | `python3 tests/smoke_test.py` | No |
 | Forbidden patterns | `bash scripts/validate_forbidden_patterns.sh selinux` | No |
 | Compile | `bash scripts/compile_and_validate.sh selinux` | Yes — `selinux-policy-devel` on **rhel-qa** |
 | Semantic assertions | `bash scripts/validate_policy_semantics.sh selinux` | Yes — rhel-qa |
@@ -180,9 +180,9 @@ Then set the repository variable `RUNNER` to `rhel9-utm`. That value selects no 
 
 A public repository that uses a self-hosted runner must require approval before workflows from outside collaborators run, or the repository must be private. A pull request from a fork can otherwise run code on the VM.
 
-`make vm-check` is the same compile list on the QA VM, not on the runner. Copy `scripts/lab.env.example` to `scripts/lab.env`, set `QA_HOST`, `PROD_HOST`, and `SSH_USER`, then run `make vm-check`. It syncs the checkout and prints one PASS or FAIL line per check. The last line is `host-unchanged`: `semodule -l` must not list `bypass_*` or `pac_control`.
+`make vm-check` is the same compile list on the QA VM, not on the runner. Copy `lab/lab.env.example` to `lab/lab.env`, set `QA_HOST`, `PROD_HOST`, and `SSH_USER`, then run `make vm-check`. It syncs the checkout and prints one PASS or FAIL line per check. The last line is `host-unchanged`: `semodule -l` must not list `bypass_*` or `pac_control`.
 
-Compiled `selinux/myapp.pp` is **not** committed to Git.
+Compiled `selinux/myapp/myapp.pp` is **not** committed to Git.
 
 ---
 

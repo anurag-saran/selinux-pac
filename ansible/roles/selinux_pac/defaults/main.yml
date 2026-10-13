@@ -16,7 +16,7 @@ policy_artifact_dir: "{{ playbook_dir }}/.."
 policy_pp_src: ""
 policy_staging_path: /var/lib/selinux-policy-staging/{{ app_name | default('myapp') }}.pp
 
-# policy_version is loaded from selinux/policy_version.txt in tasks/main.yml (not duplicated here).
+# policy_version is loaded from selinux/myapp/policy_version.txt in tasks/main.yml (not duplicated here).
 selinux_pac_package: "{{ app_name | default('myapp') }}-selinux-{{ policy_version }}"
 
 # Rollback via dnf (e.g. 1.1.1-1); empty skips downgrade.

@@ -19,13 +19,13 @@ Sync to \$QA_HOST, then run:
   make integration-compile
   make integration-semantics
   bash scripts/reject_compiled_bypasses.sh
-  bash scripts/test_avc_epoch_window.sh
-  bash scripts/test_avc_query_epoch.sh
+  bash tests/test_avc_epoch_window.sh
+  bash tests/test_avc_query_epoch.sh
   make integration-blast-radius
 
 After those, semodule -l on the host must not list bypass_* or pac_control.
 
-Requires QA_HOST, PROD_HOST, and SSH_USER (scripts/lab.env).
+Requires QA_HOST, PROD_HOST, and SSH_USER (lab/lab.env).
 EOF
 }
 
@@ -64,8 +64,8 @@ policy_before="$(ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo -n sha256sum /sys/fs/sel
 run_check integration-compile make integration-compile
 run_check integration-semantics make integration-semantics
 run_check reject_compiled_bypasses bash scripts/reject_compiled_bypasses.sh
-run_check test_avc_epoch_window bash scripts/test_avc_epoch_window.sh
-run_check test_avc_query_epoch bash scripts/test_avc_query_epoch.sh
+run_check test_avc_epoch_window bash tests/test_avc_epoch_window.sh
+run_check test_avc_query_epoch bash tests/test_avc_query_epoch.sh
 run_check integration-blast-radius make integration-blast-radius
 
 policy_after="$(ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo -n sha256sum /sys/fs/selinux/policy")"

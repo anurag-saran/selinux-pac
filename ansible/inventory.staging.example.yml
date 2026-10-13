@@ -1,6 +1,6 @@
 # Copy to ansible/inventory.staging.yml when Ansible runs *on* the staging host
 # (ansible_connection: local). Two-host SSH from a laptop: use inventory.dev.yml
-# (see inventory.dev.example.yml and scripts/setup_rhel_hosts.sh).
+# (see inventory.dev.example.yml and lab/setup_rhel_hosts.sh).
 
 all:
   hosts:

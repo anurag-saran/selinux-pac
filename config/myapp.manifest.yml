@@ -40,7 +40,7 @@ selinux_ports:
     type: myapp_backend_port_t
 
 policy:
-  module_dir: selinux
+  module_dir: selinux/myapp
   service_name: myapp.service
 
 deploy:

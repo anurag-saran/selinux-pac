@@ -78,7 +78,7 @@ See [`docs/demo/303-TESTING.md`](../docs/demo/303-TESTING.md) for the full test-
 
 ## Ansible inventory
 
-**Two-host inventories:** `bash scripts/setup_rhel_hosts.sh write --dev-host … --prod-host …` ([302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md)).
+**Two-host inventories:** `bash lab/setup_rhel_hosts.sh write --dev-host … --prod-host …` ([302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md)).
 
 **Laptop / AAP controller → RHEL target** (two-host lab). `playbook_dir` is the controller path — use it only for artifacts copied onto the host:
 
@@ -98,4 +98,4 @@ vars:
 
 **Ansible on the same host** (`connection: local`) may use `playbook_dir` for `selinux_ops_dir` and `app_manifest_path`.
 
-**Production:** install `<app>-selinux` RPM — manifest at **`/etc/<app>/selinux-manifest.yml`**. Keep bind ports in the manifest; set `http_probe_host` (or `http.host`) to the canary IP/VIP. Module SemVer is read from **`selinux/policy_version.txt`** under `policy_artifact_dir` (not duplicated in inventory).
+**Production:** install `<app>-selinux` RPM — manifest at **`/etc/<app>/selinux-manifest.yml`**. Keep bind ports in the manifest; set `http_probe_host` (or `http.host`) to the canary IP/VIP. Module SemVer is read from **`selinux/myapp/policy_version.txt`** under `policy_artifact_dir` (not duplicated in inventory).

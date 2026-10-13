@@ -80,12 +80,12 @@ part_app() {
     e2e_run "sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml policycoreutils policycoreutils-python-utils"
     tlab_pause
 
-    if [[ ! -f "${APP_BUNDLE}/scripts/demo_bootstrap.sh" ]]; then
-        echo "Missing ${APP_BUNDLE}/scripts/demo_bootstrap.sh. On the Mac, finish the scp, then re-run --part app." >&2
+    if [[ ! -f "${APP_BUNDLE}/lab/demo_bootstrap.sh" ]]; then
+        echo "Missing ${APP_BUNDLE}/lab/demo_bootstrap.sh. On the Mac, finish the scp, then re-run --part app." >&2
         exit 1
     fi
     tlab_explain "--shopapi-only --no-seed --unconfined: JVM + unit, no shopapi_t yet (java is unconfined until the RPM)."
-    e2e_run "sudo bash ${APP_BUNDLE}/scripts/demo_bootstrap.sh --shopapi-only --no-seed --unconfined"
+    e2e_run "sudo bash ${APP_BUNDLE}/lab/demo_bootstrap.sh --shopapi-only --no-seed --unconfined"
     e2e_run "sepac status shopapi"
     e2e_run "curl -sf http://127.0.0.1:${SHOP_PORT}/health"
     tlab_checkpoint "shopapi is up unconfined. Go back to the Mac. Policy is not installed yet."

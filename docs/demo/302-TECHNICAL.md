@@ -4,7 +4,7 @@ This is the meeting after [301](301-CUSTOMER.md). 301 is one host and about 20 m
 
 **LAST_VERIFIED:** 2026-10-09 — live Mac + rhel-qa + rhel-prod. The host stayed Enforcing. Prod printed `HTTP/1.0 200 OK` for the repo key, then the soak gate refused, and the demo ended with `shopapi_t` enforcing.
 
-**Short happy path (~20 min):** `bash scripts/demo_e2e_mac.sh --short`. Generates a complete module (all four URLs including `/feature-spool`) on QA, then ships to prod. Soak passes on the first try. No outage, no rollback, no second generate. The demo still ends enforcing.
+**Short happy path (~20 min):** `bash lab/demo_e2e_mac.sh --short`. Generates a complete module (all four URLs including `/feature-spool`) on QA, then ships to prod. Soak passes on the first try. No outage, no rollback, no second generate. The demo still ends enforcing.
 
 The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
 
@@ -26,7 +26,7 @@ Press Enter when a window says `Press Enter`. Look at the prompt before you past
 
 | Window | Prompt you must see | Start |
 |--------|---------------------|--------|
-| **Mac** | `$USER@… selinux-pac %` | `cd` to this repo, then `bash scripts/demo_e2e_mac.sh` |
+| **Mac** | `$USER@… selinux-pac %` | `cd` to this repo, then `bash lab/demo_e2e_mac.sh` |
 | **QA** | `[ansible@rhel-qa ~]$` | `ssh $SSH_USER@$QA_HOST` |
 | **Prod** | `[ansible@rhel-prod ~]$` | `ssh $SSH_USER@$PROD_HOST` |
 
@@ -35,12 +35,12 @@ Press Enter when a window says `Press Enter`. Look at the prompt before you past
 A second run on the same VMs starts on the **Mac**:
 
 ```bash
-bash scripts/reset_demo_vms.sh
+bash lab/reset_demo_vms.sh
 ```
 
 That unloads leftover shopapi modules and prod RPMs, puts the types-only seed back, and writes `/var/lib/selinux-pac-demo/ausearch-since`. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp. It does not remove Java.
 
-To read the narration on a laptop without the VMs: `bash scripts/demo_e2e_mac.sh --dry-run`.
+To read the narration on a laptop without the VMs: `bash lab/demo_e2e_mac.sh --dry-run`.
 
 ## Part 1 — Mac: can you reach both VMs?
 
@@ -56,20 +56,20 @@ flowchart LR
 Say: this laptop is the remote control. QA is where we discover denials. Prod never gets a git clone.
 
 ```bash
-bash scripts/setup_rhel_hosts.sh write --qa-host "$QA_HOST" --prod-host "$PROD_HOST" --user "$SSH_USER"
-bash scripts/setup_rhel_hosts.sh ping
-bash scripts/setup_rhel_hosts.sh doctor
+bash lab/setup_rhel_hosts.sh write --qa-host "$QA_HOST" --prod-host "$PROD_HOST" --user "$SSH_USER"
+bash lab/setup_rhel_hosts.sh ping
+bash lab/setup_rhel_hosts.sh doctor
 ```
 
 `write` creates the two inventory files the later playbooks use. They name shopapi, the policy package, and the manifest. `ping` prints `SUCCESS` and `pong` for both VMs. `doctor` prints `Enforcing` and the paths to `ausearch` and `sesearch`.
 
 ```bash
-bash scripts/sync_rhel_dev.sh
+bash lab/sync_rhel_dev.sh
 ```
 
 `sync_rhel_dev.sh` copies this checkout onto QA at `~/selinux-pac`. The script then `scp`s a small bundle to prod at `~/e2e-demo`. Prod still has no clone of the repo.
 
-`bash scripts/setup_rhel_hosts.sh bootstrap` installs the packages the later steps need. When it finishes, switch to the QA window.
+`bash lab/setup_rhel_hosts.sh bootstrap` installs the packages the later steps need. When it finishes, switch to the QA window.
 
 ## Part 2 — QA: install shopapi and collect denials
 
@@ -78,7 +78,7 @@ Replaces [104 prep](../training/104-HAND-BUILT-MODULE.md#prep) via [demo_bootstr
 The Mac tells you to run:
 
 ```bash
-bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app
+bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part app
 ```
 
 ```mermaid
@@ -101,7 +101,7 @@ Replaces [104 lab 3](../training/104-HAND-BUILT-MODULE.md#lab-3--write-the-allow
 Still on QA, when the Mac says so:
 
 ```bash
-bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate
+bash ~/selinux-pac/lab/demo_e2e_rhel_qa.sh --part generate
 ```
 
 ```mermaid
@@ -179,7 +179,7 @@ Real use builds the RPMs only after the PR is on `main`. This rehearsal does not
 On the machine that publishes, create the lab key and the local repo once. The script writes a public key and a repo file with `gpgcheck=1`. It does not print the private key.
 
 ```bash
-bash scripts/lab_signing_setup.sh
+bash lab/lab_signing_setup.sh
 ```
 
 Run that on rhel-qa. The private key stays there. rhel-qa builds and signs the RPMs. UTM does not route one VM to the other, so the conductor rsyncs `dist/lab-repo` onto the Mac and serves it there. The copy has the public key, the signed RPMs, and repodata, and not the private key. Prod curls `http://<REPO_HOST>:8765/RPM-GPG-KEY` and should print `HTTP/1.0 200 OK`. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.

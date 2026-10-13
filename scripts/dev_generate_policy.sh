@@ -348,7 +348,7 @@ export_avcs() {
     export_app_avcs_to_file "${AVC_LOG}" boot "${PRIMARY_DOMAIN}" "${BACKEND_DOMAIN:-}" "${PATHS_CSV}"
     [[ -s "${AVC_LOG}" ]] || {
         log_error "No AVC lines in ${AVC_LOG}. Exercise the app first (shopapi: curl /health /state /log)."
-        echo "  sudo bash scripts/demo_bootstrap.sh --shopapi-only"
+        echo "  sudo bash lab/demo_bootstrap.sh --shopapi-only"
         echo "  curl http://127.0.0.1:8091/health"
         exit 1
     }
@@ -439,7 +439,7 @@ open_pr() {
     git -C "${APP_ROOT}" add \
         "selinux/${APP_NAME}.te" \
         "selinux/${APP_NAME}.fc" \
-        "selinux/policy_version.txt"
+        "selinux/myapp/policy_version.txt"
     if git -C "${APP_ROOT}" diff --cached --quiet; then
         log_error "Nothing to commit — run with --apply after generation"
         return 1

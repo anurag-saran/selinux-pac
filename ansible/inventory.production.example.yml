@@ -1,6 +1,6 @@
 # Prod RHEL box (canary → soak → enforce).
 # Copy to ansible/inventory.production.yml (gitignored) or generate with:
-#   bash scripts/setup_rhel_hosts.sh write --dev-host HOST --prod-host HOST
+#   bash lab/setup_rhel_hosts.sh write --dev-host HOST --prod-host HOST
 #
 # One host is both the canary group and the production group. Add more names
 # under production: when you grow a fleet.

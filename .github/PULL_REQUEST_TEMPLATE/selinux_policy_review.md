@@ -41,10 +41,10 @@ labels:
 
 ### 3. Generated Files Included in PR
 
-- [ ] `selinux/myapp.te` (Type Enforcement)
-- [ ] `selinux/myapp.fc` (File Contexts)
-- [ ] `selinux/policy_version.txt` (SemVer bump — must match `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
-- [ ] `selinux/myapp.if` — N/A (standalone demo module)
+- [ ] `selinux/myapp/myapp.te` (Type Enforcement)
+- [ ] `selinux/myapp/myapp.fc` (File Contexts)
+- [ ] `selinux/myapp/policy_version.txt` (SemVer bump — must match `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
+- [ ] `selinux/myapp/myapp.if` — N/A (standalone demo module)
 - [ ] `selinux/payments/payments.if` — updated if this PR touches cross-module interfaces (see [201 — Add an application](../../docs/tool/201-TOOL-COMMANDS.md#add-an-application))
 
 ---

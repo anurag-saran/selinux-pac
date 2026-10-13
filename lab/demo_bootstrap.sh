@@ -6,8 +6,8 @@
 # JWS repo missing → upstream Tomcat + tomcat_t (same narrative).
 #
 # Usage:
-#   sudo bash scripts/demo_bootstrap.sh
-#   sudo bash scripts/demo_bootstrap.sh --shopapi-only --no-seed --unconfined
+#   sudo bash lab/demo_bootstrap.sh
+#   sudo bash lab/demo_bootstrap.sh --shopapi-only --no-seed --unconfined
 #   make demo-bootstrap
 #
 set -euo pipefail
@@ -41,11 +41,11 @@ export DEMO_SHOPAPI_CONFINED
 require_linux_root() {
     if [[ "$(uname -s)" != "Linux" ]]; then
         echo "make demo-bootstrap must run on RHEL or CentOS Stream (dnf, systemd, SELinux)."
-        echo "On this laptop: bash scripts/demo_present.sh --dry-run --profile customer"
+        echo "On this laptop: bash lab/demo_present.sh --dry-run --profile customer"
         exit 2
     fi
     if [[ "$(id -u)" -ne 0 ]]; then
-        die "run as root (sudo bash scripts/demo_bootstrap.sh)"
+        die "run as root (sudo bash lab/demo_bootstrap.sh)"
     fi
 }
 
