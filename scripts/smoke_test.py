@@ -1116,19 +1116,19 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
     assert "/feature-spool" in gate
     assert "e2e_run_expect_fail" in gate
-    assert "soak_monitor.yml" in gate
-    assert "enforce_production.yml -e change_ticket=DEMO\"" in gate
-    assert "force_enforce=true" not in gate
+    assert "sepac soak --env production" in gate
+    assert "sepac enforce --env production --ticket DEMO" in gate
+    assert "--break-glass" not in gate
     clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "soak-clean" in clean
-    assert "skip_soak_days=true" in clean
-    assert "force_enforce=true" not in clean
+    assert "--skip-soak-days" in clean
+    assert "--break-glass" not in clean
     assert "day count" in clean
     talk = mac.split("Part 6 — Prod soak refuses", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
-    glass = talk.find("break_glass_reason")
+    glass = talk.find("--break-glass")
     fail = talk.find("--part fail")
-    rollback = talk.find("emergency_rollback.yml")
+    rollback = talk.find("sepac rollback")
     fix = talk.find("--part generate --skip-export")
     recanary = talk.find("mac_ship_prod recanary")
     ends = talk.find("shopapi_t enforcing")
@@ -1170,10 +1170,10 @@ def test_demo_outage_before_fix_dry_run() -> None:
         )
     out = run.stdout + run.stderr
     assert run.returncode == 0, out
-    refuse = out.find("enforce_production.yml -e change_ticket=DEMO")
-    glass = out.find("break_glass_reason=")
+    refuse = out.find("sepac enforce --env production --ticket DEMO")
+    glass = out.find("--break-glass")
     fail = out.find("--part fail")
-    rollback = out.find("emergency_rollback.yml")
+    rollback = out.find("sepac rollback --env production")
     fix = out.find("--part generate --skip-export")
     clean = out.find("--part soak-clean")
     ends = out.find("shopapi_t enforcing")
@@ -1218,9 +1218,9 @@ def test_demo_e2e_scripts_dry_run() -> None:
         assert mac_short_run.returncode == 0, mac_short_out
         assert "short happy path" in mac_short_out
         assert "--all-urls" in mac_short_out
-        assert "break_glass_reason" not in mac_short_out
-        assert "emergency_rollback" not in mac_short_out
-        assert "enforce_production" in mac_short_out
+        assert "--break-glass" not in mac_short_out
+        assert "sepac rollback" not in mac_short_out
+        assert "sepac enforce" in mac_short_out
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,
@@ -1242,7 +1242,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
         if "e2e_run" in line:
             assert "git pull" not in line, f"e2e_run must not git pull: {line}"
             assert "git checkout" not in line, f"e2e_run must not git checkout: {line}"
-    assert "BUILD_RPMS_ALLOW_DIRTY=1" in mac_text
+    assert "sepac build --allow-dirty" in mac_text
     # Bind address: never 0.0.0.0, never fall back to DEV_HOST
     assert "--bind 0.0.0.0" not in mac_text
     assert 'REPO_HOST:-${DEV_HOST}' not in mac_text

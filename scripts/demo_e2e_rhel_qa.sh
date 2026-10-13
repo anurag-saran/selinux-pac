@@ -146,15 +146,15 @@ part_generate() {
         tlab_why "Prod captured the /feature-spool denial. We do not generate on prod."
         e2e_run "ls -l ${APP_ROOT}/policy_out/avc.log; wc -l ${APP_ROOT}/policy_out/avc.log"
         tlab_pause
-        e2e_run "sudo bash scripts/dev_generate_policy.sh --skip-export --apply --allow-needs-review --app-name shopapi --app-root ${APP_ROOT}"
+        e2e_run "sepac generate shopapi --skip-export --apply --approve execmem"
     else
-        tlab_why "shopapi_t is permissive. First-ship curls logged denials. --apply writes allows into selinux/shopapi/. --allow-needs-review is only because this JVM log includes execmem — we do not invent it."
+        tlab_why "shopapi_t is permissive. First-ship curls logged denials. --apply writes allows into selinux/shopapi/. --approve execmem is only because this JVM log includes execmem — we do not invent it."
         e2e_run "sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi"
         tlab_pause
-        e2e_run "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ${APP_ROOT}"
+        e2e_run "sepac generate shopapi --apply --approve execmem"
     fi
-    e2e_run "bash scripts/compile_and_validate.sh ${APP_ROOT}/selinux/shopapi --app shopapi"
-    e2e_run "sudo semodule -i ${APP_ROOT}/selinux/shopapi/shopapi.pp"
+    e2e_run "sepac check shopapi"
+    e2e_run "sepac load shopapi"
     e2e_run "sudo semanage port -a -t shopapi_port_t -p tcp $(shop_port) 2>/dev/null || sudo semanage port -m -t shopapi_port_t -p tcp $(shop_port)"
     tlab_pause
     e2e_explain_selinux_tree "${APP_ROOT}"

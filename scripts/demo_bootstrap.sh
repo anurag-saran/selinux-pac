@@ -288,6 +288,8 @@ main() {
         verify_shopapi_label
         echo
         echo "=== shopapi-only bootstrap complete (confined=${DEMO_SHOPAPI_CONFINED} seed=${LOAD_SEED}) ==="
+        log "Installing sepac CLI"
+        make -C "${PROJECT_ROOT}" install-cli
         mkdir -p /etc/selinux-pac
         echo qa > /etc/selinux-pac/role
         chmod 0644 /etc/selinux-pac/role
@@ -310,6 +312,8 @@ main() {
     verify_shopapi_label
     echo
     echo "=== bootstrap complete ==="
+    log "Installing sepac CLI"
+    make -C "${PROJECT_ROOT}" install-cli
     mkdir -p /etc/selinux-pac
     echo qa > /etc/selinux-pac/role
     chmod 0644 /etc/selinux-pac/role

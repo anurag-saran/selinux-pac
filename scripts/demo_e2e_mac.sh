@@ -71,19 +71,19 @@ mac_open_policy_pr() {
 
 mac_policy_best_practices() {
     tlab_explain "Admin gate #2: forbidden-patterns on shopapi. The generator already ran this script. The pull request also runs offline-tests, compiled-policy, and version-consistency."
-    e2e_run "bash scripts/validate_forbidden_patterns.sh selinux/shopapi --app shopapi"
+    e2e_run "sepac check shopapi"
     e2e_run_allow_fail "command -v gh >/dev/null && gh pr checks || echo 'gh not logged in or no PR yet — local forbidden-patterns already passed'"
 }
 
 mac_canary_enforce_dev() {
     tlab_explain "Canary: Ansible copies shopapi.pp to ${DEV_HOST}, loads it, and puts ONLY shopapi_t in log-but-do-not-block mode. The whole OS stays Enforcing."
-    e2e_run "ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml"
+    e2e_run "sepac canary --env dev"
     tlab_checkpoint "failed=0. Recent shopapi_t events should be 0 raw / 0 net-new."
     tlab_pause
 
     tlab_lab_only_banner "Dev inventory waits 0 days so this talk can lock down. Never copy soak_min_days: 0 onto prod (inventory.production.yml stays at 7 days). The gate is real; QA is lab-only."
     tlab_explain "QA canary/enforce uses soak_min_days: 0. Production inventory is 7 days plus a change ticket."
-    e2e_run "ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e change_ticket=LAB"
+    e2e_run "sepac enforce --env dev --ticket LAB"
     tlab_checkpoint "failed=0. Host getenforce is still Enforcing; shopapi_t is no longer permissive."
 }
 
@@ -114,9 +114,9 @@ mac_ship_prod() {
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && grep -q corecmd_exec_bin selinux/shopapi/shopapi.te && echo generated module stays on rhel-qa'"
     tlab_explain "rpmsign comes from rpm-sign. Without createrepo_c the repo has no metadata and dnf on prod finds nothing."
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'rpm -q rpm-build rpm-sign createrepo_c >/dev/null 2>&1 || sudo dnf install -y rpm-build rpm-sign createrepo_c'"
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && BUILD_RPMS_ALLOW_DIRTY=1 bash packaging/build_rpms.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && sepac build --allow-dirty'"
     e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && bash scripts/lab_signing_setup.sh'"
-    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && bash packaging/publish_internal.sh'"
+    e2e_run "ssh ${E2E_SSH_USER}@${DEV_HOST} 'cd ~/selinux-pac && set -a && . dist/lab-signing.env && set +a && sepac publish --env-file dist/lab-signing.env'"
     mac_serve_repo
     tlab_pause
 
@@ -130,7 +130,7 @@ Press Enter here when that is what you showed." \
         "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms $(e2e_auto_flags)'"
 
     tlab_explain "inventory.production.yml talks to ${PROD_HOST}. Canary is the install."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary"
+    e2e_run "sepac canary --env production --limit canary"
     tlab_pause
 
     if [[ "${mode}" == "soak_demo" ]]; then
@@ -142,7 +142,7 @@ Press Enter here when the denial is on screen." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak $(e2e_auto_flags)'"
 
         tlab_explain "soak_monitor must fail. The spool write is not in the module we just shipped."
-        e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
+        e2e_run_expect_fail "sepac soak --env production --limit canary"
         tlab_pause
 
         e2e_handoff "On the PROD VM window run:
@@ -151,7 +151,7 @@ Press Enter here when the denial is on screen." \
             "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-avc $(e2e_auto_flags)'"
 
         tlab_explain "Enforce with neither flag. skip_soak_days skips only the day count and the daily history. force_enforce skips the marker, the AVC gate, net-new, the report, the day count, and the daily history, and it requires break_glass_reason. We pass neither."
-        e2e_run_expect_fail "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO"
+        e2e_run_expect_fail "sepac enforce --env production --ticket DEMO"
         tlab_checkpoint "The gate refused. shopapi_t stays permissive. We do not force_enforce a failed soak."
         return 0
     fi
@@ -162,13 +162,13 @@ Press Enter here when the denial is on screen." \
 /health /state /log /feature-spool should return 200, and ausearch should show no shopapi denial since this canary.
 Press Enter here when you have seen that." \
         "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part soak-clean $(e2e_auto_flags)'"
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary"
+    e2e_run "sepac soak --env production --limit canary"
     tlab_pause
     tlab_explain "soak_status is read-only. inventory.production.yml still wants 7 days. The AVC gate passed."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --limit canary"
+    e2e_run "sepac soak --status --env production --limit canary"
     tlab_pause
     tlab_explain "This recording cannot wait 7 days. skip_soak_days skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e skip_soak_days=true"
+    e2e_run "sepac enforce --env production --ticket DEMO --skip-soak-days"
     tlab_checkpoint "AVC gate passed. skip_soak_days recorded the day-count skip. shopapi_t is enforcing."
 }
 
@@ -182,6 +182,7 @@ mac_copy_prod_avc_to_dev() {
 e2e_parse_args "$@"
 e2e_require_mac
 cd "${PROJECT_ROOT}"
+export PATH="${PROJECT_ROOT}/bin:${PATH}"
 
 e2e_banner "MAC — the remote control (no SELinux on this laptop)"
 tlab_why "macOS cannot enforce SELinux. This window talks to two RHEL VMs over SSH: QA ${DEV_HOST} and prod ${PROD_HOST}."
@@ -266,7 +267,7 @@ else
     tlab_pause
 
     tlab_explain "Break-glass enforce of the first module. The spool allow is not in it, so /feature-spool returns 500. This skips the soak gate. It is not the clean enforce at the end."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true -e break_glass_reason='show the enforcing denial before the fix'"
+    e2e_run "sepac enforce --env production --ticket DEMO --break-glass 'show the enforcing denial before the fix'"
     tlab_pause
 
     e2e_handoff "On the PROD VM window run:
@@ -275,7 +276,7 @@ curl /feature-spool returns 500. The denial is shopapi_t and var_spool_t." \
         "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
 
     tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
-    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
+    e2e_run "sepac rollback --env production"
     tlab_pause
 
     e2e_handoff "On the PROD VM window run:
