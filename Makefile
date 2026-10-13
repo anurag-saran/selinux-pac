@@ -51,8 +51,9 @@ test-manifest: deps ## App manifest YAML validation
 test-version: ## policy_version.txt vs policy_module() consistency
 	bash scripts/validate_version_consistency.sh
 
-test-rpm: ## Ops RPM packaging allowlist
+test-rpm: ## Ops RPM + sepac RPM packaging allowlist
 	bash scripts/validate_rpm_ops_parity.sh
+	bash scripts/validate_rpm_sepac_parity.sh
 
 test-smoke: deps ## Python smoke_test.py (offline; no SELinux host)
 	$(PYTHON) scripts/smoke_test.py
