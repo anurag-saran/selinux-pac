@@ -379,20 +379,18 @@ def cmd_check(args: argparse.Namespace) -> int:
     app = args.app
     _validate_app(app)
     manifest = _require_manifest(app)
-    domain = str(manifest["domain"])
     mod_dir = _module_dir(manifest)
-    check_env = {"POLICY_MODULE": app, "SELINUX_DOMAIN": domain}
 
     # 1. validate_app_manifest.sh
     mp = _manifest_path(app)
     argv1 = ["bash", str(SCRIPTS / "validate_app_manifest.sh"), str(mp)]
-    r = _run(argv1, dry_run=args.dry_run, verbose=args.verbose, env=check_env)
+    r = _run(argv1, dry_run=args.dry_run, verbose=args.verbose)
     if not args.dry_run and r.returncode != 0:
         return r.returncode
 
     # 2. compile_and_validate.sh
-    argv2 = ["bash", str(SCRIPTS / "compile_and_validate.sh"), str(mod_dir)]
-    r = _run(argv2, dry_run=args.dry_run, verbose=args.verbose, env=check_env)
+    argv2 = ["bash", str(SCRIPTS / "compile_and_validate.sh"), str(mod_dir), "--app", app]
+    r = _run(argv2, dry_run=args.dry_run, verbose=args.verbose)
     if not args.dry_run and r.returncode != 0:
         return r.returncode
 
@@ -413,8 +411,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             print("SKIP semantics: needs selinux-policy-devel and setools-console")
             return 0
 
-    argv3 = _sudo_prefix() + ["bash", str(sem_script), str(mod_dir)]
-    r = _run(argv3, dry_run=args.dry_run, verbose=args.verbose, env=check_env)
+    argv3 = _sudo_prefix() + ["bash", str(sem_script), str(mod_dir), "--app", app]
+    r = _run(argv3, dry_run=args.dry_run, verbose=args.verbose)
     return r.returncode if not args.dry_run else 0
 
 
@@ -448,10 +446,8 @@ def cmd_load(args: argparse.Namespace) -> int:
         pp_path = out_pp
     else:
         # Compile from MODULE_DIR
-        domain = str(manifest["domain"])
-        compile_env = {"POLICY_MODULE": app, "SELINUX_DOMAIN": domain}
-        compile_argv = ["bash", str(SCRIPTS / "compile_and_validate.sh"), str(mod_dir)]
-        r = _run(compile_argv, dry_run=args.dry_run, verbose=args.verbose, env=compile_env,
+        compile_argv = ["bash", str(SCRIPTS / "compile_and_validate.sh"), str(mod_dir), "--app", app]
+        r = _run(compile_argv, dry_run=args.dry_run, verbose=args.verbose,
                  capture=not args.dry_run)
         if not args.dry_run and r.returncode != 0:
             print(r.stdout, end="")

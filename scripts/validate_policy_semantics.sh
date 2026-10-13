@@ -7,10 +7,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-POLICY_DIR="${1:-${PROJECT_ROOT}/selinux}"
-MODULE_NAME="${POLICY_MODULE:-myapp}"
-DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
 
+# shellcheck source=lib/app_identity.sh
+source "${SCRIPT_DIR}/lib/app_identity.sh"
 # shellcheck source=lib/compile_policy.sh
 source "${SCRIPT_DIR}/lib/compile_policy.sh"
 # shellcheck source=lib/policy_isolated_store.sh
@@ -41,6 +40,46 @@ if [[ "${1:-}" == "--print-declared-types" ]]; then
     [[ -n "${2:-}" && -f "${2}" ]] || exit 2
     module_declared_types "${2}"
     exit 0
+fi
+
+# Parse flags. Positional arg is the policy dir.
+POLICY_DIR=""
+_APP_FLAG=""
+_MANIFEST_FLAG=""
+_positional_done=0
+for arg in "$@"; do
+    case "${arg}" in
+        --app|--app-name) _next_app=1; continue ;;
+        --manifest)       _next_manifest=1; continue ;;
+    esac
+    if [[ "${_next_app:-}" == "1" ]]; then _APP_FLAG="${arg}"; _next_app=0; continue; fi
+    if [[ "${_next_manifest:-}" == "1" ]]; then _MANIFEST_FLAG="${arg}"; _next_manifest=0; continue; fi
+    if [[ "${_positional_done}" -eq 0 && "${arg}" != -* ]]; then
+        POLICY_DIR="${arg}"
+        _positional_done=1
+    fi
+done
+
+if [[ -n "${_APP_FLAG}" || -n "${_MANIFEST_FLAG}" ]]; then
+    if [[ -n "${_MANIFEST_FLAG}" ]]; then
+        resolve_app_identity --manifest "${_MANIFEST_FLAG}"
+        POLICY_DIR="${POLICY_DIR:-${MODULE_DIR}}"
+    elif [[ -f "${PROJECT_ROOT}/config/${_APP_FLAG}.manifest.yml" ]]; then
+        resolve_app_identity --app "${_APP_FLAG}"
+        POLICY_DIR="${POLICY_DIR:-${MODULE_DIR}}"
+    else
+        MODULE_NAME="${_APP_FLAG}"
+        DOMAIN="${_APP_FLAG}_t"
+    fi
+    POLICY_DIR="${POLICY_DIR:-${PROJECT_ROOT}/selinux}"
+    MODULE_NAME="${MODULE_NAME:-${_APP_FLAG}}"
+    DOMAIN="${DOMAIN:-${_APP_FLAG}_t}"
+else
+    _guard_old_identity_vars
+    POLICY_DIR="${POLICY_DIR:-${PROJECT_ROOT}/selinux}"
+    MODULE_NAME="$(cd "${POLICY_DIR}" && ls -1 *.te 2>/dev/null | sed 's/\.te$//' | head -1)"
+    [[ -n "${MODULE_NAME}" ]] || { log_error "No .te in ${POLICY_DIR}; pass --app NAME"; exit 1; }
+    DOMAIN="${MODULE_NAME}_t"
 fi
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -115,7 +154,7 @@ grant_beyond_control "" capability sys_module "attribute grant beyond control: c
 # java_exec_t is an alias of bin_t on RHEL 9, so java_exec(), corecmd_exec_bin(),
 # can_exec(x, java_exec_t) and a raw allow all land here. Only the reviewed
 # manifest exception accepts it.
-exec_bin_manifest="${APP_MANIFEST:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
+exec_bin_manifest="${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml"
 if python3 "${PROJECT_ROOT}/scripts/lib/app_manifest.py" exception "${exec_bin_manifest}" --key exec_bin >/dev/null 2>&1; then
     log_info "bin_t execute is a reviewed exception (selinux_exceptions.exec_bin in ${exec_bin_manifest})"
 else

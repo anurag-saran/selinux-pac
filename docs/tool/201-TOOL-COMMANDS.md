@@ -53,7 +53,7 @@ The soak gate fails closed when `sesearch` is missing. `cli/soak_net_new.py` set
 
 **Replaces** 104 steps 3.2 and 6.2.
 
-**Inputs.** A directory with `<module>.te` and `<module>.fc`. `POLICY_MODULE` and `SELINUX_DOMAIN`.
+**Inputs.** A directory with `<module>.te` and `<module>.fc`. Pass `--app NAME`.
 
 **Outputs.** `<module>.pp` in that directory. The line `Built …/<module>.pp`.
 
@@ -218,8 +218,7 @@ Customer policy lives in the application repo. Generate on rhel-qa. Prod never c
 cp config/payments.manifest.example.yml config/payments.manifest.yml
 bash scripts/validate_app_manifest.sh config/payments.manifest.example.yml
 bash scripts/scaffold_sepolicy_module.sh payments payments_t
-POLICY_MODULE=payments SELINUX_DOMAIN=payments_t \
-  bash scripts/compile_and_validate.sh selinux/payments
+bash scripts/compile_and_validate.sh selinux/payments --app payments
 ```
 
 `payments.if` publishes `payments_read_public_state` and `payments_domtrans`. An app repo calls `.github/workflows/selinux-policy-app.yml` and passes `tools_repo` and `tools_ref`. Copying `selinux-policy-ci.yml` into the app repo does not work.

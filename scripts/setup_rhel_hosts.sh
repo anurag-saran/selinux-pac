@@ -209,7 +209,7 @@ sudo bash scripts/selinux_pac_adopt.sh doctor
 
 Generate on rhel-qa from first-ship AVCs into selinux/shopapi/, copy sources + .pp back,
 open a GitHub PR on selinux-pac, then canary from the controller:
-  ssh ${ANSIBLE_USER}@${dev_hint} 'cd ~/selinux-pac && sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ~/selinux-pac && POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh ~/selinux-pac/selinux/shopapi'
+  ssh ${ANSIBLE_USER}@${dev_hint} 'cd ~/selinux-pac && sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ~/selinux-pac && bash scripts/compile_and_validate.sh ~/selinux-pac/selinux/shopapi --app shopapi'
   scp ${ANSIBLE_USER}@${dev_hint}:~/selinux-pac/selinux/shopapi/shopapi.te ${ANSIBLE_USER}@${dev_hint}:~/selinux-pac/selinux/shopapi/shopapi.fc ${ANSIBLE_USER}@${dev_hint}:~/selinux-pac/selinux/shopapi/policy_version.txt ${ANSIBLE_USER}@${dev_hint}:~/selinux-pac/selinux/shopapi/shopapi.pp selinux/shopapi/
   bash scripts/demo_open_generated_pr.sh
   ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml

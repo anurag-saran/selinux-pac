@@ -23,10 +23,6 @@ infer_policy_module_name() {
         echo "${explicit}"
         return 0
     fi
-    if [[ -n "${POLICY_MODULE:-}" ]]; then
-        echo "${POLICY_MODULE}"
-        return 0
-    fi
     local te name="" count=0
     for te in "${policy_dir}"/*.te; do
         [[ -e "${te}" ]] || continue

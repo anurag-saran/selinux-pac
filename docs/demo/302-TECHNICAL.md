@@ -140,7 +140,7 @@ flowchart LR
 Say: canary loads the module and leaves only `shopapi_t` in log-only mode. The rest of the machine stays Enforcing.
 
 ```bash
-ansible-playbook -i ansible/inventory.dev.yml ansible/deploy_canary.yml
+sepac canary --env dev
 ```
 
 A good playbook ends with `failed=0`.
@@ -148,7 +148,7 @@ A good playbook ends with `failed=0`.
 QA’s inventory has `soak_min_days: 0` so this talk can lock the domain down immediately. The script prints a red **LAB ONLY** banner there. Production’s inventory stays at 7 days. Do not copy the zero onto prod.
 
 ```bash
-ansible-playbook -i ansible/inventory.dev.yml ansible/enforce_production.yml -e change_ticket=LAB
+sepac enforce --env dev --ticket LAB
 ```
 
 After this, `getenforce` is still `Enforcing` and `shopapi_t` is no longer permissive.
@@ -195,17 +195,17 @@ That window does not install the policy RPM and does not restart shopapi. The JV
 Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only then restarts the service:
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
+sepac canary --env production --limit canary
 ```
 
 On prod, `--part soak` curls `/health`, `/state`, `/log`, and `/feature-spool`. The domain is permissive, so the page can still return 200. `ausearch` shows a `shopapi_t` denial for `/var/spool/shopapi`. The lines are saved in `/tmp/prod-feature-spool.avc`.
 
-The Mac then runs `soak_monitor.yml`. It must fail. `--part soak-avc` shows `/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc`. That directory is where `soak_monitor.yml` writes the fail files. Leave them in place. A later canary writes a new marker, and daily files and fail files older than that marker do not count.
+The Mac then runs `sepac soak`. It must fail. `--part soak-avc` shows `/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc`. That directory is where the soak monitor writes the fail files. Leave them in place. A later canary writes a new marker, and daily files and fail files older than that marker do not count.
 
 Enforce omits both flags. `skip_soak_days` skips only the day count and the daily history. `force_enforce` skips the marker, the AVC gate, net-new, the report, the day count, and the daily history, and it requires `break_glass_reason`. The playbook refuses. `shopapi_t` stays permissive.
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO
+sepac enforce --env production --ticket DEMO
 ```
 
 Expected: non-zero. The refusal to show is the failed soak. Do not pass `force_enforce` to hide the denial.
@@ -217,10 +217,7 @@ Expected: non-zero. The refusal to show is the failed soak. Do not pass `force_e
 This beat is before the fix. The first module is loaded and does not allow `/var/spool/shopapi`. Break-glass enforce of that module makes `/feature-spool` return 500. Roll back, then generate the allow.
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \
-  -e change_ticket=DEMO \
-  -e force_enforce=true \
-  -e break_glass_reason='show the enforcing denial before the fix'
+sepac enforce --env production --ticket DEMO --break-glass 'show the enforcing denial before the fix'
 ```
 
 On prod:
@@ -234,19 +231,19 @@ bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
 On the Mac:
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml
+sepac rollback --env production
 ```
 
 That puts `shopapi_t` back in log-only mode so the app runs again. `getenforce` stays `Enforcing`. Prod `--part restore` shows `/health` and `/feature-spool` returning 200 for that reason. We still do not run `semodule -i` on prod.
 
 The Mac copies `/tmp/prod-feature-spool.avc` to QA as `~/selinux-pac/policy_out/avc.log`. On QA, `--part generate --skip-export` writes the spool allow. Merge that PR. Recanary QA, rebuild the RPMs, and canary prod again.
 
-On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `soak_monitor.yml` passes (`failed=0`).
+On prod, `--part soak-clean` curls the same four URLs. Each returns 200, and `ausearch` shows no new `shopapi` denial since this canary. `sepac soak` passes (`failed=0`).
 
 `soak_status.yml` only reads status. The production inventory still wants 7 clean days. This recording cannot wait. The AVC gate already passed. `skip_soak_days` skips only the day count and the daily history. The marker, the AVC gate, net-new, and the report still run.
 
 ```bash
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e skip_soak_days=true
+sepac enforce --env production --ticket DEMO --skip-soak-days
 ```
 
 Expected: `shopapi_t` is enforcing. The demo ends enforcing.

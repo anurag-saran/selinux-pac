@@ -10,13 +10,13 @@ source "${SCRIPT_DIR}/lib/avc_query.sh"
 
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
 
-DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
-MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at}"
-REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json}"
-# Tests point this at a stub. Production leaves it unset.
+DOMAIN=""
+MARKER_FILE=""
+REPORT_FILE=""
 MONITOR_BIN="${MONITOR_AVC_BIN:-${SCRIPT_DIR}/monitor_avc.sh}"
 MANIFEST=""
-VAR_DIR="${VAR_DIR:-/var/lib/myapp}"
+VAR_DIR=""
+_APP_NAME=""
 
 usage() {
     cat <<EOF
@@ -37,6 +37,7 @@ EOF
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --domain) DOMAIN="$2"; shift 2 ;;
+        --app-name|--app) _APP_NAME="$2"; shift 2 ;;
         --marker-file) MARKER_FILE="$2"; shift 2 ;;
         --report-file) REPORT_FILE="$2"; shift 2 ;;
         --manifest) MANIFEST="$2"; shift 2 ;;
@@ -47,8 +48,15 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${MANIFEST}" ]]; then
-    MANIFEST="$(python3 "${SCRIPT_DIR}/lib/app_manifest.py" resolve 2>/dev/null || true)"
+    MANIFEST="$(python3 "${SCRIPT_DIR}/lib/app_manifest.py" resolve --app-name "${_APP_NAME}" 2>/dev/null || true)"
 fi
+
+[[ -n "${_APP_NAME}" ]] || { echo "collect_soak_facts: --app-name NAME is required" >&2; exit 2; }
+DOMAIN="${DOMAIN:-${_APP_NAME}_t}"
+_OPS_DIR="/var/lib/selinux-policy-ops/${_APP_NAME}"
+MARKER_FILE="${MARKER_FILE:-${_OPS_DIR}/selinux_canary_deployed_at}"
+REPORT_FILE="${REPORT_FILE:-${_OPS_DIR}/selinux_deploy_report.json}"
+VAR_DIR="${VAR_DIR:-/var/lib/${_APP_NAME}}"
 
 marker_exists=0
 days_elapsed=0

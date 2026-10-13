@@ -1,6 +1,6 @@
 Name:           selinux-policy-ops
-Version:        1.1.0
-Release:        2%{?dist}
+Version:        1.2.0
+Release:        1%{?dist}
 Summary:        Shared SELinux deploy/readiness scripts (app-independent)
 License:        MIT
 URL:            https://github.com/anurag-saran/selinux-pac
@@ -46,6 +46,8 @@ install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/manifest_shell.sh \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/
 install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/app_manifest.py \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/
+install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/app_identity.sh \
+    %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/
 install -m 0755 %{_builddir}/selinux-policy-ops-src/lib/soak_net_new.py \
     %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/
 install -d %{buildroot}%{_libexecdir}/selinux-policy-ops/lib/pac_cli
@@ -68,11 +70,15 @@ install -m 0644 %{_builddir}/selinux-policy-ops-src/lib/pac_cli/*.py \
 %{_libexecdir}/selinux-policy-ops/lib/avc_query.sh
 %{_libexecdir}/selinux-policy-ops/lib/manifest_shell.sh
 %{_libexecdir}/selinux-policy-ops/lib/app_manifest.py
+%{_libexecdir}/selinux-policy-ops/lib/app_identity.sh
 %{_libexecdir}/selinux-policy-ops/lib/soak_net_new.py
 %dir %{_libexecdir}/selinux-policy-ops/lib/pac_cli
 %{_libexecdir}/selinux-policy-ops/lib/pac_cli/*
 
 %changelog
+* Tue Oct 13 2026 SELinux PaC maintainers <maintainer@example.com> - 1.2.0-1
+- Host scripts take the app from --manifest or --app; no myapp defaults
+
 * Wed Oct 07 2026 SELinux PaC maintainers <maintainer@example.com> - 1.1.0-2
 - Soak gate fails closed, stores daily results, and skips host-wide semodule -B
 

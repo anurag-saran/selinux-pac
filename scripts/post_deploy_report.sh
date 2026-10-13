@@ -9,15 +9,15 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PHASE="${DEPLOY_PHASE:-unknown}"
 HOST="$(hostname -s 2>/dev/null || hostname)"
-DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
-APP_DOMAIN="${SELINUX_APP_DOMAIN:-myapp_t}"
-BACKEND_DOMAIN="${SELINUX_BACKEND_DOMAIN:-myapp_backend_t}"
-VAR_DIR="${VAR_DIR:-/var/lib/myapp}"
-MARKER_FILE="${SOAK_MARKER_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_canary_deployed_at}"
-REPORT_FILE="${DEPLOY_REPORT_FILE:-/var/lib/selinux-policy-ops/myapp/selinux_deploy_report.json}"
+DOMAIN=""
+APP_DOMAIN=""
+BACKEND_DOMAIN=""
+VAR_DIR=""
+MARKER_FILE=""
+REPORT_FILE=""
 MANIFEST=""
-APP_NAME="myapp"
-POLICY_VERSION_FILE="${PROJECT_ROOT}/selinux/policy_version.txt"
+APP_NAME=""
+POLICY_VERSION_FILE=""
 FINDINGS_JSON=""
 POLICY_VERSION_OVERRIDE=""
 FORCE_ENFORCE=0
@@ -45,7 +45,7 @@ Options:
   --marker-file PATH    Soak marker for AVC/day calculations
   --report-file PATH    Output JSON path
   --project-root PATH   Repo root for policy version lookup
-  --manifest PATH       App manifest YAML (default: config/\${POLICY_APP:-myapp}.manifest.yml)
+  --manifest PATH       App manifest YAML (required or --app-name)
   --findings-json PATH  Optional policy_out/findings.json (embeds host_admin_actions booleans)
   --force-enforce       Record that enforce skipped every soak gate
   --skip-soak-days      Record that enforce skipped only the day count and daily history
@@ -59,6 +59,7 @@ while [[ $# -gt 0 ]]; do
         --phase) PHASE="$2"; shift 2 ;;
         --host) HOST="$2"; shift 2 ;;
         --domain) DOMAIN="$2"; shift 2 ;;
+        --app-name|--app) APP_NAME="$2"; shift 2 ;;
         --var-dir) VAR_DIR="$2"; shift 2 ;;
         --marker-file) MARKER_FILE="$2"; shift 2 ;;
         --report-file) REPORT_FILE="$2"; shift 2 ;;
@@ -77,8 +78,10 @@ done
 
 [[ "${PHASE}" != "unknown" ]] || { log_error "--phase is required"; usage; exit 1; }
 
-if [[ -z "${MANIFEST}" ]]; then
-    MANIFEST="$(python3 "${SCRIPT_DIR}/lib/app_manifest.py" resolve 2>/dev/null || true)"
+if [[ -z "${MANIFEST}" && -n "${APP_NAME}" ]]; then
+    MANIFEST="$(python3 "${SCRIPT_DIR}/lib/app_manifest.py" resolve --app-name "${APP_NAME}" 2>/dev/null || true)"
+elif [[ -z "${MANIFEST}" ]]; then
+    : # No manifest, no app name — will use explicit flags
 fi
 
 if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then

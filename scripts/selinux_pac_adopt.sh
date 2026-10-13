@@ -42,7 +42,7 @@ init_app() {
     echo "1. Copy manifest: cp config/payments.manifest.example.yml ${MANIFEST}"
     echo "2. Scaffold policy: bash scripts/scaffold_sepolicy_module.sh ${APP_NAME} ${APP_NAME}_t"
     echo "3. Validate: bash scripts/validate_app_manifest.sh ${MANIFEST}"
-    echo "4. Compile: POLICY_MODULE=${APP_NAME} bash scripts/compile_and_validate.sh selinux/${APP_NAME}"
+    echo "4. Compile: bash scripts/compile_and_validate.sh selinux/${APP_NAME} --app ${APP_NAME}"
     echo "5. Two-host lab: bash scripts/setup_rhel_hosts.sh write --qa-host QA --prod-host PROD"
     echo "6. Canary on QA:"
     cat <<EOF

@@ -60,13 +60,12 @@ jobs:
           set -euo pipefail
           src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
           [[ -d "${src}" ]]
-          [[ -n "${MODULE}" && -n "${DOMAIN}" ]]
-          export APP_MANIFEST="${GITHUB_WORKSPACE}/app/${MANIFEST:-config/${MODULE}.manifest.yml}"
-          POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
-            bash "${GITHUB_WORKSPACE}/tools/scripts/validate_forbidden_patterns.sh" "${src}"
+          [[ -n "${MODULE}" ]]
+          manifest="${GITHUB_WORKSPACE}/app/${MANIFEST:-config/${MODULE}.manifest.yml}"
+          bash "${GITHUB_WORKSPACE}/tools/scripts/validate_forbidden_patterns.sh" "${src}" --app "${MODULE}"
           PYTHONPATH="${GITHUB_WORKSPACE}/tools/cli" \
             python3 "${GITHUB_WORKSPACE}/tools/cli/policy_audit.py" --selinux-dir "${src}"
-          SELINUX_ROOT="${src}" POLICY_APP="${MODULE}" \
+          SELINUX_ROOT="${src}" \
             bash "${GITHUB_WORKSPACE}/tools/scripts/validate_version_consistency.sh"
 
   app-compiled-policy:
@@ -97,7 +96,4 @@ jobs:
         run: |
           set -euo pipefail
           src="${GITHUB_WORKSPACE}/app/${POLICY_DIR}"
-          APP_MANIFEST="${GITHUB_WORKSPACE}/app/${MANIFEST:-config/${MODULE}.manifest.yml}" \
-          POLICY_MODULE="${MODULE}" SELINUX_DOMAIN="${DOMAIN}" \
-            sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN,APP_MANIFEST \
-            bash "${GITHUB_WORKSPACE}/tools/scripts/validate_policy_semantics.sh" "${src}"
+          sudo bash "${GITHUB_WORKSPACE}/tools/scripts/validate_policy_semantics.sh" "${src}" --app "${MODULE}"

@@ -195,8 +195,7 @@ PY
     runtime_dir="${lines[3]}"
 
     if [[ -f /usr/share/selinux/devel/Makefile ]]; then
-        POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
-            bash "${PROJECT_ROOT}/scripts/compile_and_validate.sh" "${PROJECT_ROOT}/selinux/shopapi"
+        bash "${PROJECT_ROOT}/scripts/compile_and_validate.sh" "${PROJECT_ROOT}/selinux/shopapi" --app shopapi
         pp="${PROJECT_ROOT}/selinux/shopapi/shopapi.pp"
         if [[ -f "${pp}" ]]; then
             semodule -i "${pp}"
@@ -289,6 +288,8 @@ main() {
         verify_shopapi_label
         echo
         echo "=== shopapi-only bootstrap complete (confined=${DEMO_SHOPAPI_CONFINED} seed=${LOAD_SEED}) ==="
+        log "Installing sepac CLI"
+        make -C "${PROJECT_ROOT}" install-cli
         mkdir -p /etc/selinux-pac
         echo qa > /etc/selinux-pac/role
         chmod 0644 /etc/selinux-pac/role
@@ -311,6 +312,8 @@ main() {
     verify_shopapi_label
     echo
     echo "=== bootstrap complete ==="
+    log "Installing sepac CLI"
+    make -C "${PROJECT_ROOT}" install-cli
     mkdir -p /etc/selinux-pac
     echo qa > /etc/selinux-pac/role
     chmod 0644 /etc/selinux-pac/role

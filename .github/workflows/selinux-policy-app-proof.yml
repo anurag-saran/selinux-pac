@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          out="$(POLICY_MODULE=bypass SELINUX_DOMAIN=bypass_t sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN bash scripts/validate_policy_semantics.sh docs/examples/fixtures/compiled-bypasses/can-setenforce 2>&1)"
+          out="$(sudo bash scripts/validate_policy_semantics.sh docs/examples/fixtures/compiled-bypasses/can-setenforce --app bypass 2>&1)"
           rc=$?
           set -e
           printf '%s\n' "${out}"

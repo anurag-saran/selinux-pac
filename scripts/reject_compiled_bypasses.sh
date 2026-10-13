@@ -43,7 +43,7 @@ run_gate() {
     fi
     rm -f "${pp}"
     set +e
-    out="$(POLICY_MODULE=bypass SELINUX_DOMAIN=bypass_t bash "${SCRIPT_DIR}/validate_policy_semantics.sh" "${dir}" 2>&1)"
+    out="$(bash "${SCRIPT_DIR}/validate_policy_semantics.sh" "${dir}" --app bypass 2>&1)"
     rc=$?
     set -e
     rm -f "${dir}/bypass.pp" "${dir}/bypass.mod"

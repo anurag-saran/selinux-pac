@@ -38,9 +38,9 @@ test-fixtures: ## Golden deterministic, payments + blast-radius + tune-report fi
 test-static: test-forbidden test-version test-rpm test-manifest ## Shell validators (offline)
 
 test-forbidden: ## Forbidden-pattern grep plus source audit (dontaudit, .fc paths)
-	bash scripts/validate_forbidden_patterns.sh selinux
-	POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
-	POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_forbidden_patterns.sh selinux/payments
+	bash scripts/validate_forbidden_patterns.sh selinux --app myapp
+	bash scripts/validate_forbidden_patterns.sh selinux/shopapi --app shopapi
+	bash scripts/validate_forbidden_patterns.sh selinux/payments --app payments
 	$(PYTHON) cli/policy_audit.py --selinux-dir selinux
 
 test-manifest: deps ## App manifest YAML validation
@@ -83,15 +83,15 @@ integration-compile: ## Compile selinux/ modules (needs selinux-policy-devel)
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \
 		echo "SKIP integration-compile: install selinux-policy-devel (run on rhel-dev)"; exit 0; \
 	fi
-	bash scripts/compile_and_validate.sh selinux
-	POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/compile_and_validate.sh selinux/payments
-	POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+	bash scripts/compile_and_validate.sh selinux --app myapp
+	bash scripts/compile_and_validate.sh selinux/payments --app payments
+	bash scripts/compile_and_validate.sh selinux/shopapi --app shopapi
 
 integration-semantics: ## sesearch semantic assertions (needs selinux-policy-devel)
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \
 		echo "SKIP integration-semantics: install selinux-policy-devel (run on rhel-dev)"; exit 0; \
 	fi
-	bash scripts/validate_policy_semantics.sh selinux
+	bash scripts/validate_policy_semantics.sh selinux --app myapp
 
 integration-blast-radius: ## Blast-radius with live sesearch (CI / rhel-dev)
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \

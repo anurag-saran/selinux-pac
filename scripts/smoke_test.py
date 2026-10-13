@@ -395,7 +395,7 @@ def test_ci_runs_full_suite_with_stable_names() -> None:
         str(step.get("run", "")) for step in jobs["compiled-policy"]["steps"]
     )
     assert "selinux/payments" in forbidden
-    assert "POLICY_MODULE=payments" in compiled
+    assert "--app payments" in compiled
 
 
 def test_make_deps_uses_venv() -> None:
@@ -639,7 +639,7 @@ def test_assemble_pr_body() -> None:
 def test_verify_file_contexts_skip() -> None:
     script = PROJECT_ROOT / "scripts" / "verify_file_contexts.sh"
     result = subprocess.run(
-        ["bash", str(script), "--skip-if-unavailable"],
+        ["bash", str(script), "--app", "myapp", "--skip-if-unavailable"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -663,7 +663,7 @@ def test_check_soak_ready_gate() -> None:
             encoding="utf-8",
         )
         missing = subprocess.run(
-            ["bash", str(script), "--marker-file", str(marker), "--min-days", "7"],
+            ["bash", str(script), "--app", "myapp", "--marker-file", str(marker), "--min-days", "7"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -672,7 +672,7 @@ def test_check_soak_ready_gate() -> None:
 
         marker.write_text(str(int(time.time())), encoding="utf-8")
         recent = subprocess.run(
-            ["bash", str(script), "--marker-file", str(marker), "--min-days", "7", "--max-avc", "0"],
+            ["bash", str(script), "--app", "myapp", "--marker-file", str(marker), "--min-days", "7", "--max-avc", "0"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -685,6 +685,8 @@ def test_check_soak_ready_gate() -> None:
             [
                 "bash",
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--min-days",
@@ -1114,19 +1116,19 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
     assert "/feature-spool" in gate
     assert "e2e_run_expect_fail" in gate
-    assert "soak_monitor.yml" in gate
-    assert "enforce_production.yml -e change_ticket=DEMO\"" in gate
-    assert "force_enforce=true" not in gate
+    assert "sepac soak --env production" in gate
+    assert "sepac enforce --env production --ticket DEMO" in gate
+    assert "--break-glass" not in gate
     clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "soak-clean" in clean
-    assert "skip_soak_days=true" in clean
-    assert "force_enforce=true" not in clean
+    assert "--skip-soak-days" in clean
+    assert "--break-glass" not in clean
     assert "day count" in clean
     talk = mac.split("Part 6 — Prod soak refuses", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
-    glass = talk.find("break_glass_reason")
+    glass = talk.find("--break-glass")
     fail = talk.find("--part fail")
-    rollback = talk.find("emergency_rollback.yml")
+    rollback = talk.find("sepac rollback")
     fix = talk.find("--part generate --skip-export")
     recanary = talk.find("mac_ship_prod recanary")
     ends = talk.find("shopapi_t enforcing")
@@ -1168,10 +1170,10 @@ def test_demo_outage_before_fix_dry_run() -> None:
         )
     out = run.stdout + run.stderr
     assert run.returncode == 0, out
-    refuse = out.find("enforce_production.yml -e change_ticket=DEMO")
-    glass = out.find("break_glass_reason=")
+    refuse = out.find("sepac enforce --env production --ticket DEMO")
+    glass = out.find("--break-glass")
     fail = out.find("--part fail")
-    rollback = out.find("emergency_rollback.yml")
+    rollback = out.find("sepac rollback --env production")
     fix = out.find("--part generate --skip-export")
     clean = out.find("--part soak-clean")
     ends = out.find("shopapi_t enforcing")
@@ -1216,9 +1218,9 @@ def test_demo_e2e_scripts_dry_run() -> None:
         assert mac_short_run.returncode == 0, mac_short_out
         assert "short happy path" in mac_short_out
         assert "--all-urls" in mac_short_out
-        assert "break_glass_reason" not in mac_short_out
-        assert "emergency_rollback" not in mac_short_out
-        assert "enforce_production" in mac_short_out
+        assert "--break-glass" not in mac_short_out
+        assert "sepac rollback" not in mac_short_out
+        assert "sepac enforce" in mac_short_out
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,
@@ -1240,7 +1242,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
         if "e2e_run" in line:
             assert "git pull" not in line, f"e2e_run must not git pull: {line}"
             assert "git checkout" not in line, f"e2e_run must not git checkout: {line}"
-    assert "BUILD_RPMS_ALLOW_DIRTY=1" in mac_text
+    assert "sepac build --allow-dirty" in mac_text
     # Bind address: never 0.0.0.0, never fall back to DEV_HOST
     assert "--bind 0.0.0.0" not in mac_text
     assert 'REPO_HOST:-${DEV_HOST}' not in mac_text
@@ -1715,7 +1717,6 @@ def test_selinux_booleans_and_app_ci() -> None:
 
     env = os.environ.copy()
     env["SELINUX_ROOT"] = str(PROJECT_ROOT / "selinux" / "shopapi")
-    env["POLICY_APP"] = "shopapi"
     version = subprocess.run(
         ["bash", str(PROJECT_ROOT / "scripts" / "validate_version_consistency.sh")],
         cwd=PROJECT_ROOT,
@@ -2037,6 +2038,8 @@ def test_check_soak_auto_tier_fail_closed() -> None:
             [
                 "bash",
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--report-file",
@@ -3496,16 +3499,10 @@ def test_forbidden_exec_bin_needs_manifest_reason() -> None:
             encoding="utf-8",
         )
         return subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe", "--manifest", str(manifest)],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={
-                **os.environ,
-                "POLICY_MODULE": "probe",
-                "SELINUX_DOMAIN": "probe_t",
-                "APP_MANIFEST": str(manifest),
-            },
         )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -3829,20 +3826,18 @@ def test_policy_rules_are_the_single_source() -> None:
         root = Path(tmp)
         module(root, "allow probe_t probe_var_lib_t:file { read };")
         clean = subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
         )
         assert clean.returncode == 0, clean.stderr
         module(root, "allow probe_t selinux_config_t:file { read };")
         foreign = subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
         )
         assert foreign.returncode != 0, foreign.stdout
         assert "selinux_config_t" in foreign.stderr
@@ -4042,7 +4037,7 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         str(step.get("run", "")) for step in workflow["jobs"]["compiled-policy"]["steps"]
     )
     assert "reject_compiled_bypasses.sh" in compiled
-    assert "POLICY_MODULE=payments" in compiled
+    assert "--app payments" in compiled
 
     declared = subprocess.run(
         [
@@ -4087,6 +4082,8 @@ def test_collect_soak_facts_monitor_crash() -> None:
             [
                 BASH,
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--report-file",
@@ -4132,8 +4129,8 @@ def test_skip_soak_days_and_break_glass_reason() -> None:
     for guide in (guide_201, guide_302):
         assert "skips only the day count and the daily history" in guide
         assert "skips the marker, the AVC gate, net-new, the report, the day count, and the daily history" in guide
-    assert "skip_soak_days=true" in guide_302
-    assert "break_glass_reason" in guide_302
+    assert "--skip-soak-days" in guide_302
+    assert "break_glass" in guide_302
 
     report_script = PROJECT_ROOT / "scripts" / "post_deploy_report.sh"
     with tempfile.TemporaryDirectory() as tmp:
@@ -4235,10 +4232,11 @@ def test_sepac_dry_run_golden() -> None:
     assert "--apply" in out
     assert "--app-root" in out
 
-    # check sets POLICY_MODULE and SELINUX_DOMAIN (via env, shown in dry-run argv)
+    # check passes --app to each validator
     out = dr("check", "shopapi")
     assert "validate_app_manifest.sh" in out
     assert "compile_and_validate.sh" in out
+    assert "--app shopapi" in out
     assert "validate_policy_semantics.sh" in out
 
     # load outputs semodule, restorecon, semanage port
@@ -4411,6 +4409,8 @@ def test_stale_canary_marker_and_force_enforce_report() -> None:
             [
                 BASH,
                 str(facts),
+                "--app",
+                "shopapi",
                 "--marker-file",
                 str(old_marker),
                 "--report-file",

@@ -51,7 +51,7 @@ sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name
 `allow shopapi_t shopapi_log_t:file open` is the `/log` denial. `allow shopapi_t self:process execmem` is the review permission. The JVM execute on `bin_t` becomes `corecmd_exec_bin(shopapi_t)`, because `config/shopapi.manifest.yml` records the reviewed `selinux_exceptions.exec_bin`. Without that reason the generator stops with NEEDS REVIEW, and `--allow-needs-review` does not unlock it. It is not an entrypoint. Then load it (104 steps 3.2–3.4):
 
 ```bash
-sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+sudo bash scripts/compile_and_validate.sh selinux/shopapi --app shopapi
 sudo semodule -i selinux/shopapi/shopapi.pp
 sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi
 ```
@@ -80,7 +80,7 @@ The second generate replaces 104 step 6.1. Allows already in the file stay basel
 
 ```bash
 sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root "$(pwd)"
-sudo POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+sudo bash scripts/compile_and_validate.sh selinux/shopapi --app shopapi
 sudo semodule -i selinux/shopapi/shopapi.pp
 sudo restorecon -Rv /var/spool/shopapi
 curl -sf http://127.0.0.1:8091/feature-spool
