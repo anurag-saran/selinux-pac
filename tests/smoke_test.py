@@ -1113,18 +1113,17 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     prod = (PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
     guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "LAST_VERIFIED:** 2026-10-09" in guide
-    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
+    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("return 0", 1)[0]
     assert "/feature-spool" in gate
-    assert "e2e_run_expect_fail" in gate
+    assert "\" fail" in gate
     assert "sepac soak --env production" in gate
     assert "sepac enforce --env production --ticket DEMO" in gate
     assert "--break-glass" not in gate
-    clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
-    assert "soak-clean" in clean
+    clean = mac.split("--part soak-clean", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "--skip-soak-days" in clean
     assert "--break-glass" not in clean
     assert "day count" in clean
-    talk = mac.split("Part 6 — Prod soak refuses", 1)[1]
+    talk = mac.split("Prod soak refuses", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
     glass = talk.find("--break-glass")
     fail = talk.find("--part fail")

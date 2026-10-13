@@ -15,12 +15,12 @@ flowchart LR
   p3["3 QA<br/>Generate the module"]
   p4["4 Mac<br/>Copy policy and open a PR"]
   p5["5 Mac<br/>Canary, then enforce on QA"]
-  p6["6 Prod<br/>Spool soak refuses, then the fix"]
-  p7["7 Outage<br/>Rollback"]
+  p6["6 Mac+Prod<br/>Soak refuses, outage, rollback"]
+  p7["7 Mac+QA+Prod<br/>Fix, recanary, enforce"]
   p1 --> p2 --> p3 --> p4 --> p5 --> p6 --> p7
 ```
 
-The Mac script is the conductor. It prints when to switch windows. Parts 2 and 3 are the QA window, so the Mac banner jumps from **Part 1** to **Part 4**. That skip is expected.
+The Mac script is the conductor. It prints when to switch windows. Parts 2 and 3 are the QA window, so the Mac banner jumps from Part 1 to Part 4. That skip is expected.
 
 Press Enter when a window says `Press Enter`. Look at the prompt before you paste.
 
@@ -184,15 +184,7 @@ bash lab/lab_signing_setup.sh
 
 Run that on rhel-qa. The private key stays there. rhel-qa builds and signs the RPMs. UTM does not route one VM to the other, so the conductor rsyncs `dist/lab-repo` onto the Mac and serves it there. The copy has the public key, the signed RPMs, and repodata, and not the private key. Prod curls `http://<REPO_HOST>:8765/RPM-GPG-KEY` and should print `HTTP/1.0 200 OK`. Prod's inventory points `selinux_rpm_repo_baseurl` and `selinux_rpm_gpgkey` at that URL. There is no `rpm -Uvh`.
 
-Switch to prod:
-
-```bash
-bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part rpms
-```
-
-That window does not install the policy RPM and does not restart shopapi. The JVM stays unconfined. It shows `dnf repolist`, `rpm -q gpg-pubkey`, and `sepac status shopapi`.
-
-Back on the Mac, canary is the install. It sets `shopapi_t` permissive and only then restarts the service:
+Canary is the install. The Mac runs `sepac canary --env production --limit canary`. That copies the RPMs to prod with `dnf` (`gpgcheck=1`), sets `shopapi_t` permissive, and restarts the service. Prod `--part rpms` is available for manual inspection (`dnf repolist`, `rpm -q gpg-pubkey`, `sepac status shopapi`) but the conductor no longer switches to prod for it.
 
 ```bash
 sepac canary --env production --limit canary

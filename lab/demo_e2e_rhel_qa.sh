@@ -22,6 +22,8 @@ if [[ -f "${SCRIPT_DIR}/lib/e2e_demo.sh" ]]; then
     source "${SCRIPT_DIR}/lib/e2e_demo.sh"
     # shellcheck source=lib/demo_estate.sh
     source "${SCRIPT_DIR}/lib/demo_estate.sh"
+    # shellcheck source=lib/present.sh
+    source "${SCRIPT_DIR}/lib/present.sh"
 elif [[ -f "${HOME}/selinux-pac/lab/lib/e2e_demo.sh" ]]; then
     # shellcheck source=lib/training_lab_runner.sh
     source "${HOME}/selinux-pac/lab/lib/training_lab_runner.sh"
@@ -29,6 +31,8 @@ elif [[ -f "${HOME}/selinux-pac/lab/lib/e2e_demo.sh" ]]; then
     source "${HOME}/selinux-pac/lab/lib/e2e_demo.sh"
     # shellcheck source=lib/demo_estate.sh
     source "${HOME}/selinux-pac/lab/lib/demo_estate.sh"
+    # shellcheck source=lib/present.sh
+    source "${HOME}/selinux-pac/lab/lib/present.sh"
     SCRIPT_DIR="${HOME}/selinux-pac/lab"
 else
     echo "Cannot find lab/lib/e2e_demo.sh. On this VM: cd ~/selinux-pac && git pull" >&2
@@ -78,89 +82,77 @@ all_urls_cmd() {
 
 part_app() {
     e2e_banner "QA VM — discovery box (${DEV_HOST})"
-    tlab_why "SELinux runs HERE. The Mac is only the remote control. If the prompt does not say rhel-qa, stop."
-    e2e_run "hostname"
-    e2e_run "whoami"
-    e2e_ensure_hostname rhel-qa
-    e2e_sync_clock
+    say "Set the hostname so the prompt matches the talk track"
+    present_cmd "sudo hostnamectl set-hostname rhel-qa && hostname"
+    if [[ "${E2E_DRY}" -eq 0 ]]; then
+        sudo timedatectl set-ntp true 2>/dev/null || true
+        sudo chronyc makestep 2>/dev/null || true
+    fi
     tlab_pause
 
-    tlab_print_section "Part 2 — Spring Boot shopapi"
-    tlab_explain "git, Java, Maven, ausearch, sesearch, semanage."
-    e2e_run "sudo dnf install -y git java-17-openjdk-headless maven policycoreutils policycoreutils-python-utils setools-console audit selinux-policy-devel"
+    say "Install Java, Maven, and SELinux tools"
+    present_cmd "sudo dnf install -y git java-17-openjdk-headless maven policycoreutils policycoreutils-python-utils setools-console audit selinux-policy-devel"
     tlab_pause
 
     if [[ -d "${HOME}/selinux-demo" && ! -d "${HOME}/selinux-pac" ]]; then
-        e2e_run "mv ${HOME}/selinux-demo ${HOME}/selinux-pac"
+        mv "${HOME}/selinux-demo" "${HOME}/selinux-pac" 2>/dev/null || true
     fi
-    if [[ -d "${HOME}/selinux-pac" ]]; then
-        tlab_explain "The tool (including demo/shopapi and selinux/shopapi) is already on this VM."
-        e2e_run "ls ${HOME}/selinux-pac/scripts/dev_generate_policy.sh ${HOME}/selinux-pac/config/shopapi.manifest.yml"
-    else
-        e2e_run "git clone ${REPO_URL} ${HOME}/selinux-pac"
+    if [[ ! -d "${HOME}/selinux-pac" ]]; then
+        say "Clone the tool repo"
+        present_cmd "git clone ${REPO_URL} ${HOME}/selinux-pac"
     fi
+    say "The tool checkout with shopapi and the types-only seed"
+    present_cmd "cd ${HOME}/selinux-pac && ls demo/shopapi/pom.xml selinux/shopapi/shopapi.te"
     tlab_pause
 
-    tlab_explain "cd ~/selinux-pac. Policy we generate is selinux/shopapi/ in this repo."
-    e2e_run "cd ${HOME}/selinux-pac && pwd && ls demo/shopapi/pom.xml selinux/shopapi/shopapi.te"
+    say "Bootstrap shopapi: JVM, unit, types-only seed, permissive"
+    present_cmd "sudo bash lab/demo_bootstrap.sh --shopapi-only"
     tlab_pause
 
-    tlab_explain "--shopapi-only installs the system JVM, the shopapi_exec_t wrapper at /opt/shopapi/bin/shopapi, and the types-only seed. No SELinuxContext= line: init_daemon_domain transitions from init_t. Permissive shopapi_t logs denials without blocking. Do not curl /feature-spool yet."
-    e2e_run "sudo bash lab/demo_bootstrap.sh --shopapi-only"
+    say "Host is Enforcing; the process label is shopapi_t"
+    present_cmd "getenforce && systemctl is-active shopapi.service && ps -o label=,comm= -C java | head"
     tlab_pause
 
-    e2e_run "getenforce"
-    e2e_run "systemctl is-active shopapi.service"
-    e2e_run "ps -o label=,comm= -C java | head"
-    tlab_pause
-
-    tlab_explain "Canary runs semodule -DB, so startup denials that dontaudit would hide have to be in this log. Restart shopapi once with dontaudit off, curl the first-ship URLs, then turn dontaudit back on. passwd_file_t is refused and cgroup_t is omitted; soak.ignore records both so they are not a canary failure."
-    if [[ "${E2E_DRY}" -eq 0 ]]; then
-        trap 'sudo semodule -B 2>/dev/null || true' EXIT
-    fi
-    e2e_run "sudo semodule -DB"
-    e2e_run "sudo systemctl restart shopapi.service"
-    e2e_run "ok=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do if curl -sf http://127.0.0.1:$(shop_port)/health >/dev/null; then ok=1; break; fi; sleep 2; done; test \"\${ok}\" = 1"
+    say "Restart with dontaudit off so startup denials are visible"
+    present_cmd "sudo semodule -DB && sudo systemctl restart shopapi.service && ok=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do if curl -sf http://127.0.0.1:$(shop_port)/health >/dev/null; then ok=1; break; fi; sleep 2; done; test \"\${ok}\" = 1"
     if [[ "${E2E_ALL_URLS}" -eq 1 ]]; then
-        tlab_explain "All URLs including /feature-spool so the generated module is complete."
-        e2e_run "$(all_urls_cmd)"
+        say "All URLs including /feature-spool, then restore dontaudit"
+        present_cmd "$(all_urls_cmd) && sudo semodule -B"
     else
-        tlab_explain "First-ship URLs: /health /state /log. Not /feature-spool — that is the outage on prod."
-        e2e_run "$(first_ship_cmd)"
+        say "First-ship URLs (not /feature-spool), then restore dontaudit"
+        present_cmd "$(first_ship_cmd) && sudo semodule -B"
     fi
-    e2e_run "sudo semodule -B"
     if [[ "${E2E_DRY}" -eq 0 ]]; then
-        trap - EXIT
+        trap - EXIT 2>/dev/null || true
     fi
     tlab_pause
 
-    tlab_explain "These shopapi_t AVC lines are the input to generate."
-    e2e_shopapi_avcs
-    tlab_checkpoint "Enforcing; process is shopapi_t; first-ship curls produced AVCs. Go back to the Mac — next is generate."
+    say "shopapi_t denials — input to the generator"
+    present_cmd "sepac denials shopapi --since boot --last 20"
+    tlab_checkpoint "Enforcing; shopapi_t; first-ship curls produced AVCs. Go back to the Mac."
 }
 
 part_generate() {
     e2e_banner "QA VM — turn denials into shopapi.te"
     cd "${HOME}/selinux-pac"
     if [[ "${E2E_SKIP_EXPORT}" -eq 1 ]]; then
-        tlab_why "Prod captured the /feature-spool denial. We do not generate on prod."
-        e2e_run "ls -l ${APP_ROOT}/policy_out/avc.log; wc -l ${APP_ROOT}/policy_out/avc.log"
+        say "Prod captured the /feature-spool denial"
+        present_cmd "ls -l ${APP_ROOT}/policy_out/avc.log && wc -l ${APP_ROOT}/policy_out/avc.log"
         tlab_pause
-        e2e_run "sepac generate shopapi --skip-export --apply --approve execmem"
+        say "Generate from the prod log"
+        present_cmd "sepac generate shopapi --skip-export --apply --approve execmem"
     else
-        tlab_why "shopapi_t is permissive. First-ship curls logged denials. --apply writes allows into selinux/shopapi/. --approve execmem is only because this JVM log includes execmem — we do not invent it."
-        e2e_run "sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi"
-        tlab_pause
-        e2e_run "sepac generate shopapi --apply --approve execmem"
+        say "relabel, then generate from AVCs"
+        present_cmd "sudo restorecon -Rv /opt/shopapi /var/lib/shopapi /var/log/shopapi /run/shopapi && sepac generate shopapi --apply --approve execmem"
     fi
-    e2e_run "sepac check shopapi"
-    e2e_run "sepac load shopapi"
-    e2e_run "sudo semanage port -a -t shopapi_port_t -p tcp $(shop_port) 2>/dev/null || sudo semanage port -m -t shopapi_port_t -p tcp $(shop_port)"
+    say "Forbidden-pattern gate"
+    present_cmd "sepac check shopapi"
+    say "Load the module on QA and label the port"
+    present_cmd "sepac load shopapi && sudo semanage port -a -t shopapi_port_t -p tcp $(shop_port) 2>/dev/null || sudo semanage port -m -t shopapi_port_t -p tcp $(shop_port)"
     tlab_pause
-    e2e_explain_selinux_tree "${APP_ROOT}"
-    e2e_run "ls -l ${APP_ROOT}/selinux/shopapi/shopapi.te ${APP_ROOT}/selinux/shopapi/shopapi.fc ${APP_ROOT}/selinux/shopapi/policy_version.txt ${APP_ROOT}/selinux/shopapi/shopapi.pp"
-    e2e_run "echo '--- generated shopapi.te (head) ---'; head -30 ${APP_ROOT}/selinux/shopapi/shopapi.te"
-    tlab_checkpoint "selinux/shopapi/shopapi.te is generated from AVCs. Go back to the Mac: copy sources, open a GitHub PR on selinux-pac, then canary."
+    say "The generated policy"
+    present_cmd "ls -l ${APP_ROOT}/selinux/shopapi/shopapi.te ${APP_ROOT}/selinux/shopapi/shopapi.fc ${APP_ROOT}/selinux/shopapi/policy_version.txt && head -20 ${APP_ROOT}/selinux/shopapi/shopapi.te"
+    tlab_checkpoint "selinux/shopapi/shopapi.te generated from AVCs. Go back to the Mac."
 }
 
 case "${E2E_PART}" in
