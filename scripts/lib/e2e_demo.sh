@@ -4,6 +4,8 @@
 E2E_DRY="${E2E_DRY:-0}"
 E2E_PART="${E2E_PART:-all}"
 E2E_SKIP_EXPORT="${E2E_SKIP_EXPORT:-0}"
+E2E_SHORT="${E2E_SHORT:-0}"
+E2E_ALL_URLS="${E2E_ALL_URLS:-0}"
 # shellcheck source=lab_env.sh
 _e2e_here="${BASH_SOURCE[0]%/*}"
 source "${_e2e_here}/lab_env.sh"
@@ -19,6 +21,8 @@ Options:
   --auto       No Enter pauses. On the Mac script, also SSH and run the VM talk tracks.
   --no-type    Print commands instantly (no typewriter)
   --dry-run    Type and explain only — do not run commands (no SSH client required)
+  --short      Happy-path 302: complete module, no outage/rollback (~20 min)
+  --all-urls   (rhel-qa --part app) curl /feature-spool too, so the module is complete
   --skip-export  (rhel-qa --part generate) use existing policy_out/avc.log
   -h, --help   Show help
 EOF
@@ -61,6 +65,9 @@ e2e_auto_flags() {
     if [[ "${E2E_SKIP_EXPORT}" -eq 1 ]]; then
         flags+=" --skip-export"
     fi
+    if [[ "${E2E_ALL_URLS}" -eq 1 ]]; then
+        flags+=" --all-urls"
+    fi
     echo "${flags}"
 }
 
@@ -70,6 +77,8 @@ e2e_parse_args() {
             --auto) TLAB_AUTO=1; shift ;;
             --no-type) TLAB_NO_TYPE=1; shift ;;
             --dry-run|--say-only) E2E_DRY=1; shift ;;
+            --short) E2E_SHORT=1; shift ;;
+            --all-urls) E2E_ALL_URLS=1; shift ;;
             --part) E2E_PART="$2"; shift 2 ;;
             --skip-export) E2E_SKIP_EXPORT=1; shift ;;
             -h|--help) usage; exit 0 ;;

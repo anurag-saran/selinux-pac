@@ -4,6 +4,8 @@ This is the meeting after [301](301-CUSTOMER.md). 301 is one host and about 20 m
 
 **LAST_VERIFIED:** 2026-10-09 — live Mac + rhel-qa + rhel-prod. The host stayed Enforcing. Prod printed `HTTP/1.0 200 OK` for the repo key, then the soak gate refused, and the demo ended with `shopapi_t` enforcing.
 
+**Short happy path (~20 min):** `bash scripts/demo_e2e_mac.sh --short`. Generates a complete module (all four URLs including `/feature-spool`) on QA, then ships to prod. Soak passes on the first try. No outage, no rollback, no second generate. The demo still ends enforcing.
+
 The app is Spring Boot **shopapi**. The Mac does not run SELinux. It drives two RHEL VMs over SSH.
 
 ```mermaid

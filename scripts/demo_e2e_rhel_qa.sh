@@ -50,6 +50,7 @@ Demo application is shopapi (Spring Boot).
   --part app              shopapi + types-only seed + first-ship curls
   --part generate         ausearch (or --skip-export) → policy
   --part all              app, then pause, then generate
+  --all-urls              With --part app: also curl /feature-spool (happy-path 302)
   --skip-export           With --part generate: use policy_out/avc.log from prod
 
 $(e2e_usage_common)
@@ -67,6 +68,12 @@ first_ship_cmd() {
     local port
     port="$(shop_port)"
     echo "for path in /health /state /log; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${port}\${path}\"; echo; done"
+}
+
+all_urls_cmd() {
+    local port
+    port="$(shop_port)"
+    echo "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${port}\${path}\"; echo; done"
 }
 
 part_app() {
@@ -114,8 +121,13 @@ part_app() {
     e2e_run "sudo semodule -DB"
     e2e_run "sudo systemctl restart shopapi.service"
     e2e_run "ok=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do if curl -sf http://127.0.0.1:$(shop_port)/health >/dev/null; then ok=1; break; fi; sleep 2; done; test \"\${ok}\" = 1"
-    tlab_explain "First-ship URLs: /health /state /log. Not /feature-spool — that is the outage on prod."
-    e2e_run "$(first_ship_cmd)"
+    if [[ "${E2E_ALL_URLS}" -eq 1 ]]; then
+        tlab_explain "All URLs including /feature-spool so the generated module is complete."
+        e2e_run "$(all_urls_cmd)"
+    else
+        tlab_explain "First-ship URLs: /health /state /log. Not /feature-spool — that is the outage on prod."
+        e2e_run "$(first_ship_cmd)"
+    fi
     e2e_run "sudo semodule -B"
     if [[ "${E2E_DRY}" -eq 0 ]]; then
         trap - EXIT

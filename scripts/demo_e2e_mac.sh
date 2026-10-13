@@ -30,6 +30,7 @@ Usage: $(basename "$0") [options]
 
 Presenter script for THIS Mac. Demo application is shopapi (Spring Boot).
 Three-host production walkthrough (~45 min): this window + rhel-qa + rhel-prod.
+Happy-path only (~20 min): add --short.
 Do not run this as the first customer conversation.
 
 $(e2e_usage_common)
@@ -181,7 +182,12 @@ cd "${PROJECT_ROOT}"
 e2e_banner "MAC — the remote control (no SELinux on this laptop)"
 tlab_why "macOS cannot enforce SELinux. This window talks to two RHEL VMs over SSH: QA ${DEV_HOST} and prod ${PROD_HOST}."
 tlab_explain "Look at the prompt. If it says rhel-qa or rhel-prod, you are in the wrong window."
-tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate on rhel-qa → PR → prod canary. The soak curls /feature-spool, the monitor fails, and enforce without force_enforce refuses. Break-glass enforce of that first module makes /feature-spool return 500. Roll back, then generate, second PR, recanary, clean soak, and enforce. The demo ends enforcing."
+if [[ "${E2E_SHORT}" -eq 1 ]]; then
+    tlab_explain "Story (short happy path): Spring Boot shopapi has no vendor module. Generate a complete module on rhel-qa (including /feature-spool) → PR → prod canary → soak passes → enforce. The demo ends enforcing."
+    E2E_ALL_URLS=1
+else
+    tlab_explain "Story: Spring Boot shopapi has no vendor module. Generate on rhel-qa → PR → prod canary. The soak curls /feature-spool, the monitor fails, and enforce without force_enforce refuses. Break-glass enforce of that first module makes /feature-spool return 500. Roll back, then generate, second PR, recanary, clean soak, and enforce. The demo ends enforcing."
+fi
 tlab_pause
 
 tlab_print_section "Part 1 — Can the Mac reach the VMs?"
@@ -205,11 +211,19 @@ tlab_pause
 e2e_run "bash scripts/setup_rhel_hosts.sh bootstrap"
 tlab_pause
 
-e2e_handoff "On the QA VM window run:
+if [[ "${E2E_SHORT}" -eq 1 ]]; then
+    e2e_handoff "On the QA VM window run:
+  bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app --all-urls
+That installs shopapi with the types-only seed and curls /health /state /log AND /feature-spool.
+Press Enter here when ausearch shows shopapi denials." \
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+else
+    e2e_handoff "On the QA VM window run:
   bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app
 That installs shopapi with the types-only seed and curls /health /state /log (not /feature-spool).
 Press Enter here when ausearch shows shopapi denials." \
-    "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part app $(e2e_auto_flags)'"
+fi
 
 tlab_explain "Copy the JAR QA just built so prod does not need Maven."
 e2e_run "ssh ${E2E_SSH_USER}@${PROD_HOST} 'mkdir -p ~/e2e-demo/demo/shopapi/target'"
@@ -237,50 +251,57 @@ tlab_print_section "Part 5 — Canary + lab enforce on QA"
 mac_canary_enforce_dev
 tlab_pause
 
-tlab_print_section "Part 6 — Prod soak refuses, then the outage and rollback"
-mac_ship_prod soak_demo
-tlab_pause
+if [[ "${E2E_SHORT}" -eq 1 ]]; then
+    tlab_print_section "Part 6 — Build RPMs, ship prod, clean soak, enforce"
+    mac_ship_prod recanary
+    tlab_pause
+    tlab_checkpoint "The demo ends with shopapi_t enforcing."
+else
+    tlab_print_section "Part 6 — Prod soak refuses, then the outage and rollback"
+    mac_ship_prod soak_demo
+    tlab_pause
 
-tlab_explain "Break-glass enforce of the first module. The spool allow is not in it, so /feature-spool returns 500. This skips the soak gate. It is not the clean enforce at the end."
-e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true -e break_glass_reason='show the enforcing denial before the fix'"
-tlab_pause
+    tlab_explain "Break-glass enforce of the first module. The spool allow is not in it, so /feature-spool returns 500. This skips the soak gate. It is not the clean enforce at the end."
+    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml -e change_ticket=DEMO -e force_enforce=true -e break_glass_reason='show the enforcing denial before the fix'"
+    tlab_pause
 
-e2e_handoff "On the PROD VM window run:
+    e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail
 curl /feature-spool returns 500. The denial is shopapi_t and var_spool_t." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part fail $(e2e_auto_flags)'"
 
-tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
-e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
-tlab_pause
+    tlab_explain "Admin step: get the app running again. emergency_rollback.yml marks shopapi_t permissive. Host getenforce stays Enforcing. We do not semodule -i on prod."
+    e2e_run "ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml"
+    tlab_pause
 
-e2e_handoff "On the PROD VM window run:
+    e2e_handoff "On the PROD VM window run:
   bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore
 curl /health and /feature-spool should return 200 again. Press Enter here when the app is up." \
-    "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
-tlab_pause
+        "ssh ${E2E_SSH_USER}@${PROD_HOST} 'bash ~/e2e-demo/demo_e2e_rhel_prod.sh --part restore $(e2e_auto_flags)'"
+    tlab_pause
 
-tlab_print_section "Part 7 — Fix, recanary, clean soak, enforce"
-tlab_explain "The denial is already in /tmp/prod-feature-spool.avc. Generate the spool allow on rhel-qa. Do not semodule -i on prod."
-mac_copy_prod_avc_to_dev
-tlab_pause
+    tlab_print_section "Part 7 — Fix, recanary, clean soak, enforce"
+    tlab_explain "The denial is already in /tmp/prod-feature-spool.avc. Generate the spool allow on rhel-qa. Do not semodule -i on prod."
+    mac_copy_prod_avc_to_dev
+    tlab_pause
 
-e2e_handoff "On the QA VM window generate from the prod log:
+    e2e_handoff "On the QA VM window generate from the prod log:
   bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export
 Press Enter here when the second compile finishes." \
-    "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export $(e2e_auto_flags)'"
+        "ssh ${E2E_SSH_USER}@${DEV_HOST} 'bash ~/selinux-pac/scripts/demo_e2e_rhel_qa.sh --part generate --skip-export $(e2e_auto_flags)'"
 
-mac_scp_generated_from_dev
-tlab_pause
-mac_open_policy_pr
-tlab_pause
+    mac_scp_generated_from_dev
+    tlab_pause
+    mac_open_policy_pr
+    tlab_pause
 
-tlab_explain "Merge that PR. Recanary the new module on QA, then rebuild RPMs and ship prod. The clean soak must pass before enforce."
-mac_canary_enforce_dev
-tlab_pause
-mac_ship_prod recanary
-tlab_pause
-tlab_checkpoint "The demo ends with shopapi_t enforcing."
+    tlab_explain "Merge that PR. Recanary the new module on QA, then rebuild RPMs and ship prod. The clean soak must pass before enforce."
+    mac_canary_enforce_dev
+    tlab_pause
+    mac_ship_prod recanary
+    tlab_pause
+    tlab_checkpoint "The demo ends with shopapi_t enforcing."
+fi
 
 echo
 echo -e "${TLAB_BOLD}End of the Mac talk track.${TLAB_NC} Full script: docs/demo/302-TECHNICAL.md"

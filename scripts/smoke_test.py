@@ -1106,7 +1106,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     assert "skip_soak_days=true" in clean
     assert "force_enforce=true" not in clean
     assert "day count" in clean
-    talk = mac.split("Part 6 —", 1)[1]
+    talk = mac.split("Part 6 — Prod soak refuses", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
     glass = talk.find("break_glass_reason")
     fail = talk.find("--part fail")
@@ -1188,6 +1188,21 @@ def test_demo_e2e_scripts_dry_run() -> None:
         )
         assert "LAB ONLY" in mac_out
         assert "soak_min_days" in mac_out
+        # --short: happy path — no outage, no rollback
+        mac_short_run = subprocess.run(
+            [BASH, str(mac), "--dry-run", "--no-type", "--auto", "--short"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            env=_lab_hosts(),
+        )
+        mac_short_out = mac_short_run.stdout + mac_short_run.stderr
+        assert mac_short_run.returncode == 0, mac_short_out
+        assert "short happy path" in mac_short_out
+        assert "--all-urls" in mac_short_out
+        assert "break_glass_reason" not in mac_short_out
+        assert "emergency_rollback" not in mac_short_out
+        assert "enforce_production" in mac_short_out
     mac_help = subprocess.run(
         [BASH, str(mac), "--help"],
         cwd=PROJECT_ROOT,
@@ -1222,6 +1237,10 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "rpm -Uvh" not in prod_text
     assert "192.168.64." not in guide_203
     assert "/Users/" not in guide_203
+    # --all-urls in QA script enables /feature-spool during discovery
+    qa_text = qa.read_text(encoding="utf-8")
+    assert "all_urls_cmd" in qa_text
+    assert "/feature-spool" in qa_text
 
     qa_run = subprocess.run(
         [BASH, str(qa), "--dry-run", "--no-type", "--auto", "--part", "app"],
