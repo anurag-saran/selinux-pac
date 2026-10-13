@@ -56,7 +56,9 @@ while IFS= read -r version_file; do
     [[ -n "${version_file}" ]] || continue
     dir="$(dirname "${version_file}")"
     if [[ "${dir}" == "${SELINUX_ROOT}" ]]; then
-        module="${POLICY_APP:-myapp}"
+        # Flat layout: infer module from the single .te in the directory.
+        module="$(cd "${dir}" && ls -1 *.te 2>/dev/null | sed 's/\.te$//' | head -1)"
+        [[ -n "${module}" ]] || { echo "validate_version_consistency: no .te in ${dir}" >&2; errors=$((errors + 1)); continue; }
         te_file="${SELINUX_ROOT}/${module}.te"
         spec_file="${PROJECT_ROOT}/packaging/${module}-selinux.spec"
         if [[ ! -f "${spec_file}" ]]; then

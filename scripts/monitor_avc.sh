@@ -15,14 +15,14 @@ source "${SCRIPT_DIR}/lib/manifest_shell.sh"
 # PATH (a test fake for systemctl or auditctl) is still found first.
 export PATH="${PATH:-}:/usr/sbin:/usr/bin:/sbin:/bin"
 
-DOMAIN="${SELINUX_DOMAIN:-}"
+DOMAIN=""
 PATHS="${MONITOR_PATHS:-}"
 SINCE="${MONITOR_SINCE:-recent}"
 MAX_AVC="${MONITOR_MAX_AVC:--1}"
 MAX_NET_NEW="${MONITOR_MAX_NET_NEW:--1}"
 SHOW_LINES="${MONITOR_SHOW_LINES:-10}"
 MARKER_FILE="${SOAK_MARKER_FILE:-}"
-MANIFEST="${APP_MANIFEST:-}"
+MANIFEST=""
 POLICY_KERN="${POLICY_KERN:-/sys/fs/selinux/policy}"
 DOMAIN_CLI=0
 PATHS_CLI=0
@@ -93,7 +93,7 @@ if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
 fi
 
 if [[ -z "${DOMAIN}" ]]; then
-    log_error "SELinux domain required (--domain or --manifest / APP_MANIFEST)"
+    log_error "SELinux domain required (--domain or --manifest)"
     exit 1
 fi
 if [[ -z "${PATHS}" ]]; then

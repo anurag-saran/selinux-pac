@@ -6,10 +6,22 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-APP_NAME="${POLICY_APP:-myapp}"
+
+APP_NAME=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --app|--app-name) APP_NAME="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+[[ -n "${APP_NAME}" ]] || APP_NAME="myapp"
 DEST="${PROJECT_ROOT}/docs/examples/fixtures/offline/generated"
 
+# shellcheck source=lib/app_identity.sh
+source "${SCRIPT_DIR}/lib/app_identity.sh"
+resolve_app_identity --app "${APP_NAME}"
+
 mkdir -p "${DEST}"
-cp "${PROJECT_ROOT}/selinux/${APP_NAME}.te" "${DEST}/${APP_NAME}.te"
-cp "${PROJECT_ROOT}/selinux/${APP_NAME}.fc" "${DEST}/${APP_NAME}.fc"
-echo "Updated ${DEST}/ from selinux/"
+cp "${MODULE_DIR}/${APP_NAME}.te" "${DEST}/${APP_NAME}.te"
+cp "${MODULE_DIR}/${APP_NAME}.fc" "${DEST}/${APP_NAME}.fc"
+echo "Updated ${DEST}/ from ${MODULE_DIR}/"

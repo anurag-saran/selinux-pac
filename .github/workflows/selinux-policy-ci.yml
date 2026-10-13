@@ -29,9 +29,9 @@ jobs:
         run: pip install pyyaml
       - name: Validate forbidden SELinux patterns
         run: |
-          bash scripts/validate_forbidden_patterns.sh selinux
-          POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi
-          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t bash scripts/validate_forbidden_patterns.sh selinux/payments
+          bash scripts/validate_forbidden_patterns.sh selinux --app myapp
+          bash scripts/validate_forbidden_patterns.sh selinux/shopapi --app shopapi
+          bash scripts/validate_forbidden_patterns.sh selinux/payments --app payments
       - name: Audit dontaudit rules and file-context paths
         run: python3 cli/policy_audit.py --selinux-dir selinux
 
@@ -49,9 +49,9 @@ jobs:
         run: sudo dnf install -y selinux-policy-devel selinux-policy-targeted setools-console python3 python3-pyyaml audit
       - name: Compiled policy semantics
         run: |
-          sudo bash scripts/validate_policy_semantics.sh selinux
-          POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN bash scripts/validate_policy_semantics.sh selinux/shopapi
-          POLICY_MODULE=payments SELINUX_DOMAIN=payments_t sudo --preserve-env=POLICY_MODULE,SELINUX_DOMAIN bash scripts/validate_policy_semantics.sh selinux/payments
+          sudo bash scripts/validate_policy_semantics.sh selinux --app myapp
+          sudo bash scripts/validate_policy_semantics.sh selinux/shopapi --app shopapi
+          sudo bash scripts/validate_policy_semantics.sh selinux/payments --app payments
       - name: Reject compiled review bypasses
         run: sudo bash scripts/reject_compiled_bypasses.sh
       - name: AVC epoch window sees denials after the marker

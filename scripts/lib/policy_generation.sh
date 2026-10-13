@@ -6,7 +6,7 @@ run_write_avc_summary() {
     local avc_log="$1"
     local existing_te="$2"
     local out="${3:-${PROJECT_ROOT}/policy_out/avc_summary.txt}"
-    local domain="${4:-${SELINUX_DOMAIN:-myapp_t}}"
+    local domain="${4:?domain argument is required}"
     python3 - "${PROJECT_ROOT}" "${avc_log}" "${existing_te}" "${out}" "${domain}" <<'PY'
 import sys
 from pathlib import Path
@@ -60,9 +60,7 @@ run_deterministic_policy_gen() {
         cmd+=(--vendor-override "${policy_out}/vendor_override.json")
     fi
     "${cmd[@]}"
-    POLICY_MODULE="${app_name}" SELINUX_DOMAIN="${app_name}_t" \
-        bash "${SCRIPT_DIR}/validate_forbidden_patterns.sh" "${policy_out}"
-    POLICY_MODULE="${app_name}" SELINUX_DOMAIN="${app_name}_t" \
-        bash "${SCRIPT_DIR}/compile_and_validate.sh" "${policy_out}"
-    run_write_avc_summary "${avc_log}" "${policy_te}" "${policy_out}/avc_summary.txt"
+    bash "${SCRIPT_DIR}/validate_forbidden_patterns.sh" "${policy_out}" --app "${app_name}"
+    bash "${SCRIPT_DIR}/compile_and_validate.sh" "${policy_out}" --app "${app_name}"
+    run_write_avc_summary "${avc_log}" "${policy_te}" "${policy_out}/avc_summary.txt" "${app_name}_t"
 }

@@ -14,8 +14,8 @@ PROJECT_ROOT="$(cd "${LIB_DIR}/../.." && pwd)"
 # shellcheck source=compile_policy.sh
 source "${LIB_DIR}/compile_policy.sh"
 
-APP_NAME="${POLICY_APP:-}"
-DOMAINS="${SELINUX_POLICY_DIFF_DOMAINS:-}"
+APP_NAME=""
+DOMAINS=""
 BASE_DIR=""
 CAND_DIR=""
 OUTPUT=""
@@ -75,14 +75,14 @@ infer_single_te_module() {
 
 if [[ -z "${APP_NAME}" ]]; then
     APP_NAME="$(infer_single_te_module "${CAND_DIR}")" || {
-        echo "policy_module_diff: pass --app-name or set POLICY_APP (multiple .te in ${CAND_DIR})" >&2
+        echo "policy_module_diff: pass --app-name (multiple .te in ${CAND_DIR})" >&2
         exit 1
     }
 fi
 
 MANIFEST_PY="${PROJECT_ROOT}/scripts/lib/app_manifest.py"
 if [[ -z "${DOMAINS}" ]]; then
-    manifest="${APP_MANIFEST:-${PROJECT_ROOT}/config/${APP_NAME}.manifest.yml}"
+    manifest="${PROJECT_ROOT}/config/${APP_NAME}.manifest.yml"
     if [[ ! -f "${manifest}" ]]; then
         manifest="$(python3 "${MANIFEST_PY}" resolve --app-name "${APP_NAME}" 2>/dev/null || true)"
     fi

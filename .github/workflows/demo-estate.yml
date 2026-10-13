@@ -77,4 +77,4 @@ jobs:
       - name: Install selinux-policy-devel
         run: sudo dnf install -y selinux-policy-devel make python3
       - name: Compile types-only shopapi seed
-        run: POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/compile_and_validate.sh selinux/shopapi
+        run: bash scripts/compile_and_validate.sh selinux/shopapi --app shopapi

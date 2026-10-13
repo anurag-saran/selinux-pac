@@ -195,8 +195,7 @@ PY
     runtime_dir="${lines[3]}"
 
     if [[ -f /usr/share/selinux/devel/Makefile ]]; then
-        POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
-            bash "${PROJECT_ROOT}/scripts/compile_and_validate.sh" "${PROJECT_ROOT}/selinux/shopapi"
+        bash "${PROJECT_ROOT}/scripts/compile_and_validate.sh" "${PROJECT_ROOT}/selinux/shopapi" --app shopapi
         pp="${PROJECT_ROOT}/selinux/shopapi/shopapi.pp"
         if [[ -f "${pp}" ]]; then
             semodule -i "${pp}"

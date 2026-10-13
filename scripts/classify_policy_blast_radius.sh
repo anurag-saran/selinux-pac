@@ -34,13 +34,13 @@ resolve_blast_radius_domains() {
         echo "${BLAST_RADIUS_DOMAINS}"
         return 0
     fi
-    local manifest="${APP_MANIFEST:-${BLAST_RADIUS_MANIFEST:-}}"
+    local manifest="${BLAST_RADIUS_MANIFEST:-}"
     if [[ -z "${manifest}" ]]; then
         manifest="$(python3 "${MANIFEST_PY}" resolve --app-name "${module_name}" 2>/dev/null || true)"
     fi
     if [[ -z "${manifest}" || ! -f "${manifest}" ]]; then
         echo "classify_policy_blast_radius: cannot resolve domains for module ${module_name}" >&2
-        echo "  Set BLAST_RADIUS_DOMAINS or APP_MANIFEST (config/${module_name}.manifest.yml)" >&2
+        echo "  Set BLAST_RADIUS_DOMAINS or pass --app NAME (config/${module_name}.manifest.yml)" >&2
         return 1
     fi
     python3 "${MANIFEST_PY}" domains-csv "${manifest}"
@@ -124,9 +124,9 @@ if [[ "${CLASSIFY_SKIP_SELINUX:-0}" == "1" ]]; then
 fi
 
 CAND_MODULE="$(module_from_policy_input "${CANDIDATE_INPUT}")"
-MODULE_NAME="${POLICY_MODULE:-${CAND_MODULE}}"
+MODULE_NAME="${CAND_MODULE}"
 BLAST_RADIUS_DOMAINS="$(resolve_blast_radius_domains "${MODULE_NAME}")" || {
-    fail_closed_json "Cannot resolve BLAST_RADIUS_DOMAINS for ${MODULE_NAME} — set APP_MANIFEST or BLAST_RADIUS_DOMAINS"
+    fail_closed_json "Cannot resolve BLAST_RADIUS_DOMAINS for ${MODULE_NAME} — pass --app NAME or set BLAST_RADIUS_DOMAINS"
     exit 0
 }
 

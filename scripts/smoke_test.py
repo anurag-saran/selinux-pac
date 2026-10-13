@@ -395,7 +395,7 @@ def test_ci_runs_full_suite_with_stable_names() -> None:
         str(step.get("run", "")) for step in jobs["compiled-policy"]["steps"]
     )
     assert "selinux/payments" in forbidden
-    assert "POLICY_MODULE=payments" in compiled
+    assert "--app payments" in compiled
 
 
 def test_make_deps_uses_venv() -> None:
@@ -639,7 +639,7 @@ def test_assemble_pr_body() -> None:
 def test_verify_file_contexts_skip() -> None:
     script = PROJECT_ROOT / "scripts" / "verify_file_contexts.sh"
     result = subprocess.run(
-        ["bash", str(script), "--skip-if-unavailable"],
+        ["bash", str(script), "--app", "myapp", "--skip-if-unavailable"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -663,7 +663,7 @@ def test_check_soak_ready_gate() -> None:
             encoding="utf-8",
         )
         missing = subprocess.run(
-            ["bash", str(script), "--marker-file", str(marker), "--min-days", "7"],
+            ["bash", str(script), "--app", "myapp", "--marker-file", str(marker), "--min-days", "7"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -672,7 +672,7 @@ def test_check_soak_ready_gate() -> None:
 
         marker.write_text(str(int(time.time())), encoding="utf-8")
         recent = subprocess.run(
-            ["bash", str(script), "--marker-file", str(marker), "--min-days", "7", "--max-avc", "0"],
+            ["bash", str(script), "--app", "myapp", "--marker-file", str(marker), "--min-days", "7", "--max-avc", "0"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -685,6 +685,8 @@ def test_check_soak_ready_gate() -> None:
             [
                 "bash",
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--min-days",
@@ -1715,7 +1717,6 @@ def test_selinux_booleans_and_app_ci() -> None:
 
     env = os.environ.copy()
     env["SELINUX_ROOT"] = str(PROJECT_ROOT / "selinux" / "shopapi")
-    env["POLICY_APP"] = "shopapi"
     version = subprocess.run(
         ["bash", str(PROJECT_ROOT / "scripts" / "validate_version_consistency.sh")],
         cwd=PROJECT_ROOT,
@@ -2037,6 +2038,8 @@ def test_check_soak_auto_tier_fail_closed() -> None:
             [
                 "bash",
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--report-file",
@@ -3496,16 +3499,10 @@ def test_forbidden_exec_bin_needs_manifest_reason() -> None:
             encoding="utf-8",
         )
         return subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe", "--manifest", str(manifest)],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={
-                **os.environ,
-                "POLICY_MODULE": "probe",
-                "SELINUX_DOMAIN": "probe_t",
-                "APP_MANIFEST": str(manifest),
-            },
         )
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -3829,20 +3826,18 @@ def test_policy_rules_are_the_single_source() -> None:
         root = Path(tmp)
         module(root, "allow probe_t probe_var_lib_t:file { read };")
         clean = subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
         )
         assert clean.returncode == 0, clean.stderr
         module(root, "allow probe_t selinux_config_t:file { read };")
         foreign = subprocess.run(
-            [BASH, str(checker), str(root)],
+            [BASH, str(checker), str(root), "--app", "probe"],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            env={**os.environ, "POLICY_MODULE": "probe", "SELINUX_DOMAIN": "probe_t"},
         )
         assert foreign.returncode != 0, foreign.stdout
         assert "selinux_config_t" in foreign.stderr
@@ -4042,7 +4037,7 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         str(step.get("run", "")) for step in workflow["jobs"]["compiled-policy"]["steps"]
     )
     assert "reject_compiled_bypasses.sh" in compiled
-    assert "POLICY_MODULE=payments" in compiled
+    assert "--app payments" in compiled
 
     declared = subprocess.run(
         [
@@ -4087,6 +4082,8 @@ def test_collect_soak_facts_monitor_crash() -> None:
             [
                 BASH,
                 str(script),
+                "--app",
+                "myapp",
                 "--marker-file",
                 str(marker),
                 "--report-file",
@@ -4235,10 +4232,11 @@ def test_sepac_dry_run_golden() -> None:
     assert "--apply" in out
     assert "--app-root" in out
 
-    # check sets POLICY_MODULE and SELINUX_DOMAIN (via env, shown in dry-run argv)
+    # check passes --app to each validator
     out = dr("check", "shopapi")
     assert "validate_app_manifest.sh" in out
     assert "compile_and_validate.sh" in out
+    assert "--app shopapi" in out
     assert "validate_policy_semantics.sh" in out
 
     # load outputs semodule, restorecon, semanage port
@@ -4411,6 +4409,8 @@ def test_stale_canary_marker_and_force_enforce_report() -> None:
             [
                 BASH,
                 str(facts),
+                "--app",
+                "shopapi",
                 "--marker-file",
                 str(old_marker),
                 "--report-file",

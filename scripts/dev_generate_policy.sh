@@ -11,8 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DETERMINISTIC="${PROJECT_ROOT}/cli/deterministic_gen.py"
 VERIFY_AVC="${PROJECT_ROOT}/cli/verify_avc_coverage.py"
-APP_NAME="${POLICY_APP:-myapp}"
-DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
+APP_NAME=""
+DOMAIN=""
 APPLY=0
 ENFORCE_CHECK=0
 SKIP_EXPORT=0
@@ -104,7 +104,7 @@ while [[ $# -gt 0 ]]; do
             ALLOW_NEEDS_REVIEW_PERMS+=("$2")
             shift 2
             ;;
-        --app-name) APP_NAME="$2"; DOMAIN="${APP_NAME}_t"; shift 2 ;;
+        --app-name|--app) APP_NAME="$2"; shift 2 ;;
         --unit) PRIMARY_SERVICE="$2"; shift 2 ;;
         --app-root) APP_ROOT="$2"; shift 2 ;;
         --out-dir) OUT_DIR_ARG="$2"; shift 2 ;;
@@ -122,17 +122,19 @@ bind_app_tree "${PROJECT_ROOT}"
 SELINUX_DIR="${APP_ROOT}/selinux"
 POLICY_OUT="${OUT_DIR_ARG:-${APP_ROOT}/policy_out}"
 AVC_LOG="${AVC_LOG_ARG:-${POLICY_OUT}/avc.log}"
-if [[ -n "${APP_MANIFEST:-}" ]]; then
-    MANIFEST="${APP_MANIFEST}"
-else
-    MANIFEST="${APP_ROOT}/config/${APP_NAME}.manifest.yml"
-    [[ -f "${MANIFEST}" ]] || MANIFEST="${APP_ROOT}/config/myapp.manifest.yml"
+if [[ -z "${APP_NAME}" ]]; then
+    log_error "--app-name NAME is required"
+    exit 2
+fi
+MANIFEST="${APP_ROOT}/config/${APP_NAME}.manifest.yml"
+if [[ "${TUNE_REPORT}" -eq 0 ]]; then
+    [[ -f "${MANIFEST}" ]] || { log_error "No manifest for ${APP_NAME}: ${MANIFEST}"; exit 1; }
 fi
 log_info "App tree ${APP_ROOT} (tool ${PROJECT_ROOT})"
 
 sync_identity_from_manifest() {
     [[ -f "${MANIFEST}" ]] || {
-        log_error "App manifest not found: ${MANIFEST} (set POLICY_APP or APP_MANIFEST)"
+        log_error "App manifest not found: ${MANIFEST}"
         exit 1
     }
     source_app_manifest_exports "${MANIFEST}"

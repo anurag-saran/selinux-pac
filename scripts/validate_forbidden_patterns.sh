@@ -6,9 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-POLICY_DIR="${1:-${PROJECT_ROOT}/selinux}"
-MODULE_NAME="${POLICY_MODULE:-myapp}"
-DOMAIN="${SELINUX_DOMAIN:-myapp_t}"
+
+# shellcheck source=lib/app_identity.sh
+source "${SCRIPT_DIR}/lib/app_identity.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -16,6 +16,53 @@ NC='\033[0m'
 
 log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+# Parse flags. Positional arg is the policy dir.
+POLICY_DIR=""
+_APP_FLAG=""
+_MANIFEST_FLAG=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --app|--app-name) _APP_FLAG="$2"; shift 2 ;;
+        --manifest)       _MANIFEST_FLAG="$2"; shift 2 ;;
+        -*)               shift ;;
+        *)
+            if [[ -z "${POLICY_DIR}" ]]; then
+                POLICY_DIR="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -n "${_APP_FLAG}" || -n "${_MANIFEST_FLAG}" ]]; then
+    _resolved=0
+    if [[ -n "${_MANIFEST_FLAG}" ]]; then
+        if resolve_app_identity --manifest "${_MANIFEST_FLAG}" 2>/dev/null; then
+            _resolved=1
+            POLICY_DIR="${POLICY_DIR:-${MODULE_DIR}}"
+        fi
+    fi
+    if [[ "${_resolved}" -eq 0 && -n "${_APP_FLAG}" && -f "${PROJECT_ROOT}/config/${_APP_FLAG}.manifest.yml" ]]; then
+        if resolve_app_identity --app "${_APP_FLAG}" 2>/dev/null; then
+            _resolved=1
+            POLICY_DIR="${POLICY_DIR:-${MODULE_DIR}}"
+        fi
+    fi
+    if [[ "${_resolved}" -eq 0 ]]; then
+        MODULE_NAME="${_APP_FLAG}"
+        DOMAIN="${_APP_FLAG}_t"
+    fi
+    POLICY_DIR="${POLICY_DIR:-${PROJECT_ROOT}/selinux}"
+    MODULE_NAME="${MODULE_NAME:-${_APP_FLAG}}"
+    DOMAIN="${DOMAIN:-${_APP_FLAG}_t}"
+else
+    _guard_old_identity_vars
+    POLICY_DIR="${POLICY_DIR:-${PROJECT_ROOT}/selinux}"
+    MODULE_NAME="$(cd "${POLICY_DIR}" && ls -1 *.te 2>/dev/null | sed 's/\.te$//' | head -1)"
+    [[ -n "${MODULE_NAME}" ]] || { log_error "No .te in ${POLICY_DIR}; pass --app NAME"; exit 1; }
+    DOMAIN="${MODULE_NAME}_t"
+fi
 
 te="${POLICY_DIR}/${MODULE_NAME}.te"
 fc="${POLICY_DIR}/${MODULE_NAME}.fc"
@@ -60,7 +107,7 @@ fi
 # On RHEL 9 java_exec_t is an alias of bin_t, so these macros all compile to
 # execute on bin_t. They pass only with a reviewed reason in the app manifest.
 if grep -qE '\b(corecmd_exec_bin|java_exec)[[:space:]]*\(|\bcan_exec[[:space:]]*\([^,]+,[[:space:]]*(bin_t|java_exec_t)[[:space:]]*\)' <<<"${te_rules}"; then
-    manifest="${APP_MANIFEST:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
+    manifest="${_MANIFEST_FLAG:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
     set +e
     reason="$(python3 "${PROJECT_ROOT}/scripts/lib/app_manifest.py" exception "${manifest}" --key exec_bin 2>&1)"
     rc=$?
@@ -108,11 +155,23 @@ if ! grep -q "${DOMAIN}" "${te}"; then
     check_fail "Domain ${DOMAIN} not referenced in ${te}"
 fi
 
-for token in "/opt/${MODULE_NAME}" "/var/lib/${MODULE_NAME}" "${MODULE_NAME}_exec_t" "${MODULE_NAME}_var_lib_t"; do
-    if ! grep -q "${token}" "${fc}"; then
-        check_fail "fc_content missing expected path/type: ${token}"
-    fi
-done
+# .fc content: require paths from manifest when available, else /opt/MODULE and /var/lib/MODULE.
+_manifest="${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml"
+if [[ -f "${_manifest}" ]]; then
+    _install_root="$(python3 -c "import yaml,sys; m=yaml.safe_load(open(sys.argv[1])); print(m.get('paths',{}).get('install_root','/opt/${MODULE_NAME}'))" "${_manifest}" 2>/dev/null || echo "/opt/${MODULE_NAME}")"
+    _var_dir="$(python3 -c "import yaml,sys; m=yaml.safe_load(open(sys.argv[1])); print(m.get('paths',{}).get('var_dir','/var/lib/${MODULE_NAME}'))" "${_manifest}" 2>/dev/null || echo "/var/lib/${MODULE_NAME}")"
+    for token in "${_install_root}" "${_var_dir}" "${MODULE_NAME}_exec_t" "${MODULE_NAME}_var_lib_t"; do
+        if ! grep -q "${token}" "${fc}"; then
+            check_fail "fc_content missing expected path/type: ${token}"
+        fi
+    done
+else
+    for token in "/opt/${MODULE_NAME}" "/var/lib/${MODULE_NAME}" "${MODULE_NAME}_exec_t" "${MODULE_NAME}_var_lib_t"; do
+        if ! grep -q "${token}" "${fc}"; then
+            check_fail "fc_content missing expected path/type: ${token}"
+        fi
+    done
+fi
 
 if [[ "${fail}" -ne 0 ]]; then
     exit 1

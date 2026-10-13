@@ -1,7 +1,7 @@
 # Example: minimal single-service app (no backend stub)
 #
 # Copy to config/payments.manifest.yml and customize for onboarding.
-# Set APP_MANIFEST=config/payments.manifest.yml or pass --manifest to scripts.
+# Pass --app payments or --manifest config/payments.manifest.yml to scripts.
 
 app_name: payments
 domain: payments_t

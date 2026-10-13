@@ -21,7 +21,7 @@ if [[ -z "${BLAST_RADIUS_MODULE:-}" ]]; then
     exit 1
 fi
 if [[ -z "${BLAST_RADIUS_DOMAINS:-}" ]]; then
-    echo "blast_radius_collect: BLAST_RADIUS_DOMAINS is required — set explicitly or via APP_MANIFEST" >&2
+    echo "blast_radius_collect: BLAST_RADIUS_DOMAINS is required — pass --app NAME or set BLAST_RADIUS_DOMAINS" >&2
     exit 1
 fi
 

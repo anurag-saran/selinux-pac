@@ -74,8 +74,7 @@ done < "${ROOT}/packaging/pac_cli.list"
 
 bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
 bash "${ROOT}/scripts/compile_and_validate.sh" selinux
-POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t \
-    bash "${ROOT}/scripts/compile_and_validate.sh" "${ROOT}/selinux/shopapi"
+bash "${ROOT}/scripts/compile_and_validate.sh" "${ROOT}/selinux/shopapi" --app shopapi
 SHOPAPI_VERSION="$(policy_version "${ROOT}/selinux/shopapi/policy_version.txt")"
 
 cp "${ROOT}/packaging/selinux-policy-ops.spec" "${RPMBUILD}/SPECS/"

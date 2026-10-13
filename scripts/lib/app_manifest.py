@@ -42,14 +42,11 @@ def resolve_manifest_path(
     if explicit:
         path = Path(explicit)
         return path if path.is_file() else None
-    env_path = __import__("os").environ.get("APP_MANIFEST")
-    if env_path:
-        path = Path(env_path)
-        return path if path.is_file() else None
     root = project_root or Path(__file__).resolve().parents[2]
-    name = app_name or __import__("os").environ.get("POLICY_APP", "myapp")
-    candidate = default_manifest_path(root, name)
-    return candidate if candidate.is_file() else None
+    if app_name:
+        candidate = default_manifest_path(root, app_name)
+        return candidate if candidate.is_file() else None
+    return None
 
 
 def load_raw(path: Path) -> dict[str, Any]:
