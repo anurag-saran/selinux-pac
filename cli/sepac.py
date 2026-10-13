@@ -7,6 +7,7 @@ Python 3.9 (RHEL 9 python3). No new dependencies.
 from __future__ import annotations
 
 import argparse
+import configparser
 import hashlib
 import json
 import os
@@ -17,12 +18,100 @@ import tempfile
 from pathlib import Path
 from typing import Any, List, Optional, Sequence
 
-# ── Repo root ────────────────────────────────────────────────────────────────
+# ── Tool tree (code: cli/, scripts/) ─────────────────────────────────────────
 
 _SELF = Path(__file__).resolve()
-REPO_ROOT = _SELF.parent.parent
-SCRIPTS = REPO_ROOT / "scripts"
-ANSIBLE = REPO_ROOT / "ansible"
+# When installed: /usr/share/selinux-pac/cli/sepac.py → tool tree = /usr/share/selinux-pac
+# In a checkout: cli/sepac.py → tool tree = the repo root
+TOOL_TREE = _SELF.parent.parent
+SCRIPTS = TOOL_TREE / "scripts"
+
+# ── Policy tree (config/, selinux/, ansible/) ─────────────────────────────────
+
+_SEPAC_CONF = Path(os.environ.get("SEPAC_CONF", "/etc/selinux-pac/sepac.conf"))
+
+
+def _read_conf_tree() -> str:
+    """Read tree= from /etc/selinux-pac/sepac.conf."""
+    if not _SEPAC_CONF.is_file():
+        return ""
+    cp = configparser.ConfigParser()
+    try:
+        with open(_SEPAC_CONF, encoding="utf-8") as fh:
+            # sepac.conf has no section headers; inject one
+            cp.read_string("[sepac]\n" + fh.read())
+        return cp.get("sepac", "tree", fallback="").strip()
+    except (configparser.Error, OSError):
+        return ""
+
+
+def _git_toplevel(d: Path) -> str:
+    """Return git top-level of *d*, or '' on failure."""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(d),
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _is_policy_tree(d: str) -> bool:
+    p = Path(d)
+    return (p / "config").is_dir() and (p / "selinux").is_dir()
+
+
+def resolve_policy_tree(cli_tree: str | None) -> Path | None:
+    """Resolve the policy tree. Returns None when no policy tree is found."""
+    # 1. --tree DIR
+    if cli_tree:
+        p = Path(cli_tree)
+        if _is_policy_tree(str(p)):
+            return p
+        return None
+    # 2. git top-level of cwd, if it has config/ and selinux/
+    top = _git_toplevel(Path.cwd())
+    if top and _is_policy_tree(top):
+        return Path(top)
+    # 3. tree= in sepac.conf
+    conf_tree = _read_conf_tree()
+    if conf_tree and _is_policy_tree(conf_tree):
+        return Path(conf_tree)
+    return None
+
+
+# These are resolved lazily, after argument parsing
+POLICY_TREE: Path | None = None
+# Backward compatibility: REPO_ROOT still works for commands in a checkout
+REPO_ROOT = TOOL_TREE
+
+
+def _require_policy_tree(args: argparse.Namespace) -> Path:
+    """Return the policy tree or exit."""
+    global POLICY_TREE
+    if POLICY_TREE is None:
+        POLICY_TREE = resolve_policy_tree(getattr(args, "tree", None))
+    if POLICY_TREE is None:
+        print(
+            "No policy tree found (need config/ and selinux/).\n"
+            "Run from a selinux-pac checkout, pass --tree DIR, or set tree= in "
+            f"{_SEPAC_CONF}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return POLICY_TREE
+
+
+def _init_trees(args: argparse.Namespace) -> None:
+    """Resolve policy tree and update globals. Called once from main()."""
+    global POLICY_TREE, REPO_ROOT, ANSIBLE
+    POLICY_TREE = resolve_policy_tree(getattr(args, "tree", None))
+    if POLICY_TREE is not None:
+        REPO_ROOT = POLICY_TREE
+    ANSIBLE = REPO_ROOT / "ansible"
 
 # ── Manifest helper (reuse existing code) ────────────────────────────────────
 
@@ -39,6 +128,33 @@ from app_manifest import (  # noqa: E402
 APP_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}$")
 PERM_RE = re.compile(r"^[a-z_]+$")
 ROLE_FILE = os.environ.get("SEPAC_ROLE_FILE", "/etc/selinux-pac/role")
+ANSIBLE = TOOL_TREE / "ansible"  # updated by _init_trees()
+
+
+# ── Version ──────────────────────────────────────────────────────────────────
+
+def _sepac_version() -> str:
+    """RPM version when installed, git describe in a checkout."""
+    try:
+        r = subprocess.run(
+            ["rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", "selinux-pac"],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and r.stdout and "not installed" not in r.stdout:
+            return r.stdout.strip()
+    except FileNotFoundError:
+        pass
+    try:
+        r = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            cwd=str(TOOL_TREE),
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except (FileNotFoundError, OSError):
+        pass
+    return "unknown"
 
 DIM = "\033[2m"
 NC = "\033[0m"
@@ -84,21 +200,34 @@ def _validate_env(env: str) -> Path:
     return inv
 
 
-def _manifest_path(app: str) -> Path:
-    return REPO_ROOT / "config" / f"{app}.manifest.yml"
+def _manifest_path(app: str, manifest_flag: str | None = None) -> Path:
+    """Manifest lookup order: --manifest PATH → policy tree config/ → /etc/selinux-pac/apps/."""
+    if manifest_flag:
+        return Path(manifest_flag)
+    if POLICY_TREE is not None:
+        p = POLICY_TREE / "config" / f"{app}.manifest.yml"
+        if p.is_file():
+            return p
+    etc = Path(f"/etc/selinux-pac/apps/{app}.manifest.yml")
+    if etc.is_file():
+        return etc
+    # Return the policy-tree path even if it doesn't exist (for error messages)
+    if POLICY_TREE is not None:
+        return POLICY_TREE / "config" / f"{app}.manifest.yml"
+    return Path(f"/etc/selinux-pac/apps/{app}.manifest.yml")
 
 
-def _load_app_manifest(app: str) -> dict[str, Any]:
-    p = _manifest_path(app)
+def _load_app_manifest(app: str, manifest_flag: str | None = None) -> dict[str, Any]:
+    p = _manifest_path(app, manifest_flag)
     if not p.is_file():
         print(f"No manifest: {p}", file=sys.stderr)
         raise SystemExit(2)
     return load_manifest(p)
 
 
-def _require_manifest(app: str) -> dict[str, Any]:
+def _require_manifest(app: str, manifest_flag: str | None = None) -> dict[str, Any]:
     """For commands that strictly need a manifest (generate, check, load, status)."""
-    return _load_app_manifest(app)
+    return _load_app_manifest(app, manifest_flag)
 
 
 def _app_domain(app: str, manifest: dict[str, Any] | None) -> str:
@@ -177,6 +306,22 @@ def _check_qa_role() -> None:
         raise SystemExit(1)
 
 
+def _check_not_production() -> None:
+    """Refuse generate/check/load on production hosts."""
+    role_file = Path(ROLE_FILE)
+    if not role_file.is_file():
+        return
+    role = role_file.read_text(encoding="utf-8").strip().lower()
+    if role == "production":
+        print(
+            "This host's role is production. generate, check, and load are not "
+            "available on production hosts — use sepac canary to deploy from the "
+            "signed RPM.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -189,7 +334,7 @@ def cmd_triage(args: argparse.Namespace) -> int:
     app = args.app
     _validate_app(app)
     manifest: dict[str, Any] | None = None
-    mp = _manifest_path(app)
+    mp = _manifest_path(app, getattr(args, "manifest", None))
     if mp.is_file():
         try:
             manifest = load_manifest(mp)
@@ -234,7 +379,7 @@ def cmd_tune(args: argparse.Namespace) -> int:
     app = args.app
     _validate_app(app)
     manifest: dict[str, Any] | None = None
-    mp = _manifest_path(app)
+    mp = _manifest_path(app, getattr(args, "manifest", None))
     if mp.is_file():
         try:
             manifest = load_manifest(mp)
@@ -254,7 +399,7 @@ def cmd_denials(args: argparse.Namespace) -> int:
     app = args.app
     _validate_app(app)
     manifest: dict[str, Any] | None = None
-    mp = _manifest_path(app)
+    mp = _manifest_path(app, getattr(args, "manifest", None))
     if mp.is_file():
         try:
             manifest = load_manifest(mp)
@@ -329,11 +474,14 @@ def cmd_denials(args: argparse.Namespace) -> int:
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     app = args.app
     _validate_app(app)
+    if not args.dry_run:
+        _check_not_production()
     for perm in (args.approve or []):
         _validate_perm(perm)
-    manifest = _require_manifest(app)
+    manifest = _require_manifest(app, getattr(args, "manifest", None))
 
     argv = _sudo_prefix() + [
         "bash", str(SCRIPTS / "dev_generate_policy.sh"),
@@ -376,13 +524,16 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     app = args.app
     _validate_app(app)
-    manifest = _require_manifest(app)
+    if not args.dry_run:
+        _check_not_production()
+    manifest = _require_manifest(app, getattr(args, "manifest", None))
     mod_dir = _module_dir(manifest)
 
     # 1. validate_app_manifest.sh
-    mp = _manifest_path(app)
+    mp = _manifest_path(app, getattr(args, "manifest", None))
     argv1 = ["bash", str(SCRIPTS / "validate_app_manifest.sh"), str(mp)]
     r = _run(argv1, dry_run=args.dry_run, verbose=args.verbose)
     if not args.dry_run and r.returncode != 0:
@@ -417,9 +568,10 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_load(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     app = args.app
     _validate_app(app)
-    manifest = _require_manifest(app)
+    manifest = _require_manifest(app, getattr(args, "manifest", None))
 
     if not args.dry_run:
         _check_qa_role()
@@ -503,7 +655,7 @@ def cmd_load(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     app = args.app
     _validate_app(app)
-    manifest = _require_manifest(app)
+    manifest = _require_manifest(app, getattr(args, "manifest", None))
     domain = str(manifest["domain"])
     mod_dir = _module_dir(manifest)
     unit = str(manifest["services"]["primary"]["unit"])
@@ -631,6 +783,7 @@ def _ansible_limit(args: argparse.Namespace) -> list[str]:
 
 
 def cmd_canary(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     inv = _validate_env(args.env)
     argv = [
         "ansible-playbook", "-i", str(inv),
@@ -641,6 +794,7 @@ def cmd_canary(args: argparse.Namespace) -> int:
 
 
 def cmd_soak(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     inv = _validate_env(args.env)
     playbook = "soak_status.yml" if args.status else "soak_monitor.yml"
     argv = [
@@ -652,6 +806,7 @@ def cmd_soak(args: argparse.Namespace) -> int:
 
 
 def cmd_enforce(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     if not args.ticket:
         print("--ticket is required for enforce", file=sys.stderr)
         raise SystemExit(2)
@@ -671,6 +826,7 @@ def cmd_enforce(args: argparse.Namespace) -> int:
 
 
 def cmd_rollback(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     inv = _validate_env(args.env)
     argv = [
         "ansible-playbook", "-i", str(inv),
@@ -681,6 +837,7 @@ def cmd_rollback(args: argparse.Namespace) -> int:
 
 
 def cmd_build(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     argv = ["bash", str(REPO_ROOT / "packaging" / "build_rpms.sh")]
     env: dict[str, str] = {}
     if args.allow_dirty:
@@ -690,6 +847,7 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_publish(args: argparse.Namespace) -> int:
+    _require_policy_tree(args)
     env_file = Path(args.env_file)
     if not args.dry_run and not env_file.is_file():
         print(f"Env file not found: {env_file}", file=sys.stderr)
@@ -709,7 +867,265 @@ def cmd_publish(args: argparse.Namespace) -> int:
     return r.returncode
 
 
-# ── Argument parser ──────────────────────────────────────────────────────────
+# ── Completion ───────────────────────────────────────────────────────────────
+
+def cmd_completion(args: argparse.Namespace) -> int:
+    """Print bash completion script generated from the argparse parser."""
+    parser = build_parser()
+    subcmds: list[str] = []
+    subcmd_flags: dict[str, list[str]] = {}
+
+    for action in parser._subparsers._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for name, sub in action.choices.items():
+                if name.startswith("_"):
+                    continue
+                subcmds.append(name)
+                flags: list[str] = []
+                for a in sub._actions:
+                    for opt in a.option_strings:
+                        if not opt.startswith("-"):
+                            continue
+                        flags.append(opt)
+                subcmd_flags[name] = flags
+
+    global_flags = ["--dry-run", "-v", "--verbose", "--version", "--tree"]
+
+    lines = [
+        "# bash completion for sepac — generated by sepac completion bash",
+        "_sepac_complete() {",
+        '    local cur prev words cword',
+        '    _init_completion || return',
+        '',
+        '    local subcmds="' + " ".join(subcmds) + '"',
+        '    local global_flags="' + " ".join(global_flags) + '"',
+        '',
+        '    # Find the subcommand',
+        '    local subcmd=""',
+        '    local i',
+        '    for ((i=1; i < cword; i++)); do',
+        '        case "${words[i]}" in',
+        '            -*) ;;',
+        '            *)',
+        '                subcmd="${words[i]}"',
+        '                break',
+        '                ;;',
+        '        esac',
+        '    done',
+        '',
+        '    if [[ -z "${subcmd}" ]]; then',
+        '        COMPREPLY=( $(compgen -W "${subcmds} ${global_flags}" -- "${cur}") )',
+        '        return 0',
+        '    fi',
+        '',
+        '    case "${prev}" in',
+        '        --env)',
+        '            local envs',
+        '            envs="$(sepac _complete envs 2>/dev/null)"',
+        '            COMPREPLY=( $(compgen -W "${envs}" -- "${cur}") )',
+        '            return 0',
+        '            ;;',
+        '        --approve)',
+        '            local perms',
+        '            perms="$(sepac _complete perms 2>/dev/null)"',
+        '            COMPREPLY=( $(compgen -W "${perms}" -- "${cur}") )',
+        '            return 0',
+        '            ;;',
+        '    esac',
+        '',
+        '    case "${subcmd}" in',
+    ]
+
+    for name in subcmds:
+        flags = subcmd_flags.get(name, [])
+        # Commands that take APP positional
+        app_cmds = {"triage", "tune", "denials", "generate", "check", "load", "status"}
+        if name in app_cmds:
+            lines.append(f'        {name})')
+            lines.append('            if [[ "${cur}" == -* ]]; then')
+            lines.append(f'                COMPREPLY=( $(compgen -W "{" ".join(flags)}" -- "${{cur}}") )')
+            lines.append('            else')
+            lines.append('                local apps')
+            lines.append('                apps="$(sepac _complete apps 2>/dev/null)"')
+            lines.append('                COMPREPLY=( $(compgen -W "${apps}" -- "${cur}") )')
+            lines.append('            fi')
+            lines.append('            ;;')
+        else:
+            lines.append(f'        {name})')
+            lines.append(f'            COMPREPLY=( $(compgen -W "{" ".join(flags)}" -- "${{cur}}") )')
+            lines.append('            ;;')
+
+    lines += [
+        '    esac',
+        '}',
+        'complete -F _sepac_complete sepac',
+    ]
+
+    print("\n".join(lines))
+    return 0
+
+
+def cmd_complete(args: argparse.Namespace) -> int:
+    """Dynamic completion helper: sepac _complete apps|envs|perms."""
+    what = args.what
+
+    if what == "apps":
+        apps: set[str] = set()
+        if POLICY_TREE is not None:
+            config_dir = POLICY_TREE / "config"
+            if config_dir.is_dir():
+                for f in config_dir.glob("*.manifest.yml"):
+                    apps.add(f.name.replace(".manifest.yml", ""))
+        etc_apps = Path("/etc/selinux-pac/apps")
+        if etc_apps.is_dir():
+            for f in etc_apps.glob("*.manifest.yml"):
+                apps.add(f.name.replace(".manifest.yml", ""))
+        print("\n".join(sorted(apps)))
+        return 0
+
+    if what == "envs":
+        envs: set[str] = set()
+        if POLICY_TREE is not None:
+            ansible_dir = POLICY_TREE / "ansible"
+            if ansible_dir.is_dir():
+                for f in ansible_dir.glob("inventory.*.yml"):
+                    name = f.name.replace("inventory.", "").replace(".yml", "")
+                    if not name.endswith(".example"):
+                        envs.add(name)
+        print("\n".join(sorted(envs)))
+        return 0
+
+    if what == "perms":
+        from policy_rules import NEEDS_REVIEW_RATIONALE
+        perms = sorted({perm for _, perm in NEEDS_REVIEW_RATIONALE})
+        print("\n".join(perms))
+        return 0
+
+    return 1
+
+
+# ── Man page ─────────────────────────────────────────────────────────────────
+
+def cmd_man(args: argparse.Namespace) -> int:
+    """Generate groff -man source for sepac(8)."""
+    import datetime
+
+    parser = build_parser()
+    date_str = datetime.date.today().strftime("%B %Y")
+
+    lines: list[str] = []
+
+    def _w(s: str = "") -> None:
+        lines.append(s)
+
+    _w(f'.TH SEPAC 8 "{date_str}" "selinux-pac" "System Administration"')
+    _w(".SH NAME")
+    _w("sepac \\- SELinux Policy as Code admin CLI")
+    _w(".SH SYNOPSIS")
+    _w(".B sepac")
+    _w("[\\fB\\-\\-version\\fR]")
+    _w("[\\fB\\-\\-tree\\fR \\fIDIR\\fR]")
+    _w("[\\fB\\-\\-dry\\-run\\fR]")
+    _w("[\\fB\\-v\\fR]")
+    _w("\\fICOMMAND\\fR [\\fIargs\\fR]")
+
+    _w(".SH DESCRIPTION")
+    _w("Single admin CLI for SELinux policy triage, generation, CI checks,")
+    _w("canary/soak/enforce lifecycle, and rollback on RHEL 9.")
+
+    _w(".SH COMMANDS")
+    _w(".SS On the QA host")
+
+    qa_cmds = ["doctor", "triage", "tune", "denials", "generate", "check", "load", "status"]
+    ansible_cmds = ["build", "publish", "canary", "soak", "enforce", "rollback"]
+
+    # Collect help text from the subparser action
+    _subcmd_help: dict[str, str] = {}
+    for action in parser._subparsers._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for name, sub in action.choices.items():
+                # help is stored on the pseudo-action for this choice
+                _subcmd_help[name] = action._choices_actions[
+                    [a.dest for a in action._choices_actions].index(name)
+                ].help if name in [a.dest for a in action._choices_actions] else ""
+
+    for action in parser._subparsers._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for name, sub in action.choices.items():
+            if name.startswith("_") or name == "completion":
+                continue
+            if name in ansible_cmds:
+                continue
+            _w(f".TP")
+            flag_parts: list[str] = []
+            for a in sub._actions:
+                if a.option_strings:
+                    for opt in a.option_strings:
+                        if opt in ("--dry-run", "-v", "--verbose", "--tree", "-h", "--help"):
+                            continue
+                        flag_parts.append(f"\\fB{opt}\\fR")
+                elif hasattr(a, "metavar") and a.metavar:
+                    flag_parts.append(f"\\fI{a.metavar}\\fR")
+            _w(f".B {name}")
+            if flag_parts:
+                _w(" ".join(flag_parts))
+            _w(_subcmd_help.get(name, ""))
+
+    _w(".SS Where Ansible runs")
+    for action in parser._subparsers._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for name, sub in action.choices.items():
+            if name not in ansible_cmds:
+                continue
+            _w(f".TP")
+            flag_parts = []
+            for a in sub._actions:
+                if a.option_strings:
+                    for opt in a.option_strings:
+                        if opt in ("--dry-run", "-v", "--verbose", "--tree", "-h", "--help"):
+                            continue
+                        flag_parts.append(f"\\fB{opt}\\fR")
+                elif hasattr(a, "metavar") and a.metavar:
+                    flag_parts.append(f"\\fI{a.metavar}\\fR")
+            _w(f".B {name}")
+            if flag_parts:
+                _w(" ".join(flag_parts))
+            _w(_subcmd_help.get(name, ""))
+
+    _w(".SH FILES")
+    _w(".TP")
+    _w(".I /etc/selinux-pac/role")
+    _w("Host role (qa, dev, staging, production). Controls which commands are allowed.")
+    _w(".TP")
+    _w(".I /etc/selinux-pac/apps/")
+    _w("Per-app manifest copies installed by the Ansible role.")
+    _w(".TP")
+    _w(".I /etc/selinux-pac/sepac.conf")
+    _w("Configuration file. Set \\fBtree\\fR to point at a policy tree.")
+
+    _w(".SH EXAMPLES")
+    _w("The standard 301 flow on a QA host:")
+    _w(".PP")
+    _w(".nf")
+    _w("sepac triage shopapi")
+    _w("sepac denials shopapi --since boot")
+    _w("sepac generate shopapi --apply")
+    _w("sepac generate shopapi --approve execmem --apply")
+    _w("sepac load shopapi")
+    _w("sepac status shopapi")
+    _w(".fi")
+
+    _w(".SH SEE ALSO")
+    _w(".BR semanage (8),")
+    _w(".BR restorecon (8),")
+    _w(".BR semodule (8),")
+    _w(".BR ausearch (8),")
+    _w(".BR audit2why (1)")
+
+    print("\n".join(lines))
+    return 0
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -736,15 +1152,19 @@ def build_parser() -> argparse.ArgumentParser:
             "  rollback   Emergency rollback via Ansible\n"
         ),
     )
+    parser.add_argument("--version", action="store_true", help="Print version and exit")
+    parser.add_argument("--tree", default=None, metavar="DIR",
+                        help="Policy tree root (config/, selinux/, ansible/)")
     parser.add_argument("--dry-run", action="store_true", help="Print commands, run nothing")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print each command before running")
 
     subs = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     def _common(p: argparse.ArgumentParser) -> None:
-        """Add --dry-run and -v to a subparser so they work after the subcommand too."""
+        """Add --dry-run, -v, and --tree to a subparser so they work after the subcommand too."""
         p.add_argument("--dry-run", action="store_true", default=False, help=argparse.SUPPRESS)
         p.add_argument("-v", "--verbose", action="store_true", default=False, help=argparse.SUPPRESS)
+        p.add_argument("--tree", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     # ── On the QA host ────────────────────────────────────────────────────
 
@@ -755,12 +1175,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = subs.add_parser("triage", help="Does Red Hat already ship policy?")
     p.add_argument("app", metavar="APP")
     p.add_argument("--unit", default=None, help="systemd unit (default: APP.service)")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_triage)
 
     p = subs.add_parser("tune", help="Vendor-domain tune report")
     p.add_argument("app", metavar="APP")
     p.add_argument("--unit", default=None, help="systemd unit")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_tune)
 
@@ -770,6 +1192,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--enforced", action="store_true", help="Only permissive=0 lines")
     p.add_argument("--why", action="store_true", help="Pipe kept lines to audit2why")
     p.add_argument("--last", type=int, default=10, help="Show last N lines (default: 10)")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_denials)
 
@@ -780,21 +1203,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--apply", action="store_true", help="Copy to selinux/")
     p.add_argument("--force", metavar="REASON", help="Bypass vendor check")
     p.add_argument("--skip-export", action="store_true", help="Use existing policy_out/avc.log")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_generate)
 
     p = subs.add_parser("check", help="CI gate: manifest + compile + semantics")
     p.add_argument("app", metavar="APP")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_check)
 
     p = subs.add_parser("load", help="Load module on QA (semodule + restorecon + ports)")
     p.add_argument("app", metavar="APP")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_load)
 
     p = subs.add_parser("status", help="Six-line status for an app")
     p.add_argument("app", metavar="APP")
+    p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_status)
 
@@ -839,15 +1266,33 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
     p.set_defaults(func=cmd_publish)
 
+    # ── Utility commands ──────────────────────────────────────────────────
+
+    p = subs.add_parser("completion", help="Print shell completion script")
+    p.add_argument("shell", choices=["bash"], help="Shell (only bash supported)")
+    p.set_defaults(func=cmd_completion)
+
+    p = subs.add_parser("_complete", help=argparse.SUPPRESS)
+    p.add_argument("what", choices=["apps", "envs", "perms"])
+    p.add_argument("--tree", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_complete)
+
+    p = subs.add_parser("_man", help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_man)
+
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if getattr(args, "version", False):
+        print(f"sepac {_sepac_version()}")
+        return 0
     if not args.command:
         parser.print_help()
         return 2
+    _init_trees(args)
     return args.func(args)
 
 

@@ -4846,6 +4846,212 @@ def test_soak_daily_history_and_other_app_guard() -> None:
         assert "--force-enforce" in enforce
 
 
+def test_sepac_completion_coverage() -> None:
+    """sepac completion bash lists every subcommand and flag."""
+    r = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"), "completion", "bash"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    script = r.stdout
+    for cmd in ("doctor", "triage", "tune", "denials", "generate", "check",
+                "load", "status", "canary", "soak", "enforce", "rollback",
+                "build", "publish", "completion"):
+        assert cmd in script, f"completion missing subcommand: {cmd}"
+    for flag in ("--dry-run", "--verbose", "--version", "--tree", "--env",
+                 "--approve", "--manifest", "--ticket"):
+        assert flag in script, f"completion missing flag: {flag}"
+
+
+def test_sepac_complete_from_temp_tree() -> None:
+    """_complete apps and envs work from a temporary policy tree."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "config").mkdir()
+        (root / "selinux").mkdir()
+        (root / "config" / "billing.manifest.yml").write_text("app_name: billing\n")
+        (root / "config" / "web.manifest.yml").write_text("app_name: web\n")
+        (root / "ansible").mkdir()
+        (root / "ansible" / "inventory.staging.yml").write_text("---\n")
+        (root / "ansible" / "inventory.prod.yml").write_text("---\n")
+
+        apps_r = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"),
+             "--tree", str(root), "_complete", "apps"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert apps_r.returncode == 0, apps_r.stderr
+        apps = apps_r.stdout.strip().split("\n")
+        assert "billing" in apps
+        assert "web" in apps
+
+        envs_r = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"),
+             "--tree", str(root), "_complete", "envs"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert envs_r.returncode == 0, envs_r.stderr
+        envs = envs_r.stdout.strip().split("\n")
+        assert "staging" in envs
+        assert "prod" in envs
+
+
+def test_sepac_manifest_lookup_order() -> None:
+    """Manifest lookup: --manifest > policy tree > /etc/selinux-pac/apps/."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "config").mkdir()
+        (root / "selinux").mkdir()
+        # Create a manifest in the policy tree
+        mpath = root / "config" / "testapp.manifest.yml"
+        mpath.write_text(
+            "app_name: testapp\n"
+            "domain: testapp_t\n"
+            "services:\n  primary:\n    unit: testapp.service\n"
+            "paths:\n  install_root: /opt/testapp\n  var_dir: /var/lib/testapp\n"
+            "  log_dir: /var/log/testapp\n  runtime_dir: /run/testapp\n"
+        )
+
+        # Using --tree should find the manifest
+        r = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"),
+             "--tree", str(root), "triage", "testapp", "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert r.returncode == 0, r.stderr
+
+        # --manifest flag takes precedence
+        alt = root / "alt.manifest.yml"
+        alt.write_text(
+            "app_name: testapp\n"
+            "domain: testapp_t\n"
+            "services:\n  primary:\n    unit: testapp.service\n"
+            "paths:\n  install_root: /opt/testapp\n  var_dir: /var/lib/testapp\n"
+            "  log_dir: /var/log/testapp\n  runtime_dir: /run/testapp\n"
+        )
+        r2 = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"),
+             "--tree", str(root), "triage", "testapp",
+             "--manifest", str(alt), "--dry-run"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        assert r2.returncode == 0, r2.stderr
+
+
+def test_sepac_man_completeness() -> None:
+    """Man page lists every subcommand and groff -ww produces no warnings."""
+    r = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"), "_man"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    manpage = r.stdout
+    for cmd in ("doctor", "triage", "tune", "denials", "generate", "check",
+                "load", "status", "canary", "soak", "enforce", "rollback",
+                "build", "publish"):
+        assert cmd in manpage, f"man page missing subcommand: {cmd}"
+    assert "SEE ALSO" in manpage
+    assert "EXAMPLES" in manpage
+    assert "FILES" in manpage
+
+    if shutil.which("groff"):
+        groff_r = subprocess.run(
+            ["groff", "-ww", "-man", "-z"],
+            input=manpage,
+            capture_output=True,
+            text=True,
+        )
+        warnings = [l for l in (groff_r.stderr or "").splitlines()
+                     if "warning" in l.lower()]
+        assert not warnings, f"groff warnings: {warnings}"
+    else:
+        print("SKIP groff warning check: groff not installed")
+
+
+def test_sepac_version() -> None:
+    """sepac --version prints something."""
+    r = subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"), "--version"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0
+    assert "sepac" in r.stdout
+
+
+def test_rpm_sepac_parity() -> None:
+    """selinux-pac RPM parity check passes."""
+    script = PROJECT_ROOT / "scripts" / "validate_rpm_sepac_parity.sh"
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+def test_sepac_production_guard() -> None:
+    """generate, check, and load refuse when role is production."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        role_file = root / "role"
+        role_file.write_text("production\n")
+        for cmd in ("generate", "check", "load"):
+            r = subprocess.run(
+                [sys.executable, str(PROJECT_ROOT / "cli" / "sepac.py"), cmd, "shopapi"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "SEPAC_ROLE_FILE": str(role_file)},
+            )
+            assert r.returncode != 0, f"{cmd} should fail on production"
+            assert "production" in r.stderr.lower(), f"{cmd} stderr: {r.stderr}"
+
+
+def test_ansible_role_writes_role_and_manifest() -> None:
+    """The Ansible role tasks write /etc/selinux-pac/role and apps/ copy."""
+    install_tasks = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "tasks" / "install_packages.yml"
+    ).read_text(encoding="utf-8")
+    assert "/etc/selinux-pac/role" in install_tasks
+    assert "/etc/selinux-pac/apps/" in install_tasks
+    assert "selinux_pac_host_role" in install_tasks
+    assert "selinux-pac" in install_tasks
+
+    defaults = (
+        PROJECT_ROOT / "ansible" / "roles" / "selinux_pac" / "defaults" / "main.yml"
+    ).read_text(encoding="utf-8")
+    assert "selinux_pac_host_role" in defaults
+
+
+def test_prod_dry_run_has_sepac_commands() -> None:
+    """Prod talk track uses sepac status and sepac denials."""
+    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    assert "sepac status shopapi" in prod
+    assert "sepac denials shopapi" in prod
+
+
+def test_inventory_examples_have_host_role() -> None:
+    """All example inventories set selinux_pac_host_role."""
+    for name in ("dev.example", "staging.example", "production.example"):
+        inv = (PROJECT_ROOT / "ansible" / f"inventory.{name}.yml").read_text(encoding="utf-8")
+        assert "selinux_pac_host_role" in inv, f"inventory.{name}.yml missing selinux_pac_host_role"
+
+
 def main() -> int:
     tests = [
         ("existing_execmem_rules_stay_baseline", test_existing_execmem_rules_stay_baseline),
@@ -4940,6 +5146,16 @@ def main() -> int:
         ("sepac_blocked_hint", test_sepac_blocked_hint),
         ("sepac_allow_needs_review_perm_passthrough", test_sepac_allow_needs_review_perm_passthrough),
         ("stale_canary_marker_and_force_enforce_report", test_stale_canary_marker_and_force_enforce_report),
+        ("sepac_completion_coverage", test_sepac_completion_coverage),
+        ("sepac_complete_from_temp_tree", test_sepac_complete_from_temp_tree),
+        ("sepac_manifest_lookup_order", test_sepac_manifest_lookup_order),
+        ("sepac_man_completeness", test_sepac_man_completeness),
+        ("sepac_version", test_sepac_version),
+        ("rpm_sepac_parity", test_rpm_sepac_parity),
+        ("sepac_production_guard", test_sepac_production_guard),
+        ("ansible_role_writes_role_and_manifest", test_ansible_role_writes_role_and_manifest),
+        ("prod_dry_run_has_sepac_commands", test_prod_dry_run_has_sepac_commands),
+        ("inventory_examples_have_host_role", test_inventory_examples_have_host_role),
     ]
     for name, fn in tests:
         fn()

@@ -73,6 +73,7 @@ while IFS= read -r rel || [[ -n "${rel}" ]]; do
 done < "${ROOT}/packaging/pac_cli.list"
 
 bash "${ROOT}/scripts/validate_rpm_ops_parity.sh"
+bash "${ROOT}/scripts/validate_rpm_sepac_parity.sh"
 bash "${ROOT}/scripts/compile_and_validate.sh" selinux
 bash "${ROOT}/scripts/compile_and_validate.sh" "${ROOT}/selinux/shopapi" --app shopapi
 SHOPAPI_VERSION="$(policy_version "${ROOT}/selinux/shopapi/policy_version.txt")"
@@ -109,6 +110,48 @@ rpmbuild -ba \
   --define "_sourcedir ${RPMBUILD}/SOURCES" \
   --define "modver ${SHOPAPI_VERSION}" \
   "${RPMBUILD}/SPECS/shopapi-selinux.spec"
+
+# ── selinux-pac CLI package ──────────────────────────────────────────────────
+SEPAC_SRC="${RPMBUILD}/BUILD/selinux-pac-src"
+mkdir -p "${SEPAC_SRC}/bin" "${SEPAC_SRC}/cli" "${SEPAC_SRC}/scripts/lib" \
+         "${SEPAC_SRC}/scripts/ci" "${SEPAC_SRC}/completions"
+
+# bin/sepac installed wrapper
+cat >"${SEPAC_SRC}/bin/sepac" <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+exec python3 /usr/share/selinux-pac/cli/sepac.py "$@"
+WRAPPER
+chmod +x "${SEPAC_SRC}/bin/sepac"
+
+# CLI Python modules
+cp "${ROOT}"/cli/*.py "${SEPAC_SRC}/cli/"
+
+# Scripts sepac calls (all .sh from scripts/ and scripts/lib/)
+for f in "${ROOT}"/scripts/*.sh; do
+    cp "$f" "${SEPAC_SRC}/scripts/"
+done
+for f in "${ROOT}"/scripts/lib/*.sh "${ROOT}"/scripts/lib/*.py; do
+    cp "$f" "${SEPAC_SRC}/scripts/lib/"
+done
+
+# sepac.conf
+cp "${ROOT}/packaging/sepac.conf" "${SEPAC_SRC}/sepac.conf"
+
+# Generate bash completion
+python3 "${ROOT}/cli/sepac.py" completion bash > "${SEPAC_SRC}/completions/sepac"
+
+# Generate and compress man page
+python3 "${ROOT}/cli/sepac.py" _man > "${SEPAC_SRC}/sepac.8"
+gzip -9 "${SEPAC_SRC}/sepac.8"
+
+SEPAC_VERSION="${VERSION}"
+cp "${ROOT}/packaging/selinux-pac.spec" "${RPMBUILD}/SPECS/"
+stamp_spec_commit "${RPMBUILD}/SPECS/selinux-pac.spec" "${GIT_COMMIT}"
+rpmbuild -ba \
+  --define "_topdir ${RPMBUILD}" \
+  --define "sepac_version ${SEPAC_VERSION}" \
+  "${RPMBUILD}/SPECS/selinux-pac.spec"
 
 rm -f "${DIST}"/*.rpm
 find "${RPMBUILD}/RPMS" -name '*.rpm' -exec cp {} "${DIST}/" \;

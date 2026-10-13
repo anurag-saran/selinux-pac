@@ -3,6 +3,9 @@
 selinux_ops_dir: /usr/libexec/selinux-policy-ops
 selinux_ops_from_package: true
 
+# Host role written to /etc/selinux-pac/role (qa, dev, staging, production).
+selinux_pac_host_role: ""
+
 # Application manifest ON THE TARGET (ops --manifest). Lab checkout:
 # /home/<user>/selinux-pac/config/myapp.manifest.yml — not playbook_dir.
 app_manifest_path: /etc/myapp/selinux-manifest.yml
