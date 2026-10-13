@@ -505,6 +505,12 @@ run_enforce_check() {
 }
 
 print_pr_steps() {
+    local mod_dir_rel=""
+    mod_dir_rel="$(python3 -c "
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1], encoding='utf-8'))
+print(m.get('policy', {}).get('module_dir', 'selinux'))
+" "${MANIFEST}" 2>/dev/null || echo "selinux")"
     cat <<EOF
 
 --- Next steps (Git PR handoff) ---
@@ -513,13 +519,11 @@ print_pr_steps() {
    cat policy_out/pr_body.md
 
 2. Validate locally (matches CI):
-   bash scripts/compile_and_validate.sh selinux
-   bash scripts/validate_forbidden_patterns.sh selinux
-   python3 scripts/smoke_test.py
+   sepac check ${APP_NAME}
 
 3. Commit, push, and open PR:
    git checkout -b policy/${APP_NAME}-update
-   git add selinux/${APP_NAME}.te selinux/${APP_NAME}.fc selinux/policy_version.txt
+   git add ${mod_dir_rel}/${APP_NAME}.te ${mod_dir_rel}/${APP_NAME}.fc ${mod_dir_rel}/policy_version.txt
    git commit -m "security(selinux): Update policy module for ${APP_NAME}"
    git push -u origin policy/${APP_NAME}-update
    gh pr create \\

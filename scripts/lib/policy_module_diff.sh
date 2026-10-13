@@ -106,13 +106,24 @@ resolve_merge_base_ref() {
 if [[ "${FROM_MERGE_BASE}" -eq 1 ]]; then
     base_ref="$(resolve_merge_base_ref)"
     work="$(mktemp -d)"
-    if ! git -C "${PROJECT_ROOT}" show "${base_ref}:selinux/${APP_NAME}.te" > "${work}/${APP_NAME}.te" 2>/dev/null; then
-        echo "policy_module_diff: no selinux/${APP_NAME}.te at merge-base ${base_ref}" >&2
-        exit 1
+    # Resolve the module_dir relative path from the manifest.
+    manifest="${PROJECT_ROOT}/config/${APP_NAME}.manifest.yml"
+    mod_rel="selinux"
+    if [[ -f "${manifest}" ]]; then
+        mod_rel="$(python3 -c "
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1], encoding='utf-8'))
+print(m.get('policy', {}).get('module_dir', 'selinux'))
+" "${manifest}" 2>/dev/null || echo "selinux")"
     fi
-    if ! git -C "${PROJECT_ROOT}" show "${base_ref}:selinux/${APP_NAME}.fc" > "${work}/${APP_NAME}.fc" 2>/dev/null; then
-        echo "policy_module_diff: no selinux/${APP_NAME}.fc at merge-base ${base_ref}" >&2
-        exit 1
+    te_path="${mod_rel}/${APP_NAME}.te"
+    fc_path="${mod_rel}/${APP_NAME}.fc"
+    if ! git -C "${PROJECT_ROOT}" show "${base_ref}:${te_path}" > "${work}/${APP_NAME}.te" 2>/dev/null; then
+        # Module may not exist at merge-base (new module). Use an empty base.
+        echo "policy_module(${APP_NAME}, 0.0.0)" > "${work}/${APP_NAME}.te"
+        echo "" > "${work}/${APP_NAME}.fc"
+    elif ! git -C "${PROJECT_ROOT}" show "${base_ref}:${fc_path}" > "${work}/${APP_NAME}.fc" 2>/dev/null; then
+        echo "" > "${work}/${APP_NAME}.fc"
     fi
     BASE_DIR="${work}"
 fi

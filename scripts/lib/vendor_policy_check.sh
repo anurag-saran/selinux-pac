@@ -289,23 +289,41 @@ _vpc_fc_type() {
 
 _vpc_port_type() {
     local class="$1"
+    local manifest="${2:-}"
+    if [[ -n "${manifest}" && -f "${manifest}" ]]; then
+        local mpt
+        mpt="$(python3 -c "
+import yaml, sys
+m = yaml.safe_load(open(sys.argv[1]))
+ports = m.get('selinux_ports') or []
+types = sorted(set(p['type'] for p in ports if p.get('type')))
+print(','.join(types) if types else '')
+" "${manifest}" 2>/dev/null || true)"
+        if [[ -n "${mpt}" ]]; then
+            echo "${mpt}"
+            return 0
+        fi
+    fi
     case "${class}" in
         postgresql) echo postgresql_port_t ;;
         named) echo dns_port_t ;;
-        *) echo http_port_t ;;
+        *) echo "" ;;
     esac
 }
 
 _vpc_emit_triage() {
-    local situation="$1" app="$2" module="$3" pkg="$4" cls="$5" action="$6" domain="${7:-}"
+    local situation="$1" app="$2" module="$3" pkg="$4" cls="$5" action="$6" domain="${7:-}" manifest="${8:-}"
     local fc_type port_type confined
     if [[ -z "${domain}" ]]; then
         domain="$(_vpc_domain "${cls}" "${module}")"
     fi
     fc_type="$(_vpc_fc_type "${domain}")"
-    port_type="$(_vpc_port_type "${cls}")"
+    port_type="$(_vpc_port_type "${cls}" "${manifest}")"
     confined="$(vendor_domain_confined_flag "${domain}")"
-    _vpc_info "TRIAGE situation=${situation} app=${app} module=${module} package=${pkg} class=${cls} action=${action} domain=${domain} fc_type=${fc_type} port_type=${port_type} domain_confined=${confined}"
+    local triage_line="TRIAGE situation=${situation} app=${app} module=${module} package=${pkg} class=${cls} action=${action} domain=${domain} fc_type=${fc_type}"
+    [[ -n "${port_type}" ]] && triage_line+=" port_type=${port_type}"
+    triage_line+=" domain_confined=${confined}"
+    _vpc_info "${triage_line}"
     if [[ "${confined}" == "no" ]]; then
         _vpc_warn "domain ${domain} is files_unconfined_type / unconfined_domain_type — a loaded vendor module does not mean file or port denials will fire"
     fi
@@ -508,7 +526,9 @@ vendor_policy_preflight() {
         fi
     fi
 
-    _vpc_emit_triage "${situation}" "${app_name}" "${module}" "${package}" "${class}" "${action}" "${domain}"
+    local _vpc_manifest="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/config/${app_name}.manifest.yml"
+    [[ -f "${_vpc_manifest}" ]] || _vpc_manifest=""
+    _vpc_emit_triage "${situation}" "${app_name}" "${module}" "${package}" "${class}" "${action}" "${domain}" "${_vpc_manifest}"
 
     if [[ "${force}" -eq 1 ]]; then
         if [[ "${situation}" == "none" || "${situation}" == "skipped" ]]; then

@@ -156,13 +156,27 @@ if ! grep -q "${DOMAIN}" "${te}"; then
 fi
 
 # .fc content: require paths from manifest when available, else /opt/MODULE and /var/lib/MODULE.
-_manifest="${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml"
+_manifest="${_MANIFEST_FLAG:-${PROJECT_ROOT}/config/${MODULE_NAME}.manifest.yml}"
 if [[ -f "${_manifest}" ]]; then
-    _install_root="$(python3 -c "import yaml,sys; m=yaml.safe_load(open(sys.argv[1])); print(m.get('paths',{}).get('install_root','/opt/${MODULE_NAME}'))" "${_manifest}" 2>/dev/null || echo "/opt/${MODULE_NAME}")"
-    _var_dir="$(python3 -c "import yaml,sys; m=yaml.safe_load(open(sys.argv[1])); print(m.get('paths',{}).get('var_dir','/var/lib/${MODULE_NAME}'))" "${_manifest}" 2>/dev/null || echo "/var/lib/${MODULE_NAME}")"
-    for token in "${_install_root}" "${_var_dir}" "${MODULE_NAME}_exec_t" "${MODULE_NAME}_var_lib_t"; do
+    _fc_paths="$(python3 -c "
+import yaml, sys, json
+m = yaml.safe_load(open(sys.argv[1]))
+paths = m.get('paths', {})
+out = []
+for key in ('install_root', 'var_dir', 'log_dir', 'runtime_dir'):
+    v = paths.get(key)
+    if v:
+        out.append(v)
+print(json.dumps(out))
+" "${_manifest}" 2>/dev/null || echo '[]')"
+    for token in $(python3 -c "import json,sys; [print(p) for p in json.loads(sys.argv[1])]" "${_fc_paths}"); do
         if ! grep -q "${token}" "${fc}"; then
-            check_fail "fc_content missing expected path/type: ${token}"
+            check_fail "fc_content missing expected manifest path: ${token}"
+        fi
+    done
+    for token in "${MODULE_NAME}_exec_t" "${MODULE_NAME}_var_lib_t"; do
+        if ! grep -q "${token}" "${fc}"; then
+            check_fail "fc_content missing expected type: ${token}"
         fi
     done
 else

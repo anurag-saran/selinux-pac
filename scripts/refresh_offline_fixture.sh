@@ -14,7 +14,7 @@ while [[ $# -gt 0 ]]; do
         *) shift ;;
     esac
 done
-[[ -n "${APP_NAME}" ]] || APP_NAME="myapp"
+[[ -n "${APP_NAME}" ]] || { echo "[ERROR] --app NAME is required" >&2; exit 1; }
 DEST="${PROJECT_ROOT}/docs/examples/fixtures/offline/generated"
 
 # shellcheck source=lib/app_identity.sh

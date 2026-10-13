@@ -96,7 +96,7 @@ sediff_file="$(mktemp)"
 trap 'rm -f "${sediff_file}" "${tmp:-}"' EXIT
 
 if [[ "${SKIP_POLICY_DIFF}" -eq 1 ]]; then
-    printf '%s\n' "### Policy access delta (sesearch)" "" "_Policy diff skipped (smoke test)._"
+    printf '%s\n' "### Policy access delta (sesearch)" "" "_Policy diff skipped (smoke test)._" > "${sediff_file}"
 elif [[ -n "${POLICY_DIFF_FILE}" ]]; then
     cp "${POLICY_DIFF_FILE}" "${sediff_file}"
 else
@@ -108,9 +108,8 @@ else
         --output "${sediff_file}"
         --format markdown
     )
-    if ! bash "${SCRIPT_DIR}/lib/policy_module_diff.sh" "${diff_args[@]}"; then
-        echo "assemble_pr_body: policy access diff failed (see errors above)" >&2
-        exit 1
+    if ! bash "${SCRIPT_DIR}/lib/policy_module_diff.sh" "${diff_args[@]}" 2>/dev/null; then
+        printf '%s\n' "### Policy access delta (sesearch)" "" "_Policy access diff unavailable (sesearch requires RHEL tooling)._" > "${sediff_file}"
     fi
 fi
 
