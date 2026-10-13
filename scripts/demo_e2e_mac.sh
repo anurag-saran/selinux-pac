@@ -90,7 +90,11 @@ mac_canary_enforce_dev() {
 mac_serve_repo() {
     local repo_host="${REPO_HOST:-}"
     if [[ -z "${repo_host}" ]]; then
-        repo_host="$(ifconfig bridge100 2>/dev/null | awk '/inet /{print $2}')"
+        repo_host="$(ifconfig bridge100 2>/dev/null | awk '/inet /{print $2}' || true)"
+    fi
+    # A dry-run on a laptop or in CI has no UTM bridge. Show the placeholder.
+    if [[ -z "${repo_host}" && "${E2E_DRY}" -eq 1 ]]; then
+        repo_host="REPO_HOST"
     fi
     if [[ -z "${repo_host}" ]]; then
         echo "Set REPO_HOST in scripts/lab.env (the address both VMs can reach on this Mac)." >&2
