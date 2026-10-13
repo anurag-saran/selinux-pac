@@ -86,9 +86,7 @@ part_app() {
     fi
     tlab_explain "--shopapi-only --no-seed --unconfined: JVM + unit, no shopapi_t yet (java is unconfined until the RPM)."
     e2e_run "sudo bash ${APP_BUNDLE}/scripts/demo_bootstrap.sh --shopapi-only --no-seed --unconfined"
-    e2e_run "getenforce"
-    e2e_run "systemctl is-active shopapi.service"
-    e2e_run "ps -o label=,comm= -C java | head"
+    e2e_run "sepac status shopapi"
     e2e_run "curl -sf http://127.0.0.1:${SHOP_PORT}/health"
     tlab_checkpoint "shopapi is up unconfined. Go back to the Mac. Policy is not installed yet."
 }
@@ -102,9 +100,7 @@ part_rpms() {
     tlab_explain "Leave the JVM unconfined until the Mac runs deploy_canary.yml. Do not install the RPM files by hand and do not restart shopapi here."
     e2e_run "sudo dnf repolist"
     e2e_run "rpm -q gpg-pubkey"
-    e2e_run "getenforce"
-    e2e_run "systemctl is-active shopapi.service"
-    e2e_run "ps -o label=,comm= -C java | head"
+    e2e_run "sepac status shopapi"
     tlab_checkpoint "The process is still unconfined. Go back to the Mac for deploy_canary.yml."
 }
 
@@ -113,7 +109,7 @@ part_soak() {
     tlab_why "Canary left shopapi_t permissive, so the request can still return 200. The denial is in the audit log. soak_monitor reads that log."
     tlab_explain "Curl /health /state /log, then /feature-spool. Fail files already in /var/lib/selinux-policy-ops/shopapi/ stay there. This canary's marker is what the monitor counts."
     e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sS -o /dev/null -w \"%{http_code}\\n\" \"http://127.0.0.1:${SHOP_PORT}\${path}\" || true; done"
-    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 || echo "No shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "No shopapi AVC in recent log"; fi'
+    e2e_run "sepac denials shopapi --since boot --last 20"
     e2e_run "sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null; sudo chmod a+r ${AVC_EXPORT}; wc -l ${AVC_EXPORT}"
     tlab_checkpoint "A shopapi denial for /var/spool/shopapi is in ${AVC_EXPORT}. Go back to the Mac. soak_monitor must fail."
 }
@@ -127,9 +123,9 @@ part_soak_avc() {
 part_soak_clean() {
     e2e_banner "PROD VM — clean soak after the spool allow"
     tlab_why "The new module allows /var/spool/shopapi. shopapi_t is still permissive until enforce."
-    tlab_explain "Curl /health /state /log /feature-spool. Each should be HTTP 200, and ausearch should show no new shopapi denial since this canary. Older fail files stay on disk."
+    tlab_explain "Curl /health /state /log /feature-spool. Each should be HTTP 200, and sepac denials should show no new shopapi denial since this canary. Older fail files stay on disk."
     e2e_run "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\" >/dev/null && echo 200; done"
-    e2e_run 'marker=$(sudo cat /var/lib/selinux-policy-ops/shopapi/selinux_canary_deployed_at 2>/dev/null || true); if [[ "${marker}" =~ ^[0-9]+$ ]]; then echo "canary marker epoch ${marker}"; sudo ausearch -m avc --format raw 2>/dev/null | while IFS= read -r line; do epoch="${line#*msg=audit(}"; epoch="${epoch%%.*}"; [[ "${epoch}" =~ ^[0-9]+$ && "${epoch}" -ge "${marker}" ]] && printf "%s\n" "${line}"; done | grep shopapi | tail -20 && echo "(unexpected shopapi AVC)" || echo "Good: no shopapi AVC since canary"; else sudo ausearch -m avc -ts recent 2>/dev/null | grep shopapi | tail -10 || echo "Good: no shopapi AVC in recent log"; fi'
+    e2e_run "sepac denials shopapi --since boot --last 20"
     tlab_checkpoint "HTTP 200 including /feature-spool, and a clean AVC log. Go back to the Mac. soak_monitor should pass."
 }
 
@@ -145,9 +141,8 @@ part_fail() {
 
 part_restore() {
     e2e_banner "PROD VM — admin restore (domain permissive again)"
-    tlab_why "emergency_rollback.yml puts shopapi_t back to permissive. Host getenforce stays Enforcing."
-    e2e_run "getenforce"
-    e2e_run "systemctl is-active shopapi.service"
+    tlab_why "emergency_rollback.yml puts shopapi_t back to permissive. Host stays Enforcing."
+    e2e_run "sepac status shopapi"
     e2e_run "curl -sf http://127.0.0.1:${SHOP_PORT}/health && echo 'HTTP 200 /health'"
     e2e_run "curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool | head -c 120; echo"
     tlab_checkpoint "Host is still Enforcing. App is up. Policy is not fixed."
