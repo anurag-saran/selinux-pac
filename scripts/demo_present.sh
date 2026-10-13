@@ -15,6 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export PATH="${PROJECT_ROOT}/bin:${PATH}"
 # shellcheck source=lib/training_lab_runner.sh
 source "${SCRIPT_DIR}/lib/training_lab_runner.sh"
 # shellcheck source=lib/e2e_demo.sh
@@ -406,9 +407,13 @@ act0_triage() {
     fi
     e2e_banner "Triage · does Red Hat already ship policy?"
     say "Tomcat"
-    present_cmd "bash scripts/lib/vendor_policy_check.sh --report --app-name tomcat --unit ${svc}" run "${tomcat_sample}"
+    if [[ "${svc}" != "tomcat.service" ]]; then
+        present_cmd "sepac triage tomcat --unit ${svc}" run "${tomcat_sample}"
+    else
+        present_cmd "sepac triage tomcat" run "${tomcat_sample}"
+    fi
     say "shopapi (Spring Boot)"
-    present_cmd "bash scripts/lib/vendor_policy_check.sh --report --app-name shopapi --unit shopapi.service" run \
+    present_cmd "sepac triage shopapi" run \
         "[INFO] TRIAGE situation=none app=shopapi action=generate"
     if present_distro_unconfined; then
         tlab_checkpoint "Tomcat has a Red Hat module, but tomcat_t is unconfined. shopapi has none: the only app we write policy for."
@@ -483,13 +488,13 @@ act2_app_b() {
     present_cmd "curl -sS ${base}/gateway.jsp"
     say "Any denials? audit2why names the fix"
     if present_distro_unconfined; then
-        present_cmd "sudo ausearch -m avc -ts recent | grep tomcat_t | audit2why || echo 'No tomcat_t denials'" run \
-            "No tomcat_t denials"
+        present_cmd "sepac denials tomcat --why" run \
+            "No denials for tomcat_t since recent"
         tlab_checkpoint "No denials, so nothing to fix. Zero policy written."
         tlab_pause
         return 0
     fi
-    present_cmd "sudo ausearch -m avc -ts recent | grep tomcat_t | audit2why || echo 'No tomcat_t denials'" run \
+    present_cmd "sepac denials tomcat --why" run \
         "name_bind on unreserved_port_t, read on user_home_t, name_connect: each with its one-line fix"
     if act2_has_avc "name_bind"; then
         say "Label the port, restart Tomcat"
@@ -517,9 +522,8 @@ act2_app_b() {
 }
 
 act3_generate() {
-    local port gen
+    local port
     port="$(shop_port)"
-    gen="sudo bash scripts/dev_generate_policy.sh --apply"
     e2e_banner "shopapi · write the policy"
     say "shopapi runs in its own domain, permissive for now: logged, not blocked"
     present_cmd "ps -o label=,comm= -C java" run "system_u:system_r:shopapi_t:s0  java"
@@ -527,16 +531,16 @@ act3_generate() {
     present_cmd "for p in health state log; do curl -sS http://127.0.0.1:${port}/\$p; done" run \
         "OK / STATE /var/lib/shopapi/state.txt / LOG /var/log/shopapi/shopapi.log"
     say "What SELinux logged"
-    present_cmd "sudo ausearch -m avc -ts recent | grep 'denied.*shopapi_t' | tail -n 5" run \
+    present_cmd "sepac denials shopapi" run \
         "avc: denied { open } ... scontext=...shopapi_t ... permissive=1"
     say "Generate policy from the log"
-    present_cmd "${gen} --app-name shopapi --app-root ." fail \
-        "*** GENERATION BLOCKED — domain-weakening permission requires --allow-needs-review ***"
+    present_cmd "sepac generate shopapi" fail \
+        "*** GENERATION BLOCKED — domain-weakening permission requires --allow-needs-review (or --allow-needs-review-perm) ***"
     say "A reviewer approves execmem"
-    present_cmd "${gen} --allow-needs-review --app-name shopapi --app-root ." run \
+    present_cmd "sepac generate shopapi --approve execmem --apply" run \
         "REFUSED: /etc/passwd. bin_t execute accepted: reviewed exception. AVC coverage OK"
     say "Load it on QA (production gets a signed RPM)"
-    present_cmd "sudo semodule -i policy_out/shopapi.pp"
+    present_cmd "sepac load shopapi"
     tlab_checkpoint "Policy from the log. execmem needed a sign-off. /etc/passwd was refused."
     tlab_pause
 }
@@ -554,19 +558,19 @@ act6_enforce_payoff() {
     say "A new feature the policy has never seen"
     present_cmd "curl -sS ${url}/feature-spool" run '{"status":500,"error":"Internal Server Error","path":"/feature-spool"}'
     say "The denial"
-    present_cmd "sudo ausearch -m avc -ts recent | grep 'permissive=0' | grep spool" run \
+    present_cmd "sepac denials shopapi --enforced" run \
         "avc: denied { open } ... path=/var/spool/shopapi/feature.log ... tcontext=...var_spool_t ... permissive=0"
     say "Generate again"
-    present_cmd "sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root ." run \
+    present_cmd "sepac generate shopapi --apply" run \
         "LABELING FIXES: /var/spool/shopapi(/.*)? shopapi_var_lib_t"
     say "Load it and fix the label"
-    present_cmd "sudo semodule -i policy_out/shopapi.pp && sudo restorecon -Rv /var/spool/shopapi" run \
+    present_cmd "sepac load shopapi" run \
         "Relabeled /var/spool/shopapi from var_spool_t to shopapi_var_lib_t"
     say "Try again"
     present_cmd "curl -sS ${url}/feature-spool" run "SPOOL /var/spool/shopapi/feature.log"
     say "Still enforcing"
-    present_cmd "getenforce; sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissive'" run \
-        "Enforcing / shopapi_t is not permissive"
+    present_cmd "sepac status shopapi" run \
+        "Host: Enforcing / Domain: shopapi_t enforcing"
     tlab_checkpoint "Blocked, labeled, fixed. The host never left Enforcing."
     tlab_pause
 }
@@ -574,7 +578,7 @@ act6_enforce_payoff() {
 act4_pr() {
     e2e_banner "PR · the CI gate"
     say "The forbidden-pattern gate every policy PR runs"
-    present_cmd "POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi" run \
+    present_cmd "sepac check shopapi" run \
         "Forbidden-pattern checks passed for shopapi"
     if [[ "${OPEN_PR}" -eq 1 ]]; then
         say "Open the PR"

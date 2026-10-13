@@ -192,6 +192,50 @@ Lab enforce uses `soak_min_days: 0` on **QA only** — never copy that onto prod
 
 ---
 
+## The sepac command
+
+`sepac` is a single admin CLI that wraps the existing scripts. It validates inputs, loads the app manifest, adds `--dry-run` and `-v` to every command, and exits with the underlying tool's exit code. No new dependencies — Python 3.9 (`python3` on RHEL 9).
+
+```bash
+bin/sepac --help                              # two-group layout
+bin/sepac triage shopapi --dry-run            # print the underlying command
+bin/sepac generate shopapi --apply --dry-run  # no sudo, nothing runs
+```
+
+Install into `$PATH`:
+
+```bash
+sudo make install-cli    # symlinks bin/sepac → /usr/local/bin/sepac
+```
+
+**On the QA host** (the 8 commands that touch SELinux directly):
+
+| Command | What it wraps |
+|---------|---------------|
+| `sepac doctor` | Host prerequisite checks |
+| `sepac triage APP` | `vendor_policy_check.sh --report` |
+| `sepac tune APP` | `vendor_policy_check.sh --tune-report` |
+| `sepac denials APP` | `ausearch -m avc` filtered to the app domain |
+| `sepac generate APP` | `dev_generate_policy.sh` (sudo, manifest-aware) |
+| `sepac check APP` | `validate_app_manifest.sh` + `compile_and_validate.sh` + `validate_policy_semantics.sh` |
+| `sepac load APP` | `compile_and_validate.sh` + `semodule -i` + `restorecon` + `semanage port` |
+| `sepac status APP` | `getenforce`, module priority, permissive list, process label, labels, recent denials |
+
+**Where Ansible runs** (the Mac or a controller host):
+
+| Command | What it wraps |
+|---------|---------------|
+| `sepac build` | `build_rpms_on_dev.sh` |
+| `sepac publish` | `publish_internal.sh` |
+| `sepac canary --env ENV` | `deploy_canary.yml` |
+| `sepac soak --env ENV` | `soak_monitor.yml` / `soak_status.yml` |
+| `sepac enforce --env ENV --ticket T` | `enforce_production.yml` |
+| `sepac rollback --env ENV` | `emergency_rollback.yml` |
+
+`--approve PERM` on `generate` passes `--allow-needs-review-perm PERM` to the engine (repeatable). `load` checks `/etc/selinux-pac/role` — only `qa` or `dev` hosts can load directly. `demo_bootstrap.sh` writes that file.
+
+---
+
 ## Developers
 
 Training before the three-app talk: **[101](docs/training/101-CONCEPTS.md)** through **[104](docs/training/104-HAND-BUILT-MODULE.md)**.

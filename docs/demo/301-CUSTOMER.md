@@ -129,13 +129,13 @@ The three-host generate/canary/soak talk is **[302](302-TECHNICAL.md)** (`demo_e
 Say: three apps. We do not write a policy module until the third.
 
 ```bash
-bash scripts/lib/vendor_policy_check.sh --report --app-name tomcat --unit tomcat.service
+sepac triage tomcat
 ```
 
 Read the TRIAGE line aloud. On this host: `situation=loaded_unconfined`, `action=confine`. The module is loaded but `tomcat_t` does not confine. JWS would say `situation=loaded`, `action=tune`.
 
 ```bash
-bash scripts/lib/vendor_policy_check.sh --report --app-name shopapi --unit shopapi.service
+sepac triage shopapi
 ```
 
 `situation=none`, `action=generate`. shopapi has no Red Hat module. This is the only app we will write policy for.
@@ -217,25 +217,25 @@ for p in health state log; do curl -sS http://127.0.0.1:8091/$p; done
 Use the app. These three URLs are the first-ship probes.
 
 ```bash
-sudo ausearch -m avc -ts recent | grep 'denied.*shopapi_t' | tail -n 5
+sepac denials shopapi
 ```
 
 What SELinux logged. Each line is a denied access for `shopapi_t`, with `permissive=1`.
 
 ```bash
-sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root .
+sepac generate shopapi
 ```
 
-Generate policy from the log. This is **blocked**: `execmem` is a domain-weakening permission and requires `--allow-needs-review`.
+Generate policy from the log. This is **blocked**: `execmem` is a domain-weakening permission and requires `--approve execmem`.
 
 ```bash
-sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root .
+sepac generate shopapi --approve execmem --apply
 ```
 
 A reviewer approves `execmem`. `/etc/passwd` is refused. `bin_t` execute is accepted because `config/shopapi.manifest.yml` records `selinux_exceptions.exec_bin`.
 
 ```bash
-sudo semodule -i policy_out/shopapi.pp
+sepac load shopapi
 ```
 
 Load it on QA. Production gets a signed RPM, not `semodule -i`.
@@ -263,19 +263,19 @@ curl -sS http://127.0.0.1:8091/feature-spool
 A new feature the policy has never seen. HTTP 500 — the spool write is denied.
 
 ```bash
-sudo ausearch -m avc -ts recent | grep 'permissive=0' | grep spool
+sepac denials shopapi --enforced
 ```
 
 The denial says `permissive=0` and names `/var/spool/shopapi`. This is real enforcement.
 
 ```bash
-sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root .
+sepac generate shopapi --apply
 ```
 
-Generate again. No `--allow-needs-review` this time — the spool rule does not weaken the domain.
+Generate again. No `--approve` this time — the spool rule does not weaken the domain.
 
 ```bash
-sudo semodule -i policy_out/shopapi.pp && sudo restorecon -Rv /var/spool/shopapi
+sepac load shopapi
 ```
 
 Load it and fix the label. `restorecon` relabels the spool directory.
@@ -287,7 +287,7 @@ curl -sS http://127.0.0.1:8091/feature-spool
 Try again. HTTP 200 — the spool write is allowed.
 
 ```bash
-getenforce; sudo semanage permissive -l | grep shopapi_t || echo 'shopapi_t is not permissive'
+sepac status shopapi
 ```
 
 Still Enforcing. `shopapi_t` is not on the permissive list. Blocked, labeled, fixed. The host never left Enforcing.
@@ -297,7 +297,7 @@ Still Enforcing. `shopapi_t` is not on the permissive list. Blocked, labeled, fi
 - App A and App B come before the generator. That order is the point.
 - Act 1 always includes the forbidden page. On this host, follow it with `seinfo` and an empty `ausearch`. On JWS, follow it with the denial.
 - Act 2: a probe with no denial is a spoken skip. `--tune-report` writes those same host commands into `policy_out/tune_report.md` and does not write a `.te`. Close on the empty `git status` and the unchanged module count.
-- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--allow-needs-review` writes it only because it was in the log. The JVM is `bin_t` on RHEL 9 (`java_exec_t` is an alias of `bin_t` in [`corecommands.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)). The generator writes `corecmd_exec_bin(shopapi_t)` for that execute only because the manifest records `selinux_exceptions.exec_bin`. It does not write an entrypoint on `bin_t`. The wrapper, after `restorecon`, is the entrypoint.
+- Shopapi allows come from the denials just produced. The first generate is blocked on `execmem`. The rerun with `--approve execmem` writes it only because it was in the log. The JVM is `bin_t` on RHEL 9 (`java_exec_t` is an alias of `bin_t` in [`corecommands.te`](https://github.com/fedora-selinux/selinux-policy/blob/c9s/policy/modules/kernel/corecommands.te)). The generator writes `corecmd_exec_bin(shopapi_t)` for that execute only because the manifest records `selinux_exceptions.exec_bin`. It does not write an entrypoint on `bin_t`. The wrapper, after `restorecon`, is the entrypoint.
 - Act 6 opens `/feature-spool` after `shopapi_t` leaves the permissive list. `getenforce` still prints `Enforcing`.
 
 ## Self-service

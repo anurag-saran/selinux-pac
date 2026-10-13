@@ -53,6 +53,9 @@ run_deterministic_policy_gen() {
     if [[ "${POLICY_ALLOW_NEEDS_REVIEW:-0}" == "1" ]]; then
         cmd+=(--allow-needs-review)
     fi
+    for _perm in "${ALLOW_NEEDS_REVIEW_PERMS[@]+"${ALLOW_NEEDS_REVIEW_PERMS[@]}"}"; do
+        cmd+=(--allow-needs-review-perm "${_perm}")
+    done
     if [[ -f "${policy_out}/vendor_override.json" ]]; then
         cmd+=(--vendor-override "${policy_out}/vendor_override.json")
     fi

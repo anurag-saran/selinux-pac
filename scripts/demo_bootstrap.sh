@@ -289,6 +289,9 @@ main() {
         verify_shopapi_label
         echo
         echo "=== shopapi-only bootstrap complete (confined=${DEMO_SHOPAPI_CONFINED} seed=${LOAD_SEED}) ==="
+        mkdir -p /etc/selinux-pac
+        echo qa > /etc/selinux-pac/role
+        chmod 0644 /etc/selinux-pac/role
         return 0
     fi
     run_step detect_variant detect_and_persist_variant
@@ -308,6 +311,9 @@ main() {
     verify_shopapi_label
     echo
     echo "=== bootstrap complete ==="
+    mkdir -p /etc/selinux-pac
+    echo qa > /etc/selinux-pac/role
+    chmod 0644 /etc/selinux-pac/role
     echo "variant:  $(demo_variant) (process domain $(demo_tomcat_domain))"
     if [[ "$(demo_variant)" == "tomcat" ]]; then
         echo "note:     distro Tomcat fallback — tomcat_t, not jws6_tomcat_t; distro tomcat_t is unconfined (Act 1/2 denials will not fire)"
