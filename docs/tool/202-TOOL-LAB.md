@@ -10,7 +10,7 @@ Replaces 104 steps P1–P10.
 
 ```bash
 cd ~/selinux-pac
-sudo bash scripts/demo_bootstrap.sh --shopapi-only
+sudo bash lab/demo_bootstrap.sh --shopapi-only
 ```
 
 The service listens on port 8091. The process type is `shopapi_t`. `getenforce` stays `Enforcing`. Only that domain is log-only. The unit has no `SELinuxContext=` line.
@@ -19,7 +19,7 @@ Already generated on this box? Put the seed back, then run the same command agai
 
 ```bash
 git checkout -- selinux/shopapi/
-sudo bash scripts/demo_bootstrap.sh --shopapi-only
+sudo bash lab/demo_bootstrap.sh --shopapi-only
 ```
 
 Labs 0, 1, and 2 are still typed by hand. They are how you read a label and one AVC. The script does not replace 104 steps 0.1–2.3.
@@ -98,8 +98,8 @@ This does not replace labs 2–6. It is how `make check` classifies a saved deni
 python3 cli/deterministic_gen.py --explain \
   --avc-log docs/examples/fixtures/deterministic/01-mislabeled-var-lib/avc.log \
   --manifest config/myapp.manifest.yml \
-  --existing-te selinux/myapp.te \
-  --existing-fc selinux/myapp.fc
+  --existing-te selinux/myapp/myapp.te \
+  --existing-fc selinux/myapp/myapp.fc
 ```
 
 | Fixture | Verdict | 104 analog |
@@ -108,4 +108,4 @@ python3 cli/deterministic_gen.py --explain \
 | `05-baseline-covered` | `baseline` | Lab 4 |
 | `06-fc-missing-line` | `fc_fix` | Lab 6's new file-context line |
 
-`selinux/myapp.te` is the offline golden, not a live app. The full set is `make test-fixtures`.
+`selinux/myapp/myapp.te` is the offline golden, not a live app. The full set is `make test-fixtures`.

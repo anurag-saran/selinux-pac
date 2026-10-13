@@ -1,9 +1,9 @@
 # QA RHEL box (policy discovery). Filename inventory.dev.yml is legacy.
 # Copy to ansible/inventory.dev.yml (gitignored) or generate with:
-#   bash scripts/setup_rhel_hosts.sh write --qa-host HOST --prod-host HOST
+#   bash lab/setup_rhel_hosts.sh write --qa-host HOST --prod-host HOST
 #
 # Run Ansible from a controller (laptop or AAP). The demo app is installed
-# on the host with: sudo bash scripts/demo_bootstrap.sh --shopapi-only
+# on the host with: sudo bash lab/demo_bootstrap.sh --shopapi-only
 #
 # Controller-only: policy_artifact_dir, policy_pp_src (compiled .pp on this machine).
 # On rhel-qa (clone path): selinux_ops_dir, app_manifest_path.

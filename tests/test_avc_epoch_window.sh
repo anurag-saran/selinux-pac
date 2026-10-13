@@ -27,7 +27,7 @@ printf '%s\n' "${marker_epoch}" >"${work}/marker"
 
 export AUDIT_LOG="${log}"
 set +e
-json="$(bash "${SCRIPT_DIR}/monitor_avc.sh" \
+json="$(bash "${PROJECT_ROOT}/scripts/monitor_avc.sh" \
     --domain shopapi_t \
     --paths /var/log/shopapi \
     --manifest "${work}/no-manifest.yml" \
@@ -51,8 +51,8 @@ if payload["count"] != 1:
     raise SystemExit(f"denial before the marker was counted: {payload}")
 PY
 
-# shellcheck source=lib/avc_query.sh
-source "${SCRIPT_DIR}/lib/avc_query.sh"
+# shellcheck source=../scripts/lib/avc_query.sh
+source "${PROJECT_ROOT}/scripts/lib/avc_query.sh"
 export DEMO_STATE_DIR="${work}/demo"
 mkdir -p "${DEMO_STATE_DIR}"
 printf '%s\n' "${marker_epoch}" >"${DEMO_STATE_DIR}/ausearch-since"

@@ -57,10 +57,10 @@ allow myapp_t myapp_log_t:file { append create open write };
 
 ### 3. Generated Files Included in PR
 
-- [x] `selinux/myapp.te` (Type Enforcement)
-- [x] `selinux/myapp.fc` (File Contexts)
-- [x] `selinux/policy_version.txt` (SemVer bump — matches `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
-- [ ] `selinux/myapp.if` — N/A for the reference module (standalone; interfaces deferred)
+- [x] `selinux/myapp/myapp.te` (Type Enforcement)
+- [x] `selinux/myapp/myapp.fc` (File Contexts)
+- [x] `selinux/myapp/policy_version.txt` (SemVer bump — matches `policy_module(myapp, …)` in `.te`; CI `version-consistency`)
+- [ ] `selinux/myapp/myapp.if` — N/A for the reference module (standalone; interfaces deferred)
 
 
 ### 4. AVC Evidence (sample lines from staging)

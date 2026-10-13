@@ -15,7 +15,7 @@ VERSION_FILE="${SELINUX_DIR}/policy_version.txt"
 log_error() { echo "[ERROR] $*" >&2; }
 
 [[ -d "${FIXTURE_ROOT}/generated" ]] || {
-    log_error "Missing ${FIXTURE_ROOT}/generated — run scripts/refresh_offline_fixture.sh"
+    log_error "Missing ${FIXTURE_ROOT}/generated — run tests/refresh_offline_fixture.sh"
     exit 1
 }
 
@@ -32,8 +32,8 @@ if [[ -f "${FIXTURE_ROOT}/generated/${APP_NAME}.te" ]]; then
 fi
 
 if [[ -n "${canonical_version}" && -n "${generated_version}" && "${generated_version}" != "${canonical_version}" ]]; then
-    log_error "Fixture generated/ is ${generated_version} but selinux/policy_version.txt is ${canonical_version}"
-    log_error "Run: bash scripts/refresh_offline_fixture.sh"
+    log_error "Fixture generated/ is ${generated_version} but selinux/myapp/policy_version.txt is ${canonical_version}"
+    log_error "Run: bash tests/refresh_offline_fixture.sh"
     exit 1
 fi
 

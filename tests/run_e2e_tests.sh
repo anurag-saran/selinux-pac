@@ -17,7 +17,7 @@ log_ok() { echo -e "${GREEN}[PASS]${NC} $*"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $*"; fail=1; }
 
 log_ok "smoke_test.py"
-python3 scripts/smoke_test.py || log_fail "smoke_test.py"
+python3 tests/smoke_test.py || log_fail "smoke_test.py"
 
 log_ok "validate_rpm_ops_parity"
 bash scripts/validate_rpm_ops_parity.sh || log_fail "rpm parity"
@@ -41,7 +41,7 @@ else
     log_fail "compile did not produce policy_out/myapp.pp (needs selinux-policy-devel on RHEL 9)"
 fi
 
-if bash scripts/validate_forbidden_patterns.sh selinux; then
+if bash scripts/validate_forbidden_patterns.sh selinux/myapp --app myapp; then
     log_ok "selinux forbidden patterns"
 else
     log_fail "selinux forbidden patterns"

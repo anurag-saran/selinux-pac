@@ -81,7 +81,7 @@ if [[ "${own_tree}" -eq 1 ]]; then
         errors=$((errors + 1))
     fi
 
-    myapp_version="${SELINUX_ROOT}/policy_version.txt"
+    myapp_version="${SELINUX_ROOT}/myapp/policy_version.txt"
     if [[ -f "${myapp_version}" ]]; then
         modver_from_build="$(policy_version "${myapp_version}")"
         canonical_myapp="$(policy_version "${myapp_version}")"

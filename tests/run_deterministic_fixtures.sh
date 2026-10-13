@@ -22,7 +22,7 @@ fi
 python3 - <<'PY'
 import sys
 
-sys.path.insert(0, "scripts")
+sys.path.insert(0, "tests")
 from smoke_test import (
     test_deterministic_fixture_classify,
     test_deterministic_verdict_fixture_coverage,

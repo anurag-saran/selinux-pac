@@ -236,7 +236,7 @@ Do not run Enforce while soak is failing. Do not run `setenforce 0`. Do not pipe
 
 - [ ] App repo has `selinux/`, `config/<app>.manifest.yml`, and Policy CI. Bind ports live in `selinux_ports`. The probe address lives in inventory.
 - [ ] CODEOWNERS (or a required check) covers `selinux/` so an app-only merge cannot skip forbidden-patterns.
-- [ ] `bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …`, then `ping` and `doctor`.
+- [ ] `bash lab/setup_rhel_hosts.sh write --qa-host … --prod-host …`, then `ping` and `doctor`.
 - [ ] Signed RPM repo: `cp packaging/internal.env.example packaging/internal.env` and `bash packaging/publish_internal.sh`.
 - [ ] AAP project points at `ansible/`. Click-create from [`ansible/aap/`](../../ansible/aap/), or apply [`ansible/aap/aap_configuration.yml`](../../ansible/aap/aap_configuration.yml) with `infra.aap_configuration`. That file creates the job templates, both workflows, the enforce survey, and the daily soak schedule.
 - [ ] Soak monitor is scheduled daily, with a notification on job failure.

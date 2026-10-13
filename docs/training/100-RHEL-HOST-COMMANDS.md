@@ -27,9 +27,9 @@ ip -br addr
 hostname
 ```
 
-**Good sign.** One interface other than `lo` is `UP` with an IPv4 address. That address is `QA_HOST` or `PROD_HOST` in `scripts/lab.env`.
+**Good sign.** One interface other than `lo` is `UP` with an IPv4 address. That address is `QA_HOST` or `PROD_HOST` in `lab/lab.env`.
 
-**Used in.** `scripts/lab.env` (copied from `scripts/lab.env.example`). Every script that talks to a VM reads it.
+**Used in.** `lab/lab.env` (copied from `lab/lab.env.example`). Every script that talks to a VM reads it.
 
 ### Name the VM
 
@@ -84,7 +84,7 @@ sudo visudo -cf /etc/sudoers.d/90-selinux-pac-lab
 **Where.** Mac.
 
 ```bash
-bash scripts/sync_rhel_dev.sh                                # rsync this checkout to ~/selinux-pac on rhel-qa
+bash lab/sync_rhel_dev.sh                                # rsync this checkout to ~/selinux-pac on rhel-qa
 scp "$SSH_USER@$QA_HOST:selinux-pac/selinux/shopapi/shopapi.te" selinux/shopapi/
 ```
 
@@ -441,7 +441,7 @@ rpm -q shopapi-selinux
 ```bash
 ansible --version                                          # pip install ansible if missing
 ansible-galaxy collection install -r ansible/requirements.yml
-bash scripts/setup_rhel_hosts.sh ping                      # ansible -m ping to both VMs
+bash lab/setup_rhel_hosts.sh ping                      # ansible -m ping to both VMs
 ansible -i ansible/inventory.dev.yml all -b -m shell -a 'getenforce'
 ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --list-tasks
 ```

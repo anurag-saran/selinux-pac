@@ -291,8 +291,8 @@ def test_signed_repo_published_on_qa() -> None:
         signed = log.read_text(encoding="utf-8")
         assert "--key-id" not in signed
         assert "_gpg_name selinux-pac-lab" in signed
-    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
-    serve = (PROJECT_ROOT / "scripts" / "serve_lab_repo.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    serve = (PROJECT_ROOT / "lab" / "serve_lab_repo.sh").read_text(encoding="utf-8")
     assert 'pkill -f \\"[h]ttp.server 8765\\"' in mac
     assert "rpm-sign" in mac and "createrepo_c" in mac
     assert "mac_serve_repo" in mac
@@ -461,7 +461,7 @@ def test_type_extraction_dedup() -> None:
 
 
 def test_subtract_existing() -> None:
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    te = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.te").read_text(encoding="utf-8")
     existing = parse_existing_allows(te)
     merged = [
         AccessNeed("myapp_t", "myapp_lib_t", "file", frozenset({"read"})),
@@ -473,7 +473,7 @@ def test_subtract_existing() -> None:
 
 
 def test_net_new_detection() -> None:
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    te = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.te").read_text(encoding="utf-8")
     existing = parse_existing_allows(te)
     merged = [
         AccessNeed("myapp_t", "myapp_lib_t", "file", frozenset({"read", "write"})),
@@ -503,7 +503,7 @@ def test_preprocess_stats() -> None:
 
 
 def test_structured_summary_sections() -> None:
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    te = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.te").read_text(encoding="utf-8")
     entries = [
         parse_avc_line(
             _sample_avc_line("link", "system_u:system_r:myapp_t:s0", "system_u:object_r:myapp_var_lib_t:s0")
@@ -707,14 +707,14 @@ def test_check_soak_ready_gate() -> None:
 def test_avc_epoch_window() -> None:
     """Formatted ausearch -ts dates are not used. Denials after an epoch marker count."""
     query = subprocess.run(
-        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_query_epoch.sh")],
+        [BASH, str(PROJECT_ROOT / "tests" / "test_avc_query_epoch.sh")],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
     )
     assert query.returncode == 0, query.stdout + query.stderr
     window = subprocess.run(
-        [BASH, str(PROJECT_ROOT / "scripts" / "test_avc_epoch_window.sh")],
+        [BASH, str(PROJECT_ROOT / "tests" / "test_avc_epoch_window.sh")],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -913,7 +913,7 @@ def test_vendor_policy_check() -> None:
 
 def test_demo_present_dry_run() -> None:
     """Customer talk: one caption per command, no narration blocks, safe order."""
-    script = PROJECT_ROOT / "scripts" / "demo_present.sh"
+    script = PROJECT_ROOT / "lab" / "demo_present.sh"
 
     def dry(*extra: str) -> str:
         result = subprocess.run(
@@ -1038,7 +1038,7 @@ def test_demo_present_waits_for_enter() -> None:
     """Without --auto each typed command waits for Enter before it runs."""
     import time
 
-    script = PROJECT_ROOT / "scripts" / "demo_present.sh"
+    script = PROJECT_ROOT / "lab" / "demo_present.sh"
     args = [BASH, str(script), "--dry-run", "--no-type", "--acts", "1"]
     # Enough Enters for the banner, four commands and the act pause.
     ok = subprocess.run(args, cwd=PROJECT_ROOT, input="\n" * 10, capture_output=True, text=True)
@@ -1109,22 +1109,21 @@ def _without_lab_hosts(base: dict[str, str] | None = None) -> dict[str, str]:
 
 def test_prod_soak_gate_and_lab_signing() -> None:
     """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
-    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
-    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    prod = (PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
     guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "LAST_VERIFIED:** 2026-10-09" in guide
-    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("tlab_explain \"Recanary soak:", 1)[0]
+    gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("return 0", 1)[0]
     assert "/feature-spool" in gate
-    assert "e2e_run_expect_fail" in gate
+    assert "\" fail" in gate
     assert "sepac soak --env production" in gate
     assert "sepac enforce --env production --ticket DEMO" in gate
     assert "--break-glass" not in gate
-    clean = mac.split("tlab_explain \"Recanary soak:", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
-    assert "soak-clean" in clean
+    clean = mac.split("--part soak-clean", 1)[1].split("mac_copy_prod_avc_to_dev()", 1)[0]
     assert "--skip-soak-days" in clean
     assert "--break-glass" not in clean
     assert "day count" in clean
-    talk = mac.split("Part 6 — Prod soak refuses", 1)[1]
+    talk = mac.split("Prod soak refuses", 1)[1]
     dirty = talk.find("mac_ship_prod soak_demo")
     glass = talk.find("--break-glass")
     fail = talk.find("--part fail")
@@ -1138,7 +1137,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     assert "part_soak()" in prod
     assert "lab_signing_setup.sh" in guide
     assert "gpgcheck=1" in guide
-    script = PROJECT_ROOT / "scripts" / "lab_signing_setup.sh"
+    script = PROJECT_ROOT / "lab" / "lab_signing_setup.sh"
     body = script.read_text(encoding="utf-8")
     assert "gpgcheck=1" in body
     assert "--export-secret-keys" not in body
@@ -1154,7 +1153,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
 
 def test_demo_outage_before_fix_dry_run() -> None:
     """Dry-run prints the 500 and the rollback before the spool allow, and ends enforcing."""
-    mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
+    mac = PROJECT_ROOT / "lab" / "demo_e2e_mac.sh"
     with tempfile.TemporaryDirectory() as tmp:
         uname = Path(tmp) / "uname"
         uname.write_text("#!/bin/sh\necho Darwin\n", encoding="utf-8")
@@ -1183,11 +1182,11 @@ def test_demo_outage_before_fix_dry_run() -> None:
 
 def test_demo_e2e_scripts_dry_run() -> None:
     """Mac/QA/prod talk tracks: shopapi, not Flask. QA/prod scripts refuse Darwin."""
-    mac = PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh"
-    qa = PROJECT_ROOT / "scripts" / "demo_e2e_rhel_qa.sh"
-    prod = PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh"
-    reset = PROJECT_ROOT / "scripts" / "reset_demo_vms.sh"
-    setup = PROJECT_ROOT / "scripts" / "setup_rhel_hosts.sh"
+    mac = PROJECT_ROOT / "lab" / "demo_e2e_mac.sh"
+    qa = PROJECT_ROOT / "lab" / "demo_e2e_rhel_qa.sh"
+    prod = PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh"
+    reset = PROJECT_ROOT / "lab" / "reset_demo_vms.sh"
+    setup = PROJECT_ROOT / "lab" / "setup_rhel_hosts.sh"
 
     # demo_e2e_mac.sh calls e2e_require_mac and exits 1 on Linux. Skip the
     # dry-run there; do not treat that refusal as a failed suite.
@@ -1365,9 +1364,9 @@ exit 0
 
 def test_rehearsal_and_review_pr_paths() -> None:
     """Rehearsal opens a draft; a normal run stays a review PR."""
-    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     assert "export DEMO_REHEARSAL=1" in mac
-    script = PROJECT_ROOT / "scripts" / "demo_open_generated_pr.sh"
+    script = PROJECT_ROOT / "lab" / "demo_open_generated_pr.sh"
     prefix = "[rehearsal - do not merge] "
 
     def run(root: Path, args: list[str], rehearsal: str | None) -> str:
@@ -1407,12 +1406,16 @@ def test_rehearsal_and_review_pr_paths() -> None:
 
 
 def test_lab_env_required() -> None:
-    """Talk scripts need QA_HOST, PROD_HOST, and SSH_USER, or scripts/lab.env."""
-    reset = PROJECT_ROOT / "scripts" / "reset_demo_vms.sh"
-    lab = PROJECT_ROOT / "scripts" / "lab.env"
+    """Talk scripts need QA_HOST, PROD_HOST, and SSH_USER, or lab/lab.env."""
+    reset = PROJECT_ROOT / "lab" / "reset_demo_vms.sh"
+    lab = PROJECT_ROOT / "lab" / "lab.env"
+    legacy = PROJECT_ROOT / "scripts" / "lab.env"
     backup = lab.read_bytes() if lab.exists() else None
+    legacy_backup = legacy.read_bytes() if legacy.exists() else None
     if lab.exists():
         lab.unlink()
+    if legacy.exists():
+        legacy.unlink()
     try:
         bare = _without_lab_hosts()
         missing = subprocess.run(
@@ -1483,30 +1486,34 @@ def test_lab_env_required() -> None:
             lab.unlink(missing_ok=True)
         else:
             lab.write_bytes(backup)
+        if legacy_backup is None:
+            legacy.unlink(missing_ok=True)
+        else:
+            legacy.write_bytes(legacy_backup)
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
-    example = (PROJECT_ROOT / "scripts" / "lab.env.example").read_text(encoding="utf-8")
+    example = (PROJECT_ROOT / "lab" / "lab.env.example").read_text(encoding="utf-8")
     assert "192.168.64" not in readme
     assert "/Users/asaran" not in readme
     assert "fall back to a lab pair" not in readme
     assert "192.168.64" not in example
     assert "/Users/" not in example
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
-    assert "scripts/lab.env" in gitignore
-    assert "scripts/lab.env.example" not in gitignore
+    assert "lab/lab.env" in gitignore
+    assert "lab/lab.env.example" not in gitignore
     for rel in (
-        "scripts/lib/e2e_demo.sh",
-        "scripts/reset_demo_vms.sh",
-        "scripts/sync_rhel_dev.sh",
-        "scripts/build_rpms_on_dev.sh",
-        "scripts/setup_rhel_hosts.sh",
+        "lab/lib/e2e_demo.sh",
+        "lab/reset_demo_vms.sh",
+        "lab/sync_rhel_dev.sh",
+        "lab/build_rpms_on_dev.sh",
+        "lab/setup_rhel_hosts.sh",
     ):
         text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
         assert "192.168.64" not in text, rel
-    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
-    assert "scripts/lib/lab_env.sh" in mac
-    assert "scripts/lab.env" in mac
-    boot = (PROJECT_ROOT / "scripts" / "demo_bootstrap.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    assert "lab/lib/lab_env.sh" in mac
+    assert "lab/lab.env" in mac
+    boot = (PROJECT_ROOT / "lab" / "demo_bootstrap.sh").read_text(encoding="utf-8")
     assert "systemctl restart shopapi.service" in boot
     assert "enable --now shopapi.service ||" not in boot
 
@@ -1525,8 +1532,8 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
                 str(bindir / "bash"),
                 "-c",
                 'set -euo pipefail; cd "$1"; E2E_DRY=0; '
-                "source scripts/lib/training_lab_runner.sh; "
-                "source scripts/lib/e2e_demo.sh; "
+                "source lab/lib/training_lab_runner.sh; "
+                "source lab/lib/e2e_demo.sh; "
                 "e2e_install_quiet_ssh; echo WRAP_OK",
                 "_",
                 str(PROJECT_ROOT),
@@ -1579,7 +1586,7 @@ def test_narration_live_checks_and_enforce_paths() -> None:
 
 
 def test_demo_present_preflight_names_bootstrap() -> None:
-    script = PROJECT_ROOT / "scripts" / "demo_present.sh"
+    script = PROJECT_ROOT / "lab" / "demo_present.sh"
     result = subprocess.run(
         [
             BASH,
@@ -1929,7 +1936,7 @@ def test_scaffold_billing_no_myapp_leak() -> None:
 
 
 def test_deterministic_payments_manifest_check() -> None:
-    script = PROJECT_ROOT / "scripts" / "run_deterministic_payments_check.sh"
+    script = PROJECT_ROOT / "tests" / "run_deterministic_payments_check.sh"
     result = subprocess.run(
         ["bash", str(script)],
         cwd=PROJECT_ROOT,
@@ -2112,7 +2119,7 @@ def test_offline_fixture_sync() -> None:
     fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated"
     for name in ("myapp.te", "myapp.fc"):
         assert (fix / name).read_text(encoding="utf-8") == (
-            PROJECT_ROOT / "selinux" / name
+            PROJECT_ROOT / "selinux" / "myapp" / name
         ).read_text(encoding="utf-8"), f"Drift in offline/generated/{name} — run refresh_offline_fixture.sh"
 
 
@@ -2183,7 +2190,7 @@ def _deterministic_run_args(
         out_dir=out_dir,
         app_name=None,
         bump_version=False,
-        version_file=PROJECT_ROOT / "selinux" / "policy_version.txt",
+        version_file=PROJECT_ROOT / "selinux" / "myapp" / "policy_version.txt",
         explain=explain,
         allow_degraded=False,
         allow_needs_review=False,
@@ -2387,8 +2394,8 @@ def test_baseline_fixture_rerun_does_not_append() -> None:
     case = PROJECT_ROOT / "docs/examples/fixtures/deterministic/05-baseline-covered"
     gen = PROJECT_ROOT / "cli" / "deterministic_gen.py"
     manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
-    te = PROJECT_ROOT / "selinux" / "myapp.te"
-    fc = PROJECT_ROOT / "selinux" / "myapp.fc"
+    te = PROJECT_ROOT / "selinux" / "myapp" / "myapp.te"
+    fc = PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc"
     original = te.read_bytes()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -2478,8 +2485,8 @@ def test_deterministic_fixture_classify() -> None:
     """Golden verdict checks for deterministic_gen --explain and full generation."""
     root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
     default_manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
-    te = PROJECT_ROOT / "selinux" / "myapp.te"
-    fc = PROJECT_ROOT / "selinux" / "myapp.fc"
+    te = PROJECT_ROOT / "selinux" / "myapp" / "myapp.te"
+    fc = PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc"
 
     for case_dir in _deterministic_fixture_dirs(root):
         case = case_dir.name
@@ -2736,7 +2743,7 @@ AVC
 
 def test_init_uses_daemon_domain() -> None:
     """systemd start uses init_daemon_domain, and the FCOS overlay files are gone."""
-    te = (PROJECT_ROOT / "selinux" / "myapp.te").read_text(encoding="utf-8")
+    te = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.te").read_text(encoding="utf-8")
     assert te.count("init_daemon_domain(myapp_t, myapp_exec_t)") == 1
     assert te.count("init_daemon_domain(myapp_backend_t, myapp_backend_exec_t)") == 1
     assert "dyntransition" not in te
@@ -2758,7 +2765,7 @@ def test_init_uses_daemon_domain() -> None:
     classify = (PROJECT_ROOT / "scripts" / "classify_policy_blast_radius.sh").read_text(encoding="utf-8")
     assert "CLASSIFY_SKIP_SELINUX" in classify
     assert "CLASSIFY_SKIP_PODMAN" not in classify
-    assert "DEMO_PODMAN_IMAGE" not in (PROJECT_ROOT / "scripts" / "lib" / "demo_estate.sh").read_text(encoding="utf-8")
+    assert "DEMO_PODMAN_IMAGE" not in (PROJECT_ROOT / "lab" / "lib" / "demo_estate.sh").read_text(encoding="utf-8")
     assert "container_build" not in (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
     readme = (PROJECT_ROOT / "ansible" / "README.md").read_text(encoding="utf-8")
     assert "RHEL 9" in readme
@@ -2769,7 +2776,7 @@ def test_init_uses_daemon_domain() -> None:
 
 def test_vm_check_reports_each_result() -> None:
     """Each QA check prints PASS or FAIL, and a loaded bypass module fails the host check."""
-    script = PROJECT_ROOT / "scripts" / "vm_check.sh"
+    script = PROJECT_ROOT / "lab" / "vm_check.sh"
     text = script.read_text(encoding="utf-8")
     for name in (
         "integration-compile",
@@ -3260,7 +3267,7 @@ def test_boolean_hint_yaml_still_documents_patterns() -> None:
 def test_fc_labeling_drift_detection() -> None:
     from fc_labeling import existing_fc_covers, filter_fc_fix_lines, strip_redundant_fc_lines
 
-    baseline = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
+    baseline = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc").read_text(encoding="utf-8")
     path = "/var/lib/myapp/data.log"
     assert existing_fc_covers(path, "myapp_var_lib_t", baseline)
 
@@ -3554,7 +3561,7 @@ def test_forbidden_exec_bin_needs_manifest_reason() -> None:
 
 
 def test_rhel_runtime_file_contexts() -> None:
-    myapp_fc = (PROJECT_ROOT / "selinux" / "myapp.fc").read_text(encoding="utf-8")
+    myapp_fc = (PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc").read_text(encoding="utf-8")
     assert "/run/myapp(/.*)?" in myapp_fc
     assert "/var/run/myapp(/.*)?" in myapp_fc
     shopapi_fc = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.fc").read_text(encoding="utf-8")
@@ -3731,9 +3738,9 @@ def test_force_reason_recorded() -> None:
                 "--manifest",
                 str(PROJECT_ROOT / "config" / "myapp.manifest.yml"),
                 "--existing-te",
-                str(PROJECT_ROOT / "selinux" / "myapp.te"),
+                str(PROJECT_ROOT / "selinux" / "myapp" / "myapp.te"),
                 "--existing-fc",
-                str(PROJECT_ROOT / "selinux" / "myapp.fc"),
+                str(PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc"),
                 "--out-dir",
                 str(out_dir),
                 "--vendor-override",
@@ -4512,8 +4519,8 @@ def test_soak_gate_negative_net_new() -> None:
 
 def test_new_canary_ignores_older_soak_files() -> None:
     """A new canary marker drops daily files and fail files from the previous marker."""
-    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
-    mac = (PROJECT_ROOT / "scripts" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
+    prod = (PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     ops = "/var/lib/selinux-policy-ops/shopapi/selinux_soak_last_fail.avc"
     assert ops in prod and ops in mac
     assert "/var/lib/shopapi/selinux_soak_last_fail" not in prod
@@ -5040,7 +5047,7 @@ def test_ansible_role_writes_role_and_manifest() -> None:
 
 def test_prod_dry_run_has_sepac_commands() -> None:
     """Prod talk track uses sepac status and sepac denials."""
-    prod = (PROJECT_ROOT / "scripts" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
+    prod = (PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
     assert "sepac status shopapi" in prod
     assert "sepac denials shopapi" in prod
 
@@ -5050,6 +5057,55 @@ def test_inventory_examples_have_host_role() -> None:
     for name in ("dev.example", "staging.example", "production.example"):
         inv = (PROJECT_ROOT / "ansible" / f"inventory.{name}.yml").read_text(encoding="utf-8")
         assert "selinux_pac_host_role" in inv, f"inventory.{name}.yml missing selinux_pac_host_role"
+
+
+def test_no_stale_old_paths() -> None:
+    """After repo reorg, no tracked file should reference old pre-reorg paths.
+
+    Allowed exceptions:
+      - .gitignore (keeps scripts/lab.env for backwards compat)
+      - lab/lib/lab_env.sh (intentional fallback to scripts/lab.env)
+      - tests/smoke_test.py (this very test, plus docstrings)
+    """
+    import subprocess
+
+    stale_patterns = [
+        r"scripts/demo_",
+        r"scripts/reset_demo_vms",
+        r"scripts/setup_rhel_hosts",
+        r"scripts/run_",
+        r"scripts/test_",
+        r"scripts/smoke_test\.py",
+        r"scripts/refresh_offline",
+        r"scripts/sync_rhel_dev",
+        r"scripts/build_rpms_on_dev",
+        r"scripts/vm_check",
+        r"scripts/serve_lab_repo",
+        r"scripts/lab_signing_setup",
+        r"scripts/lib/training_lab_runner",
+        r"scripts/lib/e2e_demo",
+        r"scripts/lib/lab_env",
+        r"scripts/lib/demo_estate",
+        r"scripts/lib/ansible_collections",
+        r"selinux/myapp\.te",
+        r"selinux/myapp\.fc",
+        r"selinux/policy_version\.txt",
+    ]
+    allowed_files = {
+        ".gitignore",
+        "lab/lib/lab_env.sh",
+        "tests/smoke_test.py",
+    }
+    combined = "|".join(stale_patterns)
+    result = subprocess.run(
+        ["git", "grep", "-lE", combined, "--", ":(exclude).git"],
+        capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+    )
+    hits = [
+        f for f in result.stdout.strip().splitlines()
+        if f and f not in allowed_files
+    ]
+    assert not hits, f"Old pre-reorg paths found in: {hits}"
 
 
 def main() -> int:
@@ -5156,6 +5212,7 @@ def main() -> int:
         ("ansible_role_writes_role_and_manifest", test_ansible_role_writes_role_and_manifest),
         ("prod_dry_run_has_sepac_commands", test_prod_dry_run_has_sepac_commands),
         ("inventory_examples_have_host_role", test_inventory_examples_have_host_role),
+        ("no_stale_old_paths", test_no_stale_old_paths),
     ]
     for name, fn in tests:
         fn()

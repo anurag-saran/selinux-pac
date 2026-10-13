@@ -5,11 +5,11 @@
 # Each step prints at most one caption line, types the command, and waits for
 # Enter before it runs. The presenter explains; the screen stays quiet.
 #
-#   bash scripts/demo_present.sh --dry-run --profile customer
-#   bash scripts/demo_present.sh --preflight
-#   bash scripts/demo_present.sh --profile customer
-#   bash scripts/demo_present.sh --profile technical
-#   bash scripts/demo_present.sh --acts 0,1,2
+#   bash lab/demo_present.sh --dry-run --profile customer
+#   bash lab/demo_present.sh --preflight
+#   bash lab/demo_present.sh --profile customer
+#   bash lab/demo_present.sh --profile technical
+#   bash lab/demo_present.sh --acts 0,1,2
 #
 set -euo pipefail
 
@@ -45,7 +45,7 @@ tune inherited Tomcat only when a denial is real (App B, no .te) → generate fo
 Spring Boot (shopapi) → show the enforcing payoff.
 
   One RHEL box. Do not run this as the three-host production walkthrough.
-  Multi-host (~45 min, Mac + rhel-qa + rhel-prod):  bash scripts/demo_e2e_mac.sh
+  Multi-host (~45 min, Mac + rhel-qa + rhel-prod):  bash lab/demo_e2e_mac.sh
   Guide: docs/demo/301-CUSTOMER.md
 
 Each command is typed, then waits for Enter before it runs.
@@ -65,9 +65,9 @@ Options:
   --no-type                      Instant command echo
   -h, --help
 
-Laptop with no RHEL:  bash scripts/demo_present.sh --dry-run --profile customer
+Laptop with no RHEL:  bash lab/demo_present.sh --dry-run --profile customer
 Unprepared VM:        make demo-bootstrap
-Second Act 2 on the same host:  bash scripts/reset_demo_vms.sh --dev-only
+Second Act 2 on the same host:  bash lab/reset_demo_vms.sh --dev-only
 EOF
 }
 
@@ -117,65 +117,9 @@ if [[ -z "${ACTS}" ]]; then
 fi
 
 # ── Step runner ──────────────────────────────────────────────────────────────
-
-# One caption line above a command, shown as a shell comment.
-say() {
-    echo -e "${TLAB_DIM}# $*${TLAB_NC}"
-}
-
-# Type the command and leave the cursor at the end of the line.
-present_type() {
-    local cmd="$1" i
-    echo -n -e "${TLAB_GREEN}${TLAB_PS1}${TLAB_NC}"
-    if [[ "${TLAB_NO_TYPE}" -eq 1 ]]; then
-        printf '%s' "${cmd}"
-        return 0
-    fi
-    for ((i = 0; i < ${#cmd}; i++)); do
-        printf '%s' "${cmd:i:1}"
-        sleep "${TLAB_TYPE_DELAY}"
-    done
-}
-
-# Wait for Enter. Keys are not echoed, so a stray key cannot garble the line.
-present_wait() {
-    if [[ "${TLAB_AUTO}" -eq 0 && "${STEP}" -eq 1 ]]; then
-        read -r -s _ || true
-    fi
-    echo
-}
-
-# present_cmd COMMAND [run|fail] [DRY_RUN_SAMPLE]
-#   run   A non-zero exit is shown in yellow and the talk keeps going.
-#   fail  The step is meant to be refused. Exit 0 is the surprise.
-# --dry-run prints DRY_RUN_SAMPLE (what a good screen shows) instead of running.
-present_cmd() {
-    local cmd="$1" mode="${2:-run}" sample="${3:-}" rc
-    present_type "${cmd}"
-    present_wait
-    if [[ "${E2E_DRY}" -eq 1 ]]; then
-        echo -e "${TLAB_DIM}(dry-run)${sample:+ ${sample}}${TLAB_NC}"
-        echo
-        return 0
-    fi
-    set +e
-    eval "${cmd}"
-    rc=$?
-    set -e
-    echo
-    if [[ "${mode}" == "fail" ]]; then
-        if [[ "${rc}" -ne 0 ]]; then
-            echo -e "${TLAB_YELLOW}exit ${rc}: blocked on purpose${TLAB_NC}"
-        else
-            echo -e "${TLAB_RED}exit 0: this step should have been blocked${TLAB_NC}"
-        fi
-        echo
-    elif [[ "${rc}" -ne 0 ]]; then
-        echo -e "${TLAB_YELLOW}exit ${rc}${TLAB_NC}"
-        echo
-    fi
-    return 0
-}
+# shellcheck source=lib/present.sh
+source "${SCRIPT_DIR}/lib/present.sh"
+PRESENT_STEP=${STEP}
 
 # ── Preflight (not shown to the audience) ────────────────────────────────────
 
@@ -253,7 +197,7 @@ app_b_connect_boolean_on() {
 }
 
 app_b_reset_hint() {
-    echo "bash scripts/reset_demo_vms.sh --dev-only   (or: make demo-bootstrap after deleting the three host tunings)"
+    echo "bash lab/reset_demo_vms.sh --dev-only   (or: make demo-bootstrap after deleting the three host tunings)"
 }
 
 run_preflight() {
@@ -582,7 +526,7 @@ act4_pr() {
         "Forbidden-pattern checks passed for shopapi"
     if [[ "${OPEN_PR}" -eq 1 ]]; then
         say "Open the PR"
-        present_cmd "bash scripts/demo_open_generated_pr.sh"
+        present_cmd "bash lab/demo_open_generated_pr.sh"
     fi
     tlab_pause
 }
@@ -590,8 +534,8 @@ act4_pr() {
 act5_pipeline() {
     e2e_banner "Pipeline · canary, soak, enforce on two hosts"
     echo "docs/demo/302-TECHNICAL.md"
-    echo "  Mac:   bash scripts/demo_e2e_mac.sh"
-    echo "  QA:    bash scripts/demo_e2e_rhel_qa.sh"
+    echo "  Mac:   bash lab/demo_e2e_mac.sh"
+    echo "  QA:    bash lab/demo_e2e_rhel_qa.sh"
     echo "  Prod:  bash ~/e2e-demo/demo_e2e_rhel_prod.sh"
     echo
     tlab_pause
@@ -619,7 +563,7 @@ main() {
     fi
     if [[ "${E2E_DRY}" -eq 1 ]]; then
         echo "dry-run  profile=${PROFILE}  acts=${ACTS}  variant=${DEMO_DRY_VARIANT}"
-        echo "Unprepared host: make demo-bootstrap.  Second Act 2 on this host: bash scripts/reset_demo_vms.sh --dev-only"
+        echo "Unprepared host: make demo-bootstrap.  Second Act 2 on this host: bash lab/reset_demo_vms.sh --dev-only"
     fi
     e2e_banner "SELinux Policy as Code: nothing to do, then tune, then build"
     tlab_pause

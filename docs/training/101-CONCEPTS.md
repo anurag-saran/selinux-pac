@@ -116,7 +116,7 @@ The file on disk can still wear the generic type after the module names the shop
 
 **`jws6_tomcat_t`** is Red Hat JBoss Web Server Tomcat, when that product is what the machine is running. This one is confined. You adjust the host. You do not author a second module for it.
 
-**`myapp_t`** and the other `myapp_*` types live in `selinux/myapp.te`. They are not the process on rhel-qa.
+**`myapp_t`** and the other `myapp_*` types live in `selinux/myapp/myapp.te`. They are not the process on rhel-qa.
 
 The last field is a sensitivity level from MLS/MCS. This project does not turn that feature on. **`s0`** is the default. Stop at the type. A range such as `s0-s0:c0.c1023` is an unconfined login, not a shopapi file.
 
@@ -237,7 +237,7 @@ Declared in [`selinux/shopapi/shopapi.te`](../../selinux/shopapi/shopapi.te). Th
 | `shopapi_var_run_t` | Pid file and sockets under `/run/shopapi` |
 | `shopapi_port_t` | TCP port 8091 |
 
-`myapp_*` in [`selinux/myapp.te`](../../selinux/myapp.te) is the laptop sample. `make check` uses these types. They do not run on rhel-qa.
+`myapp_*` in [`selinux/myapp/myapp.te`](../../selinux/myapp/myapp.te) is the laptop sample. `make check` uses these types. They do not run on rhel-qa.
 
 | Type | Used for |
 |------|----------|

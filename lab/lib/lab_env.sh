@@ -1,10 +1,22 @@
-# lab_env.sh — Load QA_HOST, PROD_HOST, and SSH_USER from scripts/lab.env.
+# lab_env.sh — Load QA_HOST, PROD_HOST, and SSH_USER from lab/lab.env.
 # Source this file. Call lab_env_load, then lab_env_require when a script
 # is about to use the addresses. --help must exit before lab_env_require.
 
 lab_env_file() {
     local here="${BASH_SOURCE[0]%/*}"
-    printf '%s\n' "${here}/../lab.env"
+    local primary="${here}/../lab.env"
+    if [[ -f "${primary}" ]]; then
+        printf '%s\n' "${primary}"
+        return
+    fi
+    # Fallback: scripts/lab.env (pre-reorg location)
+    local legacy="${here}/../../scripts/lab.env"
+    if [[ -f "${legacy}" ]]; then
+        echo "Move scripts/lab.env to lab/lab.env" >&2
+        printf '%s\n' "${legacy}"
+        return
+    fi
+    printf '%s\n' "${primary}"
 }
 
 lab_env_set_if_empty() {
@@ -63,7 +75,7 @@ lab_env_require() {
     [[ -n "${PROD_HOST:-}" ]] || missing+=(PROD_HOST)
     [[ -n "${SSH_USER:-}" ]] || missing+=(SSH_USER)
     if [[ "${#missing[@]}" -gt 0 ]]; then
-        echo "Set ${missing[*]}, or copy scripts/lab.env.example to scripts/lab.env." >&2
+        echo "Set ${missing[*]}, or copy lab/lab.env.example to lab/lab.env." >&2
         exit 2
     fi
     if [[ -z "${DEV_HOST:-}" ]]; then

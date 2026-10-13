@@ -57,7 +57,7 @@ jobs:
       - name: AVC epoch window sees denials after the marker
         env:
           AVC_REQUIRE_AUSEARCH: "1"
-        run: bash scripts/test_avc_epoch_window.sh
+        run: bash tests/test_avc_epoch_window.sh
 
   version-consistency:
     name: version-consistency

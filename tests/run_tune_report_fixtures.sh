@@ -13,7 +13,7 @@ export PYTHONPATH="${PROJECT_ROOT}/cli:${PROJECT_ROOT}/scripts${PYTHONPATH:+:${P
 python3 - <<'PY'
 import sys
 
-sys.path.insert(0, "scripts")
+sys.path.insert(0, "tests")
 from smoke_test import test_tune_report, test_tune_report_skip_no_selinux, test_force_reason_recorded
 
 test_tune_report()

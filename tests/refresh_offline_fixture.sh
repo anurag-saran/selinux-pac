@@ -17,8 +17,8 @@ done
 [[ -n "${APP_NAME}" ]] || { echo "[ERROR] --app NAME is required" >&2; exit 1; }
 DEST="${PROJECT_ROOT}/docs/examples/fixtures/offline/generated"
 
-# shellcheck source=lib/app_identity.sh
-source "${SCRIPT_DIR}/lib/app_identity.sh"
+# shellcheck source=../scripts/lib/app_identity.sh
+source "${PROJECT_ROOT}/scripts/lib/app_identity.sh"
 resolve_app_identity --app "${APP_NAME}"
 
 mkdir -p "${DEST}"

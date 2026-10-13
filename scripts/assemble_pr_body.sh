@@ -17,7 +17,7 @@ SKIP_POLICY_DIFF=0
 STAGING_HOST="${STAGING_HOST:-<!-- fill in staging host -->}"
 TEST_SUITE="${TEST_SUITE:-Integration tests (curl endpoints)}"
 AVC_SAMPLE_LINES="${AVC_SAMPLE_LINES:-8}"
-VERSION_FILE="${PROJECT_ROOT}/selinux/policy_version.txt"
+VERSION_FILE="${PROJECT_ROOT}/selinux/myapp/policy_version.txt"
 DOMAINS=""
 
 usage() {

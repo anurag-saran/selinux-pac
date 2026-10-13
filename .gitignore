@@ -14,6 +14,7 @@ docs/examples/fixtures/deterministic/**/_out2/
 packaging/rpmbuild/
 dist/
 scripts/lab.env
+lab/lab.env
 ansible/inventory.dev.yml
 ansible/inventory.staging.yml
 ansible/inventory.production.yml

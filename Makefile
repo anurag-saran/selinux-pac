@@ -30,15 +30,15 @@ check: test lint ## Full repo health: offline tests + linters when installed
 fixtures: test-fixtures ## Deterministic + payments + blast-radius fixture suites only
 
 test-fixtures: ## Golden deterministic, payments + blast-radius + tune-report fixtures
-	bash scripts/run_deterministic_fixtures.sh
-	bash scripts/run_deterministic_payments_check.sh
-	bash scripts/run_blast_radius_fixtures.sh
-	bash scripts/run_tune_report_fixtures.sh
+	bash tests/run_deterministic_fixtures.sh
+	bash tests/run_deterministic_payments_check.sh
+	bash tests/run_blast_radius_fixtures.sh
+	bash tests/run_tune_report_fixtures.sh
 
 test-static: test-forbidden test-version test-rpm test-manifest ## Shell validators (offline)
 
 test-forbidden: ## Forbidden-pattern grep plus source audit (dontaudit, .fc paths)
-	bash scripts/validate_forbidden_patterns.sh selinux --app myapp
+	bash scripts/validate_forbidden_patterns.sh selinux/myapp --app myapp
 	bash scripts/validate_forbidden_patterns.sh selinux/shopapi --app shopapi
 	bash scripts/validate_forbidden_patterns.sh selinux/payments --app payments
 	$(PYTHON) cli/policy_audit.py --selinux-dir selinux
@@ -56,16 +56,16 @@ test-rpm: ## Ops RPM + sepac RPM packaging allowlist
 	bash scripts/validate_rpm_sepac_parity.sh
 
 test-smoke: deps ## Python smoke_test.py (offline; no SELinux host)
-	$(PYTHON) scripts/smoke_test.py
+	$(PYTHON) tests/smoke_test.py
 
 test-blast-radius: ## Blast-radius fixtures only (skips live sesearch locally)
-	bash scripts/run_blast_radius_fixtures.sh
+	bash tests/run_blast_radius_fixtures.sh
 
 lint: lint-shell lint-yaml lint-ansible ## Run linters (SKIP if tool not installed)
 
-lint-shell: ## shellcheck on scripts/
+lint-shell: ## shellcheck on scripts/ and lab/
 	@command -v shellcheck >/dev/null 2>&1 || { echo "SKIP lint-shell: shellcheck not installed"; exit 0; }; \
-	shellcheck scripts/*.sh scripts/lib/*.sh scripts/ci/*.sh scripts/validate_version_consistency.sh
+	shellcheck scripts/*.sh scripts/lib/*.sh scripts/ci/*.sh lab/*.sh lab/lib/*.sh
 
 lint-yaml: ## yamllint on ansible/ and workflows/
 	@command -v yamllint >/dev/null 2>&1 || { echo "SKIP lint-yaml: yamllint not installed (pip install yamllint)"; exit 0; }; \
@@ -84,7 +84,7 @@ integration-compile: ## Compile selinux/ modules (needs selinux-policy-devel)
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \
 		echo "SKIP integration-compile: install selinux-policy-devel (run on rhel-dev)"; exit 0; \
 	fi
-	bash scripts/compile_and_validate.sh selinux --app myapp
+	bash scripts/compile_and_validate.sh selinux/myapp --app myapp
 	bash scripts/compile_and_validate.sh selinux/payments --app payments
 	bash scripts/compile_and_validate.sh selinux/shopapi --app shopapi
 
@@ -92,22 +92,22 @@ integration-semantics: ## sesearch semantic assertions (needs selinux-policy-dev
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \
 		echo "SKIP integration-semantics: install selinux-policy-devel (run on rhel-dev)"; exit 0; \
 	fi
-	bash scripts/validate_policy_semantics.sh selinux --app myapp
+	bash scripts/validate_policy_semantics.sh selinux/myapp --app myapp
 
 integration-blast-radius: ## Blast-radius with live sesearch (CI / rhel-dev)
 	@if [ ! -f /usr/share/selinux/devel/Makefile ]; then \
 		echo "SKIP integration-blast-radius: install selinux-policy-devel (run on rhel-dev)"; exit 0; \
 	fi
-	BLAST_RADIUS_REQUIRE_INTEGRATION=1 bash scripts/run_blast_radius_fixtures.sh
+	BLAST_RADIUS_REQUIRE_INTEGRATION=1 bash tests/run_blast_radius_fixtures.sh
 
 training-lab: ## Dry-run the customer talk (no SELinux required)
-	bash scripts/demo_present.sh --dry-run --profile customer --no-type --auto
+	bash lab/demo_present.sh --dry-run --profile customer --no-type --auto
 
 demo-bootstrap: ## Stand up App A/B + shopapi on RHEL (idempotent; not for macOS)
-	bash scripts/demo_bootstrap.sh
+	bash lab/demo_bootstrap.sh
 
-vm-check: ## Compile and soak checks on the QA VM (needs scripts/lab.env)
-	bash scripts/vm_check.sh
+vm-check: ## Compile and soak checks on the QA VM (needs lab/lab.env)
+	bash lab/vm_check.sh
 
 install-cli: ## Symlink bin/sepac into /usr/local/bin (needs sudo)
 	ln -sf "$(CURDIR)/bin/sepac" /usr/local/bin/sepac

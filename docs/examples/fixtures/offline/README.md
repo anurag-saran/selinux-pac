@@ -11,5 +11,5 @@ Used by `scripts/lib/stage_offline_fixture.sh` when a host has no audit log. Pre
 Refresh `generated/` after bumping `selinux/`:
 
 ```bash
-bash scripts/refresh_offline_fixture.sh
+bash tests/refresh_offline_fixture.sh
 ```

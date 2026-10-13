@@ -1,6 +1,6 @@
 # Ansible Playbooks
 
-Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9 hosts. It does **not** install the application for the first time — use [`scripts/demo_bootstrap.sh`](../scripts/demo_bootstrap.sh) for the shopapi demo.
+Ansible orchestrates the **admin deploy lifecycle** for SELinux policy on RHEL 9 hosts. It does **not** install the application for the first time — use [`lab/demo_bootstrap.sh`](../lab/demo_bootstrap.sh) for the shopapi demo.
 
 **AAP job templates and soak workflow:** [`ansible/aap/`](aap/README.md) and [`docs/admin/401-OPERATIONS.md`](../docs/admin/401-OPERATIONS.md). Denied file/port after ship: [`docs/admin/401-OPERATIONS.md#a-denial-after-ship`](../docs/admin/401-OPERATIONS.md#a-denial-after-ship).
 
@@ -61,13 +61,13 @@ Collections: `community.general` (`selinux_permissive`), `ansible.posix` (`seboo
 
 ## Policy artifacts and RPMs
 
-Build the module before deploy (`.pp` is not committed). RPM version is taken from **`selinux/policy_version.txt`** when you run [`packaging/build_rpms.sh`](../packaging/build_rpms.sh) (`myapp-selinux-<version>-*.rpm`).
+Build the module before deploy (`.pp` is not committed). RPM version is taken from **`selinux/myapp/policy_version.txt`** when you run [`packaging/build_rpms.sh`](../packaging/build_rpms.sh) (`myapp-selinux-<version>-*.rpm`).
 
 ```bash
 bash scripts/compile_and_validate.sh selinux
 ```
 
-**Two RHEL boxes (preferred):** [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md) — `bash scripts/setup_rhel_hosts.sh write --qa-host … --prod-host …`.
+**Two RHEL boxes (preferred):** [`docs/demo/302-TECHNICAL.md`](../docs/demo/302-TECHNICAL.md) — `bash lab/setup_rhel_hosts.sh write --qa-host … --prod-host …`.
 
 **Laptop / AAP → rhel-qa:** `policy_artifact_dir` and `policy_pp_src` are the controller checkout (compiled `.pp` is copied over). `selinux_ops_dir` and `app_manifest_path` are paths **on rhel-qa** after you clone the repo (`/home/ansible/selinux-pac/...`). Do not set those two from `playbook_dir` — that expands to a Mac/AAP path the guest does not have.
 
@@ -92,11 +92,11 @@ Set in inventory `vars` or pass with `-e`. Role defaults live in [`roles/selinux
 | `log_dir` | `/var/log/myapp` | Log directory (`LogsDirectory`) — **must be set in inventory** (not a self-referential play var) |
 | `runtime_dir` | `/run/myapp` | Runtime dir (`RuntimeDirectory`) |
 | `service_name` | `myapp.service` | Primary systemd unit |
-| `policy_version` | _(from `policy_artifact_dir/policy_version.txt` or `../selinux/policy_version.txt`)_ | SemVer for RPM name and deploy report |
+| `policy_version` | _(from `policy_artifact_dir/policy_version.txt` or `../selinux/myapp/policy_version.txt`)_ | SemVer for RPM name and deploy report |
 | `selinux_ops_dir` | `/usr/libexec/selinux-policy-ops` | **Target** path to ops scripts (lab: `/home/<user>/selinux-pac/scripts`) |
 | `selinux_ops_from_package` | `true` / `false` | When `true`, role runs `dnf install selinux-policy-ops` (+ app RPM) |
 | `policy_artifact_dir` | controller repo or `dist/` | **Controller only** — never used in remote `command` paths |
-| `policy_pp_src` | `…/selinux/myapp.pp` | **Controller only** — copied to `policy_staging_path` on target; empty when RPM-only |
+| `policy_pp_src` | `…/selinux/myapp/myapp.pp` | **Controller only** — copied to `policy_staging_path` on target; empty when RPM-only |
 | `policy_staging_path` | `/var/lib/selinux-policy-staging/myapp.pp` | Target path for `semodule -i` |
 | `app_manifest_path` | `/etc/myapp/selinux-manifest.yml` (prod) or `/home/<user>/selinux-pac/config/*.manifest.yml` (lab) | **Target** path passed to `--manifest` ops scripts; role **loads ports, units, paths**. Not `playbook_dir` |
 | `http_probe_host` | `127.0.0.1` or canary VIP | Curl target; **not** the bind port (ports stay in `selinux_ports`) |
@@ -118,7 +118,7 @@ Set in inventory `vars` or pass with `-e`. Role defaults live in [`roles/selinux
 
 **Ansible enforce role** uses **`collect_soak_facts.sh`** with `soak_min_days` plus **`avc_net_new_count`**. `sesearch` (`setools-console`) is required on canary/prod.
 
-**Deprecated:** hardcoding `policy_version` in inventory — the role loads **`policy_version.txt`** from `policy_artifact_dir` (e.g. `policy_out/`) or **`selinux/policy_version.txt`** beside it.
+**Deprecated:** hardcoding `policy_version` in inventory — the role loads **`policy_version.txt`** from `policy_artifact_dir` (e.g. `policy_out/`) or **`selinux/myapp/policy_version.txt`** beside it.
 
 ---
 
@@ -239,7 +239,7 @@ ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.
 
 After an **interrupted canary** (host left on `semodule -DB` or permissive): `semodule -B` + clear permissive — **does not** change the installed policy module.
 
-To wipe leftover **demo** policy on both VMs and start [302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md) over: `bash scripts/reset_demo_vms.sh` on the Mac (shopapi JVM stays).
+To wipe leftover **demo** policy on both VMs and start [302-TECHNICAL.md](../docs/demo/302-TECHNICAL.md) over: `bash lab/reset_demo_vms.sh` on the Mac (shopapi JVM stays).
 
 ---
 

@@ -138,7 +138,7 @@ sudo restorecon -Rvn /opt/appdata
 
 `(/.*)?` is the directory and everything under it. Capture of `-l -C`: [LIVE_CHECKS.md](../LIVE_CHECKS.md).
 
-**Used in.** Customer talk Act 2. `scripts/reset_demo_vms.sh` deletes that local line between rehearsals (`-d`).
+**Used in.** Customer talk Act 2. `lab/reset_demo_vms.sh` deletes that local line between rehearsals (`-d`).
 
 **Common mistake.** Adding the line and not running `restorecon`. The file on disk keeps the old type.
 
@@ -230,7 +230,7 @@ sudo semanage permissive -l
 sudo semanage permissive -d shopapi_t
 ```
 
-**Used in.** [104](104-HAND-BUILT-MODULE.md) prep (`-a`), lab 5 (`-d` then `-l`). Canary uses `community.general.selinux_permissive` state `present`. Enforce and rollback use `absent` or `present`. `scripts/reset_demo_vms.sh` clears the demo domain.
+**Used in.** [104](104-HAND-BUILT-MODULE.md) prep (`-a`), lab 5 (`-d` then `-l`). Canary uses `community.general.selinux_permissive` state `present`. Enforce and rollback use `absent` or `present`. `lab/reset_demo_vms.sh` clears the demo domain.
 
 **Common mistake.** `setenforce 0` instead of `-a` on one type. Or reading `-l` output `shopapi_t` as "`getenforce` is Permissive."
 

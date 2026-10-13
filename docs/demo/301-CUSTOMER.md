@@ -10,14 +10,14 @@ This repo has **two** talk tracks. They overlap on canary / soak / PR. They are 
 
 | | Audience | Setup | Length | Command |
 |---|----------|--------|--------|---------|
-| **This guide (301)** | Customer / first conversation | One RHEL host | ~20 min | `bash scripts/demo_present.sh` |
-| **[302](302-TECHNICAL.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash scripts/demo_e2e_mac.sh` |
+| **This guide (301)** | Customer / first conversation | One RHEL host | ~20 min | `bash lab/demo_present.sh` |
+| **[302](302-TECHNICAL.md)** | Technical deep dive — proof the ship path is real | Mac + rhel-qa + rhel-prod | ~45 min | `bash lab/demo_e2e_mac.sh` |
 
 Today's meeting is the first row. One sentence for the room: some apps need nothing, some need a one-line host fix, and one app needs a new policy module.
 
 Use `--profile customer`. That is Acts 0, 1, 2, 3, and 6, about 20 minutes. Act 6 is last: it drops `shopapi_t` from the permissive list. `--profile technical` is Acts 0–5 (the pull request, then a pointer at the 302 talk). It does not run Act 6. Act 5 does not run the 302 talk.
 
-On a laptop, `--dry-run` prints this talk and runs nothing. `make check` runs the offline tests, including a dry-run of both talk scripts. The sample module in those tests is `selinux/myapp.te`. Nothing starts an application.
+On a laptop, `--dry-run` prints this talk and runs nothing. `make check` runs the offline tests, including a dry-run of both talk scripts. The sample module in those tests is `selinux/myapp/myapp.te`. Nothing starts an application.
 
 ```mermaid
 flowchart LR
@@ -41,7 +41,7 @@ flowchart LR
 
 The next meeting, when they want Ansible, RPMs, and the soak gate, is [302-TECHNICAL.md](302-TECHNICAL.md).
 
-If you run `--help` on either talk script, the help text names the other script. The customer story is edited in `scripts/demo_present.sh`. The two-VM story is edited in `scripts/demo_e2e_mac.sh`, `demo_e2e_rhel_qa.sh`, and `demo_e2e_rhel_prod.sh`.
+If you run `--help` on either talk script, the help text names the other script. The customer story is edited in `lab/demo_present.sh`. The two-VM story is edited in `lab/demo_e2e_mac.sh`, `demo_e2e_rhel_qa.sh`, and `demo_e2e_rhel_prod.sh`.
 
 ## The three apps
 
@@ -68,8 +68,8 @@ You narrate. The script types the act commands and pauses. Press Enter when it s
 On a laptop, with no RHEL, this prints the narration and the commands and runs nothing. The default variant is distro Tomcat (`tomcat_t`, unconfined). `--variant jws` prints the confined `jws6_tomcat_t` host instead.
 
 ```bash
-bash scripts/demo_present.sh --dry-run --profile customer
-bash scripts/demo_present.sh --dry-run --profile customer --variant jws
+bash lab/demo_present.sh --dry-run --profile customer
+bash lab/demo_present.sh --dry-run --profile customer --variant jws
 ```
 
 ### Order for the meeting
@@ -77,15 +77,15 @@ bash scripts/demo_present.sh --dry-run --profile customer --variant jws
 **1. On the Mac**, only when this VM already ran **104**. The script SSHs to rhel-qa. It puts the types-only shopapi seed back, writes `/var/lib/selinux-pac-demo/ausearch-since`, and removes the App B port and file-label tunings so Act 2 still has something to show. It does not stop `auditd` or change `/var/log/audit`. Later `ausearch -ts` starts at that timestamp.
 
 ```bash
-bash scripts/reset_demo_vms.sh --dev-only
+bash lab/reset_demo_vms.sh --dev-only
 ```
 
 **2. On rhel-qa**, from the repo root. Bootstrap installs App A, App B, and shopapi if they are missing. It is safe to run again. It prints whether Tomcat is distro `tomcat_t` or JWS `jws6_tomcat_t`. Preflight prints a pass/fail table and exits. `Preflight PASSED` is the line you want. A WARN that distro `tomcat_t` is unconfined still passes. The last command is the talk.
 
 ```bash
-sudo bash scripts/demo_bootstrap.sh
-bash scripts/demo_present.sh --preflight
-bash scripts/demo_present.sh --profile customer
+sudo bash lab/demo_bootstrap.sh
+bash lab/demo_present.sh --preflight
+bash lab/demo_present.sh --profile customer
 ```
 
 | Flag | Meaning |
@@ -109,9 +109,9 @@ The three-host generate/canary/soak talk is **[302](302-TECHNICAL.md)** (`demo_e
 
 ### Before anyone is watching
 
-`sudo bash scripts/demo_bootstrap.sh` stands up the three apps. Bootstrap prints whether Tomcat is distro `tomcat_t` or JWS `jws6_tomcat_t`. On this RHEL it is distro `tomcat_t`.
+`sudo bash lab/demo_bootstrap.sh` stands up the three apps. Bootstrap prints whether Tomcat is distro `tomcat_t` or JWS `jws6_tomcat_t`. On this RHEL it is distro `tomcat_t`.
 
-`bash scripts/demo_present.sh --preflight` prints a pass/fail table and exits. It does not start the talk.
+`bash lab/demo_present.sh --preflight` prints a pass/fail table and exits. It does not start the talk.
 
 | Row | Pass means | Fail means |
 |-----|------------|------------|

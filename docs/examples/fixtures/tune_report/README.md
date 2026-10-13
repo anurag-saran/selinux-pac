@@ -2,7 +2,7 @@
 
 Offline `--tune-report` cases. The generator classifies vendor-domain denials and prints host commands. It does **not** write a `.te` / `.fc` module.
 
-**Where to run:** repo root on any OS (`make test-fixtures` or `python3 scripts/smoke_test.py --no-require-backend`).
+**Where to run:** repo root on any OS (`make test-fixtures` or `python3 tests/smoke_test.py --no-require-backend`).
 
 | Case | What it covers |
 |------|----------------|

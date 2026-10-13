@@ -24,4 +24,4 @@ bash scripts/assemble_pr_body.sh
 
 Deterministic verdict fixtures: [`fixtures/deterministic/`](fixtures/deterministic/). Compile on rhel-qa with `selinux-policy-devel`.
 
-Do not edit `policy_out/` in Git — `.te`, `.fc`, and `policy_version.txt` there are local build output (gitignored). Offline demos use [`fixtures/offline/`](fixtures/offline/); refresh with `bash scripts/refresh_offline_fixture.sh` when `selinux/` bumps.
+Do not edit `policy_out/` in Git — `.te`, `.fc`, and `policy_version.txt` there are local build output (gitignored). Offline demos use [`fixtures/offline/`](fixtures/offline/); refresh with `bash tests/refresh_offline_fixture.sh` when `selinux/` bumps.
