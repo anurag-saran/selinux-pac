@@ -4129,8 +4129,8 @@ def test_skip_soak_days_and_break_glass_reason() -> None:
     for guide in (guide_201, guide_302):
         assert "skips only the day count and the daily history" in guide
         assert "skips the marker, the AVC gate, net-new, the report, the day count, and the daily history" in guide
-    assert "skip_soak_days=true" in guide_302
-    assert "break_glass_reason" in guide_302
+    assert "--skip-soak-days" in guide_302
+    assert "break_glass" in guide_302
 
     report_script = PROJECT_ROOT / "scripts" / "post_deploy_report.sh"
     with tempfile.TemporaryDirectory() as tmp:
