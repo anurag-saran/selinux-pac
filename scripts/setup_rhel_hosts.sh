@@ -58,7 +58,7 @@ require_write_args() {
     DEV_HOST="${DEV_HOST:-${QA_HOST}}"
     ANSIBLE_USER="${SSH_USER}"
     if [[ -z "${REPO_HOST:-}" ]]; then
-        REPO_HOST="$(ifconfig bridge100 2>/dev/null | awk '/inet /{print $2}')"
+        REPO_HOST="$(ifconfig bridge100 2>/dev/null | awk '/inet /{print $2}' || true)"
     fi
     if [[ -z "${REPO_HOST:-}" ]]; then
         echo "WARN: REPO_HOST not set and bridge100 not found. Falling back to DEV_HOST (${DEV_HOST}). Set REPO_HOST in scripts/lab.env for UTM." >&2

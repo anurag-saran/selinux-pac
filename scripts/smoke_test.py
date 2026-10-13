@@ -910,96 +910,77 @@ def test_vendor_policy_check() -> None:
 
 
 def test_demo_present_dry_run() -> None:
+    """Customer talk: one caption per command, no narration blocks, safe order."""
     script = PROJECT_ROOT / "scripts" / "demo_present.sh"
-    result = subprocess.run(
-        [
-            BASH,
-            str(script),
-            "--dry-run",
-            "--no-type",
-            "--auto",
-            "--profile",
-            "customer",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    out = result.stdout + result.stderr
-    assert result.returncode == 0, out
-    assert "Act 0" in out
-    assert "TRIAGE" in out or "vendor" in out.lower()
-    assert "App A" in out
-    assert "App B" in out or "inherited" in out.lower()
-    assert "shopapi" in out.lower() or "Spring Boot" in out
-    assert "audit2why" in out
-    assert "/opt/shopapi/bin/shopapi" in out
-    assert "no SELinuxContext=" in out
-    assert "make demo-bootstrap" in out or "demo-bootstrap" in out
+
+    def dry(*extra: str) -> str:
+        result = subprocess.run(
+            [BASH, str(script), "--dry-run", "--no-type", "--auto", *extra],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        out = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout + result.stderr)
+        assert result.returncode == 0, out
+        return out
+
+    out = dry("--profile", "customer")
+    assert "demo-bootstrap" in out
+    for title in ("Triage", "App A", "App B", "shopapi · write the policy", "shopapi · enforce"):
+        assert title in out, f"missing act title {title!r}"
+    # The presenter explains. The screen has captions, not paragraphs.
+    assert "Expected:" not in out
+    assert "What this does:" not in out
+    captions = [line for line in out.splitlines() if line.startswith("# ")]
+    assert captions, out
+    assert all(len(line) <= 90 for line in captions), captions
+    commands = [line for line in out.splitlines() if line.startswith("demo# ")]
+    assert len(commands) <= 26, f"customer talk grew to {len(commands)} commands"
+    assert not any("|| true" in line for line in commands), commands
     assert_mentions(out, "shopapi", "tomcat")
-    assert "status --short selinux" in out
-    assert "semodule -l" in out
-    assert "files_unconfined_type" in out or "unconfined app" in out
+    assert "vendor_policy_check.sh --report --app-name tomcat" in out
     assert "loaded_unconfined" in out
     assert "action=confine" in out
+    assert "files_unconfined_type" in out
+    assert "audit2why" in out
     assert "GENERATION BLOCKED" in out
-    assert "/feature-spool" in out
     assert "permissive=0" in out
-    assert out.find("Act 3") < out.find("Act 6")
-    blocked = out.find("--apply --app-name shopapi")
-    review1 = out.find("--allow-needs-review")
-    load1 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp")
-    perm = out.find("semanage permissive -d shopapi_t")
-    fail_curl = out.find("/feature-spool || true")
-    review2 = out.find("--allow-needs-review", perm)
-    load2 = out.find("sudo semodule -i selinux/shopapi/shopapi.pp", load1 + 1)
-    payoff = out.find("HTTP 200. shopapi_t is still enforcing.", load2)
-    assert -1 not in (blocked, review1, load1, perm, fail_curl, review2, load2, payoff), out
-    assert blocked < review1 < load1 < perm < fail_curl < review2 < load2 < payoff, out
-    assert "This is the QA host" in out
-    tech = subprocess.run(
-        [BASH, str(script), "--dry-run", "--no-type", "--auto", "--profile", "technical"],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    tech_out = tech.stdout + tech.stderr
-    assert tech.returncode == 0, tech_out
-    assert "Act 6" not in tech_out
+    gen = "sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root ."
+    approved = "sudo bash scripts/dev_generate_policy.sh --apply --allow-needs-review --app-name shopapi --app-root ."
+    load = "sudo semodule -i policy_out/shopapi.pp"
+    blocked = out.find(gen)
+    review = out.find(approved)
+    load1 = out.find(load)
+    perm = out.find("sudo semanage permissive -d shopapi_t")
+    spool_fail = out.find("/feature-spool", perm)
+    regen = out.find(gen, perm)
+    load2 = out.find(load, regen)
+    relabel = out.find("restorecon -Rv /var/spool/shopapi", regen)
+    final = out.find("shopapi_t is not permissive", relabel)
+    marks = (blocked, review, load1, perm, spool_fail, regen, load2, relabel, final)
+    assert -1 not in marks, out
+    assert blocked < review < load1 < perm < spool_fail < regen < load2 < relabel < final, out
+    # execmem is already in the module by then. The second generate must not
+    # pre-approve a new domain-weakening permission.
+    assert "--allow-needs-review" not in out[perm:], out
     assert "tomcat_can_network_connect" not in out
-    assert "Already enforcing" not in out
     assert "httpd_can_network_connect" not in out
+    assert "Already enforcing" not in out
     assert "Tomcat is vendor-covered" not in out
     assert "covered / tune / generate" not in out
     assert "Covered → tuned → generated" not in out
     assert "NEEDS_LIVE_CHECK" not in out
-    assert "no name_bind denial on distro tomcat_t" in out
-    assert "no mislabel denial on distro tomcat_t" in out
-    jws = subprocess.run(
-        [
-            BASH,
-            str(script),
-            "--dry-run",
-            "--no-type",
-            "--auto",
-            "--profile",
-            "customer",
-            "--variant",
-            "jws",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    jws_out = jws.stdout + jws.stderr
-    assert jws.returncode == 0, jws_out
+
+    jws_out = dry("--profile", "customer", "--variant", "jws")
     assert "action=tune" in jws_out
     assert "jws6_tomcat" in jws_out
     assert "DENIED" in jws_out
     assert "loaded_unconfined" not in jws_out
     assert "Tomcat is vendor-covered" in jws_out
-    assert "name_bind on unreserved_port_t" in jws_out
+    assert "semanage port -a -t http_port_t -p tcp 8090" in jws_out
+    assert "restorecon -Rv /opt/appdata" in jws_out
     assert "Covered → tuned → generated" in jws_out
+
     help_run = subprocess.run(
         [BASH, str(script), "--help"],
         cwd=PROJECT_ROOT,
@@ -1010,6 +991,7 @@ def test_demo_present_dry_run() -> None:
     assert help_run.returncode == 0, help_out
     assert "demo_e2e_mac.sh" in help_out
     assert "0,1,2,3,6" in help_out
+    assert "--no-step" in help_out
     te = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
     assert not any(
         (not line.lstrip().startswith("#")) and "execmem" in line
@@ -1033,25 +1015,54 @@ def test_demo_present_dry_run() -> None:
     assert "make demo-bootstrap" in pre_out
     assert "semanage port -d" in pre_out
     assert "8090" in pre_out
-    tech = subprocess.run(
-        [
-            BASH,
-            str(script),
-            "--dry-run",
-            "--no-type",
-            "--auto",
-            "--profile",
-            "technical",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    tech_out = tech.stdout + tech.stderr
-    assert tech.returncode == 0, tech_out
-    assert "Act 5" in tech_out
+    tech_out = dry("--profile", "technical")
+    assert "shopapi · enforce" not in tech_out
+    assert "Pipeline" in tech_out
     assert "demo_e2e_mac.sh" in tech_out
+    # Without POLICY_MODULE the gate would check myapp, not shopapi.
+    assert (
+        "POLICY_MODULE=shopapi SELINUX_DOMAIN=shopapi_t bash scripts/validate_forbidden_patterns.sh selinux/shopapi"
+        in tech_out
+    )
     assert_mentions(tech_out, "shopapi")
+
+
+def test_demo_present_waits_for_enter() -> None:
+    """Without --auto each typed command waits for Enter before it runs."""
+    import time
+
+    script = PROJECT_ROOT / "scripts" / "demo_present.sh"
+    args = [BASH, str(script), "--dry-run", "--no-type", "--acts", "1"]
+    # Enough Enters for the banner, four commands and the act pause.
+    ok = subprocess.run(args, cwd=PROJECT_ROOT, input="\n" * 10, capture_output=True, text=True)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert ok.stdout.count("demo# ") == 4, ok.stdout
+
+    def run_with_open_stdin(extra: list[str]) -> str:
+        # Two Enters, stdin left open: banner pause, then the first command.
+        proc = subprocess.Popen(
+            args + extra,
+            cwd=PROJECT_ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        assert proc.stdin is not None
+        proc.stdin.write("\n\n")
+        proc.stdin.flush()
+        time.sleep(3)
+        proc.kill()
+        out, _ = proc.communicate()
+        return out
+
+    stepped = run_with_open_stdin([])
+    # The first command ran. The second is typed and waiting.
+    assert stepped.count("(dry-run)") == 1, stepped
+    assert stepped.count("demo# ") == 2, stepped
+    nostep = run_with_open_stdin(["--no-step"])
+    # --no-step runs all four; only the act pause waits.
+    assert nostep.count("(dry-run)") == 4, nostep
 
 
 def _install_healthy_audit(bindir: Path) -> None:
@@ -2331,7 +2342,6 @@ def test_docs_match_the_store() -> None:
     c301 = (PROJECT_ROOT / "docs/demo/301-CUSTOMER.md").read_text(encoding="utf-8")
     assert "[203]" not in c301
     assert "ran **104**" in c301
-    assert "labs 5 and 6 of **104**" in c301
     assert "JWS denies" in c301
     assert "JWS tunes the host" in c301
     assert "LAST_VERIFIED:** 2026-10-09" in c301
@@ -4671,6 +4681,7 @@ def main() -> int:
         ("monitor_avc_skip", test_monitor_avc_skip),
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
+        ("demo_present_waits_for_enter", test_demo_present_waits_for_enter),
         ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),
