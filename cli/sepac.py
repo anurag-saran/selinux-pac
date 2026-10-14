@@ -649,6 +649,15 @@ def cmd_load(args: argparse.Namespace) -> int:
             rm = subprocess.run(argv_mod, capture_output=True, text=True)
             if rm.returncode != 0 and rm.stderr.strip():
                 print(rm.stderr, end="", file=sys.stderr)
+
+    # 4. Remove permissive exception (--enforce)
+    if args.enforce:
+        domain = str(manifest["domain"])
+        argv_perm = _sudo_prefix() + ["semanage", "permissive", "-d", domain]
+        r = _run(argv_perm, dry_run=args.dry_run, verbose=args.verbose)
+        if not args.dry_run and r.returncode != 0:
+            return r.returncode
+
     return 0
 
 
@@ -1215,6 +1224,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = subs.add_parser("load", help="Load module on QA (semodule + restorecon + ports)")
     p.add_argument("app", metavar="APP")
+    p.add_argument("--enforce", action="store_true", default=False,
+                   help="Remove permissive exception after loading (semanage permissive -d)")
     p.add_argument("--manifest", default=None, metavar="PATH", help="Manifest file path")
     _common(p)
     p.set_defaults(func=cmd_load)
