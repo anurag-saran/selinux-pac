@@ -19,7 +19,7 @@ policy_module(shopapi, 1.0.0)
 # config/shopapi.manifest.yml records the reviewed selinux_exceptions.exec_bin.
 # Do not hand-write it, and never a raw allow on bin_t. It is not an entrypoint.
 # The unit has no SELinuxContext= line. The java process type is shopapi_t.
-# The host commands are in docs/LIVE_CHECKS.md.
+# The host commands are in docs/guides/LIVE_CHECKS.md.
 #############################################
 
 type shopapi_t;

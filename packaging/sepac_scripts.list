@@ -20,6 +20,8 @@ cli/verify_avc_coverage.py
 
 # Scripts that sepac calls directly
 scripts/selinux_pac_adopt.sh
+scripts/scaffold_sepolicy_module.sh
+scripts/semodule_restore_dontaudit.sh
 scripts/dev_generate_policy.sh
 scripts/validate_app_manifest.sh
 scripts/compile_and_validate.sh

@@ -31,7 +31,7 @@ fixtures=(
     exec-bin-alias
 )
 
-root="${PROJECT_ROOT}/docs/examples/fixtures/compiled-bypasses"
+root="${PROJECT_ROOT}/tests/fixtures/compiled-bypasses"
 
 run_gate() {
     local dir="$1"

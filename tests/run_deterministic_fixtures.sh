@@ -2,14 +2,14 @@
 #
 # run_deterministic_fixtures.sh — Assert golden AVC → verdict fixtures (offline).
 #
-# Cases under docs/examples/fixtures/deterministic/ (every classification verdict
+# Cases under tests/fixtures/deterministic/ (every classification verdict
 # has at least one golden row). Same checks as smoke_test deterministic tests.
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-FIXTURE_ROOT="${PROJECT_ROOT}/docs/examples/fixtures/deterministic"
+FIXTURE_ROOT="${PROJECT_ROOT}/tests/fixtures/deterministic"
 
 cd "${PROJECT_ROOT}"
 export PYTHONPATH="${PROJECT_ROOT}/cli:${PROJECT_ROOT}/scripts${PYTHONPATH:+:${PYTHONPATH}}"

@@ -1,301 +1,101 @@
-# SELinux PaC
+# sepac — SELinux policy as code for RHEL
 
-**The RHEL admin tool for shipping SELinux policy as code.** Developers open a PR, CI rejects dangerous allows (`forbidden-patterns`), admins compile and publish a signed RPM, **Ansible Automation Platform (AAP)** canaries, soaks, and enforces. The host stays **Enforcing**. Policy is a versioned product — not a one-off `audit2allow` on a box.
+`sepac` gives RHEL admins one command for an application's SELinux policy: decide whether it needs new policy at all, collect the evidence, write the smallest policy that covers it, gate it like CI, try it on QA, and ship it as a signed RPM through canary, soak and enforce. The host stays **Enforcing** the whole time. Nobody runs `setenforce 0`, and nobody pipes `audit2allow` into `semodule -i` on production.
 
-The **customer talk** is **301** — three applications (distro Tomcat loaded but unconfined, inherited Tomcat you tune, Spring Boot you generate). Finish **[104](docs/training/104-HAND-BUILT-MODULE.md)** first. The two-host generate/canary/soak pipeline is **302** (**shopapi**). Offline `make check` uses **deterministic fixtures** (`selinux/myapp/myapp.te`, `config/myapp.manifest.yml`) plus shopapi/payments modules — not a live Flask app. This tool repo is the generator, CI helpers, and AAP path. Numbered catalog: [docs/README.md](docs/README.md).
+## What it does differently
 
-| You are | Start here |
-|---------|------------|
-| **New to SELinux** | **[101](docs/training/101-CONCEPTS.md)** → **[102](docs/training/102-COMMANDS.md)** → **[103](docs/training/103-CONFIG-FILES.md)** → **[104](docs/training/104-HAND-BUILT-MODULE.md)** |
-| **RHEL admin (customer env)** | [Admins: your environment](#admins-your-environment) |
-| **Trying this on a Mac** | [Try it on a Mac](#try-it-on-a-mac) |
-| **Application developer** | [Developers](#developers) and **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)** |
-| **Offline check (any laptop)** | `make check` (**303**) |
+| The usual way | With sepac |
+|---------------|------------|
+| Write a module for every app that logs a denial | `sepac triage` checks Red Hat's shipped policy first and refuses to duplicate it. Tomcat, httpd, BIND, PostgreSQL and JBoss get tuned, not rewritten. |
+| `setenforce 0`, click around, `ausearch` | `sepac capture` restarts the app with full auditing, calls every endpoint in its manifest, and separates the denials you expected from the new ones. Only the app's domain is permissive. |
+| `audit2allow -M` and load whatever it prints | `sepac generate` writes the smallest policy that covers the evidence: Red Hat interfaces before raw rules, file labels before wider rules. It stops for review on domain-weakening permissions (`execmem`) and refuses forbidden ones (`/etc/passwd`, shadow, wildcards). |
+| Review by eye, if at all | `sepac check` is the same gate CI runs on every policy pull request: manifest, forbidden patterns, compile, and semantic checks against a throwaway copy of the policy store. |
+| `semodule -i` on production | Production only gets a signed RPM: `sepac canary` (domain permissive), `sepac soak` (net-new denials against the installed policy), `sepac enforce` (needs a clean soak and a change ticket), `sepac rollback` (domain back to permissive, host still Enforcing). |
 
----
-
-## Why this exists
-
-SELinux is how RHEL actually confines an app. Turning it off (`setenforce 0`), flipping the whole OS to Permissive, or piping `audit2allow` into `semodule -i` on prod “unblocks” the service and **throws away the confinement**. Admins then own an unreproducible module that never went through review.
-
-This tool is the other path: **policy-as-code for admins and developers together.**
-
-| Without this tool | With this tool |
-|-------------------|----------------|
-| App team pastes AVCs into a ticket; admin writes `.te` by hand | Developer runs a **deterministic generator** on rhel-qa; humans merge |
-| Bind ports and labels drift per environment | Ports live in the **committed manifest**; canary adds them with `semanage port -a` and refuses `semanage port -m` |
-| Duplicate cron AVCs look like a failed soak | Soak gates **net-new** access vs installed policy (`sesearch`) |
-| Prod is a git clone and a hope | **No git on prod** — signed RPMs + AAP playbooks only |
-| Enforce is a Friday `semanage` | AAP **Promote to enforce** with a **change ticket** and an approval node |
-| Outage → `setenforce 0` | AAP **Rollback** (domain permissive, optional RPM downgrade) → new PR |
-
-**What you keep:** `getenforce` **Enforcing** at all times. Only the **app domain** is permissive during canary soak. That is the model a RHEL admin will accept.
-
----
-
-## How this differs from Ed Qual’s enablement lab
-
-SELinux PaC was built after looking at [Ed Qual’s automate-selinux](https://github.com/stoleas/automate-selinux) (AAP + Event-Driven Ansible + Orchestrator). That project is strong at **unblocking a host that is already failing** in production: collect AVCs, route, approve, apply a local fix (`fcontext` / port / boolean, or a live module). It is an **ops response** loop.
-
-**SELinux PaC shifts policy creation left.** Developers generate policy from AVCs on rhel-qa, open a **PR**, CI and CODEOWNERS review it, admins ship a signed RPM, AAP **canaries**, **soaks** (net-new vs installed policy), then **enforces** with a change ticket. A denial after ship is another PR — not `semodule -i` on the box.
-
-Those are complementary, not substitutes: his loop detects and routes; this tool authors and ships reviewed policy.
-
----
-
-## Value
-
-- **Developers own the allow list in git.** `.te` / `.fc` / `selinux_ports` are reviewed like application code. CI blocks `shadow_t`, wildcards, `bin_t` execute (unless the manifest records a reviewed `selinux_exceptions.exec_bin`, which the system JVM needs on RHEL 9), and the rest of the forbidden set.
-- **Admins own production mutation.** The only control plane is AAP (same YAML on a laptop until the project is imported). Execution nodes SSH in; they never clone this repo onto prod.
-- **AAP is the promotion path, not an auto-fixer.** Workflows: **Release canary** → scheduled **Soak monitor** → **Promote to enforce** (Soak status → approval → Enforce). A denied file or port becomes a **PR**, not a click that patches the live host. ([docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship))
-- **Soak is evidence, not a calendar sticker.** Daily net-new vs the installed module. Fail closed if `sesearch` is missing (`setools-console` is an RPM require).
-- **Break-glass is still gated.** `force_enforce` defaults false, still needs `change_ticket`, and needs `break_glass_reason`. `skip_soak_days` skips only the day count and the daily history.
-
----
-
-## Shipping loop
-
-```mermaid
-flowchart TD
-  subgraph developer [Developer on rhel-qa]
-    avc[App hits a denial]
-    gen[deterministic_gen.py]
-    pr[PR: offline-tests, forbidden-patterns, compiled-policy, version-consistency]
-    avc --> gen --> pr
-  end
-
-  subgraph platform [Admin controller]
-    rpm[Signed RPM repo]
-    aap[AAP Automation Controller]
-    pr --> rpm --> aap
-  end
-
-  subgraph production [rhel-prod — host Enforcing]
-    canary[Release canary]
-    soak[Soak monitor daily]
-    promote[Promote to enforce]
-    aap --> canary --> soak
-    soak -->|net-new is 0| promote
-    soak -->|net-new found| avc
-  end
-
-  promote -->|outage| rollback[Rollback]
-  rollback --> avc
-```
-
-**Release canary** installs the module and puts **only** the app domain from the manifest in the permissive list. It applies `selinux_booleans` with `ansible.posix.seboolean` before the service starts. **Soak monitor** is a schedule, not a fake wait node. **Promote to enforce** is Soak status → human approval → Enforce. Objects: [ansible/aap/](ansible/aap/), including [`ansible/aap/aap_configuration.yml`](ansible/aap/aap_configuration.yml) for `infra.aap_configuration`.
-
-```text
-QA       AVC → generator → PR (CI + CODEOWNERS)
-Admin    compile_and_validate.sh → signed RPMs → internal yum/dnf
-Prod     Release canary → Soak monitor → Promote to enforce
-```
-
----
-
-## Admins: your environment
-
-Fork the repo and wire it to **two RHEL boxes** plus **AAP**. There is no one-click datacenter installer; this is the customer path. Full checklist: [docs/admin/401-OPERATIONS.md#roll-this-out](docs/admin/401-OPERATIONS.md#roll-this-out). Doc index: [docs/README.md](docs/README.md).
-
-| Follow | For |
-|--------|-----|
-| **[302](docs/demo/302-TECHNICAL.md)** | QA box + prod box; **no git clone on prod** |
-| **[401](docs/admin/401-OPERATIONS.md)** | Canary, soak, enforce, rollback, and a denial after ship |
-| [ansible/aap/README.md](ansible/aap/README.md) | Click-create job templates + **Release canary** / **Promote to enforce** |
-
-**Scripts** (run from the controller — laptop or AAP execution node):
+## A new app, on the QA host
 
 ```bash
-# write — create gitignored inventories (SSH host, soak days, RPM vs git checkout)
-bash lab/setup_rhel_hosts.sh write --qa-host rhel-qa.example.com --prod-host rhel-prod.example.com
-# ping — Ansible SSH reachability to both boxes
-bash lab/setup_rhel_hosts.sh ping
-# doctor — SELinux tools present (getenforce / ausearch / sesearch)
-bash lab/setup_rhel_hosts.sh doctor
-# bootstrap — print (do not run) SSH steps for rhel-qa only
-bash lab/setup_rhel_hosts.sh bootstrap
-# next app after the shopapi demo
-bash scripts/selinux_pac_adopt.sh init payments     # see docs/tool/201-TOOL-COMMANDS.md#add-an-application
-
-# Package + publish (see packaging/internal.env.example)
-bash packaging/build_rpms.sh                        # selinux-policy-ops + shopapi-selinux (demo) + myapp-selinux (test fixture)
-bash packaging/publish_internal.sh                  # copy into your internal yum/dnf repo
-
-# Same playbooks AAP workflows run
-ansible-playbook -i ansible/inventory.production.yml ansible/deploy_canary.yml --limit canary
-#   install module, shopapi_t permissive, HTTP probes, start soak clock
-ansible-playbook -i ansible/inventory.production.yml ansible/soak_monitor.yml --limit canary
-#   schedule daily in AAP — fail if net-new AVCs vs installed policy
-ansible-playbook -i ansible/inventory.production.yml ansible/soak_status.yml --limit canary
-#   read-only: days elapsed, AVC counts, fail_closed
-ansible-playbook -i ansible/inventory.production.yml ansible/enforce_production.yml \
-  -e change_ticket=CHG123
-#   soak gate then remove permissive; needs change_ticket
+sepac init orders --port 9090                 # manifest + scaffolded policy module
+sepac triage orders                           # Red Hat's policy first
+sepac load orders --permissive                # labels and port; the domain only logs
+sepac capture orders --full-audit             # restart, call every endpoint, summarise denials
+sepac generate orders                         # stops if a domain-weakening permission needs review
+sepac generate orders --approve execmem --apply
+sepac check orders                            # the CI gate, on your host
+sepac load orders --enforcing                 # try it enforcing on QA
+sepac status orders                           # host, module, domain, process, labels, denials
 ```
 
-Rollback: `ansible-playbook -i ansible/inventory.production.yml ansible/emergency_rollback.yml --limit canary`
+Then open a pull request with `selinux/orders/` and `config/orders.manifest.yml`. CI runs `sepac check`.
 
-Install `selinux-policy-ops` + `<app>-selinux` from a **signed internal repo**. Compile policy on RHEL with `selinux-policy-devel`. Playbooks: [ansible/README.md](ansible/README.md).
+## Ship it, where Ansible runs
 
----
+```bash
+sepac build && sepac publish                       # signed RPMs in the internal repo
+sepac canary  --env production --limit canary      # installed, domain permissive, soak starts
+sepac soak    --env production --status            # net-new denials against the installed policy
+sepac enforce --env production --ticket CHG123     # only after a clean soak
+sepac rollback --env production                    # domain back to permissive; no setenforce 0
+```
+
+The same playbooks run as **Ansible Automation Platform** jobs (Release canary, a daily Soak monitor, Promote to enforce with an approval). See [docs/shipping.md](docs/shipping.md).
 
 ## Install
 
-On QA hosts and controllers, install the `selinux-pac` RPM from the internal repo:
+On QA hosts and the Ansible controller:
 
 ```bash
 sudo dnf install selinux-pac
 ```
 
-Managed hosts (staging, production) get `selinux-pac` automatically from the Ansible role. The role also writes `/etc/selinux-pac/role` and copies the app manifest to `/etc/selinux-pac/apps/`.
+Managed hosts get `selinux-pac` from the Ansible role, which also writes `/etc/selinux-pac/role` and copies each app's manifest to `/etc/selinux-pac/apps/`. From a git checkout, run `bin/sepac` or `sudo make install-cli`.
 
-In a development checkout, use `bin/sepac` directly or `make install-cli` to symlink it.
+sepac needs RHEL 9 with `python3` and `python3-pyyaml`. `generate` and `check` also need `selinux-policy-devel` and `setools-console` (the QA host); the shipping commands need `ansible-core` (the controller).
 
----
+## Commands
 
-## Try it on a Mac
+| On the QA host | | Where Ansible runs | |
+|----------------|---|--------------------|---|
+| `init APP` | Manifest and a scaffolded module | `build` | Build the RPMs |
+| `triage APP` | Does Red Hat already ship policy? | `publish` | Sign and publish them |
+| `tune APP` | Host fixes for a vendor domain | `canary --env ENV` | Install, domain permissive, soak starts |
+| `capture APP` | Restart, call endpoints, summarise denials | `soak --env ENV` | Daily soak gate (`--status`: read-only) |
+| `denials APP` | The app's denials (`--why` explains) | `enforce --env ENV --ticket T` | Enforce after a clean soak |
+| `generate APP` | Policy from the evidence | `rollback --env ENV` | Domain back to permissive |
+| `check APP` | The CI gate | | |
+| `load APP` | Load on QA (`--enforcing`, `--permissive`) | | |
+| `status APP` | Where the app stands | | |
 
-macOS has **no SELinux**. The Mac is the **Ansible controller**; policy still runs on Linux.
+Every command takes `--dry-run` (print what would run, change nothing) and `-v`. Full reference: [docs/sepac.md](docs/sepac.md).
 
-**Preferred — two RHEL VMs (Apple Silicon: aarch64 Boot ISO in UTM), then the same admin scripts.** Run these from **repo root on the Mac** (the Ansible controller). They do **not** install SELinux on macOS.
+## Guardrails
 
-| Command | What it does | Good sign |
-|---------|----------------|-----------|
-| `bash lab/setup_rhel_hosts.sh write --qa-host "$QA_HOST" --prod-host "$PROD_HOST"` | Writes gitignored `ansible/inventory.dev.yml` and `ansible/inventory.production.yml` with those SSH hosts. QA gets `soak_min_days: 0` (lab). Prod gets `soak_min_days: 7` and **no git clone** (`selinux_ops_from_package: true`). | Prints `Wrote …/inventory.dev.yml` and `…/inventory.production.yml` |
-| `bash lab/setup_rhel_hosts.sh ping` | Ansible `ping` module over SSH to both VMs (can the controller reach them?). | `SUCCESS` / `pong` for `rhel-qa` and `rhel-prod` |
-| `bash lab/setup_rhel_hosts.sh doctor` | On each VM (as sudo): hostname, `getenforce`, `ausearch`, `sesearch`. Prod also checks `selinux-policy-ops` and **does not fail** if that RPM is not installed yet. | `Enforcing`; paths to `ausearch` and `sesearch`. Prod may print `selinux-policy-ops: not installed (expected before RPMs)` |
-| `bash lab/setup_rhel_hosts.sh bootstrap` | **Prints** the SSH/`dnf`/`demo_bootstrap.sh --shopapi-only` commands for **rhel-qa only**. It does not run them. | A block starting `=== Bootstrap the QA RHEL box` |
-| `bash lab/sync_rhel_dev.sh` | rsync this checkout to `~/selinux-pac` on rhel-qa (shopapi lives here). | `Synced … -> $SSH_USER@$QA_HOST:selinux-pac/` |
-| `bash lab/reset_demo_vms.sh` | Between rehearsals: unload leftover `shopapi` modules and prod RPMs; untune App B (port 8090 and the `/opt/appdata` fcontext). Writes an `ausearch` timestamp and does not stop `auditd` or rewrite `/var/log/audit`. JVM stays. Restore the types-only `selinux/shopapi/` seed. | `Good: no shopapi (or leftover myapp) module loaded` on both VMs |
+- The host is never set permissive. Only the app's domain is, during capture on QA and during the canary soak.
+- `load` refuses unless `/etc/selinux-pac/role` says `qa` or `dev`. Production gets policy only from the signed RPM.
+- There is no blanket approval. `--approve PERM` names each domain-weakening permission, and the rest still stop.
+- Forbidden targets (shadow, `/etc/passwd`, `setenforce`, wildcards, a raw `execute` on `bin_t`) are refused, with or without approval. The system JVM's `bin_t` execute needs a reviewed reason in the manifest.
+- A port another application type owns is refused. sepac never runs `semanage port -m`.
+- Policy for a vendor-covered app needs `--force "reason"`, and the reason goes on the pull request.
+- `enforce` needs a change ticket. `--break-glass "reason"` skips the soak gate and records why.
 
-Copy `lab/lab.env.example` to `lab/lab.env` and set `QA_HOST`, `PROD_HOST`, and `SSH_USER`. UTM shared networking keeps the two VMs apart (the bridge members are `PRIVATE`), so add `REPO_HOST` set to the `inet` address from `ifconfig bridge100` on the Mac. The Mac serves the signed repo on that address; prod curls it. If `REPO_HOST` is unset the conductor reads `ifconfig bridge100`; if both are empty it stops. Scripts read `lab.env` when that file is present. If it is absent, they require those three variables. Re-check with `ping` if a VM was recreated.
+## Docs
 
-**You are not done.** `bootstrap` only printed the next commands. Run the paced lab from **[302](docs/demo/302-TECHNICAL.md)** (plain-language, one computer at a time, three windows). Re-run on the same VMs: `bash lab/reset_demo_vms.sh`, then the Mac conductor.
+| Read | For |
+|------|-----|
+| [docs/sepac.md](docs/sepac.md) | Every command, the manifest, the files on each host |
+| [docs/shipping.md](docs/shipping.md) | QA → pull request → RPM → canary → soak → enforce → rollback, and a denial after ship |
+| [docs/demo.md](docs/demo.md) | The customer demo, command by command (`bash lab/demo_present.sh`) |
+| [docs/guides/](docs/guides/README.md) | SELinux training ([101](docs/guides/101-CONCEPTS.md) concepts → [102](docs/guides/102-COMMANDS.md) commands → [103](docs/guides/103-CONFIG-FILES.md) config files → [104](docs/guides/104-HAND-BUILT-MODULE.md) a module by hand), the two-host lab, testing, and the engine scripts behind sepac |
 
-**Before the talk (104):** [docs/training/104-HAND-BUILT-MODULE.md](docs/training/104-HAND-BUILT-MODULE.md) (one host, shopapi). Then pick **one** demo:
+## Repository
 
-| Talk | Audience | Setup | Length | Start |
-|------|----------|--------|--------|-------|
-| **301** | Customer / first conversation | One RHEL host | ~20 min | `bash lab/demo_present.sh` |
-| **302** | Technical deep dive | Mac + rhel-qa + rhel-prod | ~45 min | `bash lab/demo_e2e_mac.sh` |
-
-`--help` on each script names the other. Do not run `demo_e2e_mac.sh` as the first customer conversation.
-
-**301 customer talk:**
-
-```bash
-bash lab/demo_present.sh --dry-run --profile customer   # any laptop
-make demo-bootstrap                                        # RHEL VM, once
-bash lab/demo_present.sh --preflight
-bash lab/demo_present.sh --profile customer
-```
-
-See **[301](docs/demo/301-CUSTOMER.md)**. Already-tuned App B (second run): `bash lab/reset_demo_vms.sh --dev-only`.
-
-**302 three-host pipeline:** three Terminal windows. The Mac script is the conductor; press Enter between steps.
-
-| Window | Start |
-|--------|--------|
-| Mac | From the repo root, `bash lab/demo_e2e_mac.sh` |
-| rhel-qa | `ssh $SSH_USER@$QA_HOST` — run the `--part` the Mac prints (`app`, then `generate`, later `--skip-export`) |
-| rhel-prod | `ssh $SSH_USER@$PROD_HOST` — run the `--part` the Mac prints. `--part rpms` does not install the policy RPM or restart shopapi. `deploy_canary.yml` installs from the `gpgcheck=1` repo and sets the domain permissive before the restart. Later parts: `soak` (curl `/feature-spool`), `soak-avc`, `soak-clean`, `fail`, `restore`, `retest` |
-
-Unattended rehearsal: `bash lab/demo_e2e_mac.sh --auto --no-type`. Talk-only: `--dry-run`. Policy PRs: `gh auth login` with push access to **this** repo (`selinux/shopapi/`). CI jobs `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency` should go green.
-
-Lab enforce uses `soak_min_days: 0` on **QA only** — never copy that onto prod. The paced talk uses `force_enforce=true` plus a change ticket on prod so a **clean** soak can be treated as complete; `inventory.production.yml` stays at 7 days.
-
----
-
-## The sepac command
-
-`sepac` is a single admin CLI that wraps the existing scripts. It validates inputs, loads the app manifest, adds `--dry-run` and `-v` to every command, and exits with the underlying tool's exit code. No new dependencies — Python 3.9 (`python3` on RHEL 9).
-
-```bash
-bin/sepac --help                              # two-group layout
-bin/sepac triage shopapi --dry-run            # print the underlying command
-bin/sepac generate shopapi --apply --dry-run  # no sudo, nothing runs
-```
-
-Install into `$PATH`:
-
-```bash
-sudo make install-cli    # symlinks bin/sepac → /usr/local/bin/sepac
-```
-
-**On the QA host** (the 8 commands that touch SELinux directly):
-
-| Command | What it wraps |
-|---------|---------------|
-| `sepac doctor` | Host prerequisite checks |
-| `sepac triage APP` | `vendor_policy_check.sh --report` |
-| `sepac tune APP` | `vendor_policy_check.sh --tune-report` |
-| `sepac denials APP` | `ausearch -m avc` filtered to the app domain |
-| `sepac generate APP` | `dev_generate_policy.sh` (sudo, manifest-aware) |
-| `sepac check APP` | `validate_app_manifest.sh` + `compile_and_validate.sh` + `validate_policy_semantics.sh` |
-| `sepac load APP` | `compile_and_validate.sh` + `semodule -i` + `restorecon` + `semanage port` |
-| `sepac status APP` | `getenforce`, module priority, permissive list, process label, labels, recent denials |
-
-**Where Ansible runs** (the Mac or a controller host):
-
-| Command | What it wraps |
-|---------|---------------|
-| `sepac build` | `build_rpms_on_dev.sh` |
-| `sepac publish` | `publish_internal.sh` |
-| `sepac canary --env ENV` | `deploy_canary.yml` |
-| `sepac soak --env ENV` | `soak_monitor.yml` / `soak_status.yml` |
-| `sepac enforce --env ENV --ticket T` | `enforce_production.yml` |
-| `sepac rollback --env ENV` | `emergency_rollback.yml` |
-
-`--approve PERM` on `generate` passes `--allow-needs-review-perm PERM` to the engine (repeatable). `load` checks `/etc/selinux-pac/role` — only `qa` or `dev` hosts can load directly. `demo_bootstrap.sh` writes that file.
-
----
-
-## Developers
-
-Training before the three-app talk: **[101](docs/training/101-CONCEPTS.md)** through **[104](docs/training/104-HAND-BUILT-MODULE.md)**.
-
-On **rhel-qa** (repo checkout, SELinux Enforcing):
-
-```bash
-sudo bash lab/demo_bootstrap.sh --shopapi-only   # Spring Boot on rhel-qa
-sudo bash scripts/dev_generate_policy.sh --apply --app-name shopapi --app-root "$(pwd)"
-bash scripts/assemble_pr_body.sh
-gh pr create --body-file policy_out/pr_body.md --label security --label selinux
-```
-
-The generator classifies the denial: **file** → `.fc` + `restorecon`; **port** → `selinux_ports` in the manifest (canary runs `semanage port -a`); **boolean** → `selinux_booleans` in the manifest, applied by canary with `ansible.posix.seboolean` (not a raw allow in the `.te`); **new allow** → `.te` under CI forbidden-patterns. It does not auto-edit production.
-
-CI must pass `offline-tests`, `forbidden-patterns`, `compiled-policy`, and `version-consistency`. An app repo calls this workflow instead of copying it; see [401](docs/admin/401-OPERATIONS.md). Compile on rhel-qa with `compile_and_validate.sh`. CODEOWNERS (`@anurag-saran`) review `selinux/` and `ansible/`. Shopapi starts from `/opt/shopapi/bin/shopapi` (the `shopapi_exec_t` wrapper around the system Java). The unit has no `SELinuxContext=` line.
-
-New app: `bash scripts/selinux_pac_adopt.sh init payments` — **[201](docs/tool/201-TOOL-COMMANDS.md#add-an-application)**.
-
-Ports stay in the committed manifest (`selinux_ports`). Probe host/IP is per inventory (`http_probe_host`).
-
----
-
-## Where things are
-
-| Directory | Audience | Contents |
-|-----------|----------|----------|
-| `cli/` | Everyone | `sepac` CLI source (`sepac.py`, `requirements.txt`) |
-| `bin/` | Everyone | `bin/sepac` entry point (checkout shortcut) |
-| `config/` | Developers / admins | App manifests — bind ports, probes, domains (`myapp.manifest.yml`, `shopapi.manifest.yml`) |
-| `selinux/` | Developers / admins | Policy source of truth — one subdirectory per module (`selinux/myapp/`, `selinux/shopapi/`), each with `.te`, `.fc`, `policy_version.txt` |
-| `ansible/` | Admins / AAP | `selinux_pac` role + `aap/` Controller workflow objects; inventory examples |
-| `packaging/` | Admins | RPM specs (`selinux-pac`, `myapp-selinux`, `selinux-policy-ops`); `build_rpms.sh`, `publish_internal.sh` |
-| `scripts/` | Developers / admins | Generator, compiler, validator, `selinux_pac_adopt.sh`, shared libs (`scripts/lib/`) |
-| `lab/` | Presenters / lab users | Demo and talk scripts (`demo_present.sh`, `demo_e2e_mac.sh`, `setup_rhel_hosts.sh`, `reset_demo_vms.sh`); shared helpers in `lab/lib/` |
-| `tests/` | CI / developers | `smoke_test.py`, fixture runners (`run_deterministic_fixtures.sh`, etc.), epoch tests |
-| `demo/` | Presenters | Demo application source (`demo/shopapi/`) |
-| `docs/training/` | New users | 101 concepts → 102 commands → 103 config files → 104 hand-built module |
-| `docs/tool/` | Developers | 201 tool commands, 202 tool lab |
-| `docs/demo/` | Presenters | 301 customer talk, 302 ship talk, 303 tests |
-| `docs/admin/` | Admins | 401 operations — canary, soak, enforce, rollback |
-
----
-
-## Safety
-
-- Never `force_enforce` without a change ticket. Never copy `soak_min_days: 0` from `inventory.dev.yml` onto prod (enforce refuses it on the `production` group). The three-window demo may pass `force_enforce=true` with `-e change_ticket=DEMO` so the talk can finish.
-- If a file or port is denied after ship: [docs/admin/401-OPERATIONS.md#a-denial-after-ship](docs/admin/401-OPERATIONS.md#a-denial-after-ship) — PR + recanary, not live `semodule -i`.
-- AAP is the control plane (RPMs, `serial: 1`). Do not `semodule -i` generated policy on prod.
+| Directory | What is in it |
+|-----------|---------------|
+| `bin/`, `cli/` | `sepac` and the generator it drives |
+| `config/`, `selinux/` | App manifests and their policy modules: the reviewed source of truth |
+| `ansible/` | The `selinux_pac` role, the canary/soak/enforce/rollback playbooks, AAP objects |
+| `packaging/` | RPM specs: `selinux-pac`, `selinux-policy-ops` (host scripts), one per app module |
+| `scripts/` | The engine sepac runs: generator wrapper, validators, host scripts |
+| `lab/` | The demos and their apps (`lab/apps/`), VM setup for the two-host lab |
+| `tests/` | `make test`: offline tests and fixtures, no SELinux host needed |
+| `docs/` | The three pages above, and `docs/guides/` |

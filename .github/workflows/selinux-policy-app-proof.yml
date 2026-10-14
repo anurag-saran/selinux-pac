@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          out="$(sudo bash scripts/validate_policy_semantics.sh docs/examples/fixtures/compiled-bypasses/can-setenforce --app bypass 2>&1)"
+          out="$(sudo bash scripts/validate_policy_semantics.sh tests/fixtures/compiled-bypasses/can-setenforce --app bypass 2>&1)"
           rc=$?
           set -e
           printf '%s\n' "${out}"

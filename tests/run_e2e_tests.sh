@@ -26,7 +26,7 @@ log_ok "stage_offline_fixture"
 bash scripts/lib/stage_offline_fixture.sh || log_fail "offline fixture"
 
 mkdir -p policy_out
-cp docs/examples/fixtures/offline/avc.log policy_out/avc.log
+cp tests/fixtures/offline/avc.log policy_out/avc.log
 
 log_ok "dev_generate_policy (--skip-export)"
 if bash scripts/dev_generate_policy.sh --skip-export; then

@@ -174,7 +174,7 @@ demo_write_variant() {
 # Do not copy a JDK under install_root.
 demo_install_shopapi_wrapper() {
     local root="${1:?}"
-    local src="${PROJECT_ROOT}/demo/shopapi/bin/shopapi"
+    local src="${PROJECT_ROOT}/lab/apps/shopapi/bin/shopapi"
     if [[ ! -f "${src}" ]]; then
         echo "demo_install_shopapi_wrapper: missing ${src}" >&2
         return 1

@@ -86,7 +86,7 @@ Generated \`shopapi\` SELinux policy on **rhel-qa** from AVC denials (types-only
 
 - Module version: **${VERSION}**
 - Sources: \`selinux/shopapi/shopapi.te\`, \`shopapi.fc\`, \`policy_version.txt\`
-- Demo app: Spring Boot (\`demo/shopapi/\`).
+- Demo app: Spring Boot (\`lab/apps/shopapi/\`).
 
 ## Admin checklist
 
