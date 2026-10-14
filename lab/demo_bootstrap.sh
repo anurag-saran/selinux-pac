@@ -125,7 +125,7 @@ deploy_app_a() {
     dest="${webapps}/standard"
     rm -rf "${dest}"
     mkdir -p "${dest}"
-    cp -a "${PROJECT_ROOT}/demo/tomcat/app-a/." "${dest}/"
+    cp -a "${PROJECT_ROOT}/lab/apps/tomcat/app-a/." "${dest}/"
     restorecon -Rv "${dest}" 2>/dev/null || true
     install_app_a_forbidden_file
     log "App A exploded at ${dest} (port ${APP_A_PORT})"
@@ -133,7 +133,7 @@ deploy_app_a() {
 
 configure_app_b() {
     mkdir -p "${APP_B_DATA}"
-    cp -a "${PROJECT_ROOT}/demo/tomcat/app-b/." "${APP_B_DATA}/"
+    cp -a "${PROJECT_ROOT}/lab/apps/tomcat/app-b/." "${APP_B_DATA}/"
     echo "inherited-secret" >"${APP_B_DATA}/secret.dat"
     # Wrong label on purpose. Do NOT restorecon. Act 2 retunes with semanage fcontext.
     chcon -R -t user_home_t "${APP_B_DATA}" 2>/dev/null \
@@ -141,9 +141,9 @@ configure_app_b() {
     local ctxdir xml
     ctxdir="$(demo_tomcat_catalina_localhost)"
     mkdir -p "${ctxdir}"
-    cp "${PROJECT_ROOT}/demo/tomcat/inherited.xml" "${ctxdir}/inherited.xml"
+    cp "${PROJECT_ROOT}/lab/apps/tomcat/inherited.xml" "${ctxdir}/inherited.xml"
     xml="$(demo_tomcat_server_xml)"
-    APP_B_PORT="${APP_B_PORT}" python3 "${PROJECT_ROOT}/demo/tomcat/insert_connector.py" "${xml}"
+    APP_B_PORT="${APP_B_PORT}" python3 "${PROJECT_ROOT}/lab/apps/tomcat/insert_connector.py" "${xml}"
     demo_write_tomcat_dropin "${PROJECT_ROOT}"
     log "App B data ${APP_B_DATA} connector :${APP_B_PORT} (labels unrestored)"
 }
@@ -165,12 +165,12 @@ deploy_shopapi() {
     getent group shopapi >/dev/null || groupadd --system shopapi
     getent passwd shopapi >/dev/null || useradd --system --gid shopapi --home-dir "${install_root}" --shell /sbin/nologin shopapi
     mkdir -p "${install_root}" "${var_dir}" "${log_dir}" "${runtime_dir}" /var/spool/shopapi
-    if [[ -f "${PROJECT_ROOT}/demo/shopapi/target/shopapi.jar" ]]; then
-        log "using prebuilt ${PROJECT_ROOT}/demo/shopapi/target/shopapi.jar"
+    if [[ -f "${PROJECT_ROOT}/lab/apps/shopapi/target/shopapi.jar" ]]; then
+        log "using prebuilt ${PROJECT_ROOT}/lab/apps/shopapi/target/shopapi.jar"
     else
-        (cd "${PROJECT_ROOT}/demo/shopapi" && mvn -q -DskipTests package)
+        (cd "${PROJECT_ROOT}/lab/apps/shopapi" && mvn -q -DskipTests package)
     fi
-    cp -f "${PROJECT_ROOT}/demo/shopapi/target/shopapi.jar" "${install_root}/shopapi.jar"
+    cp -f "${PROJECT_ROOT}/lab/apps/shopapi/target/shopapi.jar" "${install_root}/shopapi.jar"
     chown -R shopapi:shopapi "${install_root}" "${var_dir}" "${log_dir}" /var/spool/shopapi
     log "shopapi jar at ${install_root}/shopapi.jar port ${port} domain ${domain} unit ${unit}"
 }

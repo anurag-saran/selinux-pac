@@ -67,7 +67,7 @@ rsync -az --delete \
     --exclude 'policy_out/' \
     --exclude 'dist/' \
     --exclude 'packaging/rpmbuild/' \
-    --exclude 'demo/shopapi/target/' \
+    --exclude 'lab/apps/shopapi/target/' \
     --exclude '__pycache__/' \
     --exclude '*.pyc' \
     --exclude '.DS_Store' \

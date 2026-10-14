@@ -550,7 +550,7 @@ def test_version_bump() -> None:
 
 def test_assemble_pr_body_policy_diff_section() -> None:
     """assemble_pr_body embeds precomputed sesearch delta (full diff needs sesearch + git merge-base)."""
-    fixture = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "policy_diff" / "sample_delta.md"
+    fixture = PROJECT_ROOT / "tests" / "fixtures" / "policy_diff" / "sample_delta.md"
     assert fixture.is_file(), f"missing {fixture}"
     with tempfile.TemporaryDirectory() as tmp:
         pr_summary = Path(tmp) / "pr_summary.md"
@@ -912,7 +912,7 @@ def test_vendor_policy_check() -> None:
 
 
 def test_demo_present_dry_run() -> None:
-    """Customer talk: one caption per command, no narration blocks, safe order."""
+    """Customer demo: every tool step is sepac, one caption per command, safe order."""
     script = PROJECT_ROOT / "lab" / "demo_present.sh"
 
     def dry(*extra: str) -> str:
@@ -928,68 +928,70 @@ def test_demo_present_dry_run() -> None:
 
     out = dry("--profile", "customer")
     assert "demo-bootstrap" in out
-    for title in ("Triage", "App A", "App B", "shopapi · write the policy", "shopapi · enforce"):
-        assert title in out, f"missing act title {title!r}"
+    for title in ("1 · Triage", "2 · Inherited Tomcat", "3 · shopapi — write policy from evidence",
+                  "4 · shopapi — enforce it", "5 · Ship it"):
+        assert title in out, f"missing part title {title!r}"
     # The presenter explains. The screen has captions, not paragraphs.
     assert "Expected:" not in out
     assert "What this does:" not in out
     captions = [line for line in out.splitlines() if line.startswith("# ")]
     assert captions, out
     assert all(len(line) <= 90 for line in captions), captions
-    commands = [line for line in out.splitlines() if line.startswith("demo# ")]
-    assert len(commands) <= 26, f"customer talk grew to {len(commands)} commands"
-    assert not any("|| true" in line for line in commands), commands
+    commands = [line[len("demo# "):] for line in out.splitlines() if line.startswith("demo# ")]
+    assert len(commands) <= 18, f"customer demo grew to {len(commands)} commands"
+    # The demo is about sepac. Two typed commands are not: the inherited
+    # Tomcat's traffic, and audit2allow as the old way to compare against.
+    others = [c for c in commands if not c.startswith("sepac ")]
+    assert len(others) <= 2, others
+    assert any("audit2allow" in c for c in others), others
+    assert not any("|| true" in c for c in commands), commands
+    for cmd in commands:
+        for leak in ("POLICY_MODULE", "--app-root", "scripts/", "--allow-needs-review", "semanage permissive"):
+            assert leak not in cmd, f"{leak} on screen: {cmd}"
     assert_mentions(out, "shopapi", "tomcat")
-    assert "sepac triage tomcat" in out
-    assert "sepac triage shopapi" in out
     assert "loaded_unconfined" in out
-    assert "action=confine" in out
-    assert "files_unconfined_type" in out
-    assert "sepac denials tomcat --why" in out
     assert "GENERATION BLOCKED" in out
-    # sepac commands in the right order
-    gen = "sepac generate shopapi"
-    approved = "sepac generate shopapi --approve execmem --apply"
-    load_cmd = "sepac load shopapi"
-    blocked = out.find("demo# " + gen + "\n")
-    review = out.find(approved)
-    load1 = out.find(load_cmd)
-    perm = out.find("sudo semanage permissive -d shopapi_t")
-    spool_fail = out.find("/feature-spool", perm)
-    denials_enforced = out.find("sepac denials shopapi --enforced", perm)
-    regen = out.find("sepac generate shopapi --apply", perm)
-    load2 = out.find(load_cmd, regen)
-    status = out.find("sepac status shopapi", load2)
-    marks = (blocked, review, load1, perm, spool_fail, denials_enforced, regen, load2, status)
-    assert -1 not in marks, out
-    assert blocked < review < load1 < perm < spool_fail < denials_enforced < regen < load2 < status, out
-    # The act-6 generate has no --approve (execmem is already in the module).
-    assert "--approve" not in out[perm:]
-    # No typed line leaks internal plumbing
-    for line in out.splitlines():
-        if line.startswith("demo# "):
-            cmd = line[len("demo# "):]
-            assert "POLICY_MODULE" not in cmd, f"leaked POLICY_MODULE: {cmd}"
-            assert "--app-root" not in cmd, f"leaked --app-root: {cmd}"
-            assert "scripts/lib/" not in cmd, f"leaked scripts/lib/: {cmd}"
-            assert "--allow-needs-review" not in cmd, f"leaked --allow-needs-review: {cmd}"
+    order = [
+        "demo# sepac triage tomcat",
+        "demo# sepac triage shopapi",
+        "demo# sepac denials tomcat --why",
+        "demo# sepac status shopapi",
+        "demo# sepac capture shopapi --full-audit",
+        "audit2allow",
+        "demo# sepac generate shopapi\n",
+        "demo# sepac generate shopapi --approve execmem --apply",
+        "demo# sepac check shopapi",
+        "demo# sepac load shopapi\n",
+        "demo# sepac load shopapi --enforcing",
+        "demo# sepac capture shopapi --no-restart --url /feature-spool",
+        "demo# sepac generate shopapi --apply",
+        "demo# sepac load shopapi --enforcing",
+        "demo# sepac capture shopapi --no-restart --url /feature-spool",
+        "demo# sepac status shopapi",
+        "sepac canary  --env production",
+        "sepac enforce --env production --ticket",
+    ]
+    pos = -1
+    for mark in order:
+        nxt = out.find(mark, pos + 1)
+        assert nxt > pos, f"{mark!r} missing or out of order"
+        pos = nxt
+    # Once shopapi_t is enforcing, nothing pre-approves a new risky permission.
+    enforcing = out.find("demo# sepac load shopapi --enforcing")
+    assert "--approve" not in out[enforcing:]
     assert "tomcat_can_network_connect" not in out
     assert "httpd_can_network_connect" not in out
-    assert "Already enforcing" not in out
     assert "Tomcat is vendor-covered" not in out
-    assert "covered / tune / generate" not in out
-    assert "Covered → tuned → generated" not in out
     assert "NEEDS_LIVE_CHECK" not in out
 
     jws_out = dry("--profile", "customer", "--variant", "jws")
     assert "action=tune" in jws_out
     assert "jws6_tomcat" in jws_out
-    assert "DENIED" in jws_out
     assert "loaded_unconfined" not in jws_out
     assert "Tomcat is vendor-covered" in jws_out
+    assert "demo# sepac tune tomcat" in jws_out
     assert "semanage port -a -t http_port_t -p tcp 8090" in jws_out
     assert "restorecon -Rv /opt/appdata" in jws_out
-    assert "Covered → tuned → generated" in jws_out
 
     help_run = subprocess.run(
         [BASH, str(script), "--help"],
@@ -1000,7 +1002,7 @@ def test_demo_present_dry_run() -> None:
     help_out = help_run.stdout + help_run.stderr
     assert help_run.returncode == 0, help_out
     assert "demo_e2e_mac.sh" in help_out
-    assert "0,1,2,3,6" in help_out
+    assert "docs/demo.md" in help_out
     assert "--no-step" in help_out
     te = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.te").read_text(encoding="utf-8")
     assert not any(
@@ -1008,14 +1010,7 @@ def test_demo_present_dry_run() -> None:
         for line in te.splitlines()
     )
     pre = subprocess.run(
-        [
-            BASH,
-            str(script),
-            "--dry-run",
-            "--no-type",
-            "--auto",
-            "--preflight",
-        ],
+        [BASH, str(script), "--dry-run", "--no-type", "--auto", "--preflight"],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -1025,12 +1020,11 @@ def test_demo_present_dry_run() -> None:
     assert "make demo-bootstrap" in pre_out
     assert "semanage port -d" in pre_out
     assert "8090" in pre_out
+    assert "/etc/selinux-pac/role" in pre_out
     tech_out = dry("--profile", "technical")
-    assert "shopapi · enforce" not in tech_out
-    assert "Pipeline" in tech_out
-    assert "demo_e2e_mac.sh" in tech_out
-    # Without POLICY_MODULE the gate would check myapp, not shopapi.
-    assert "sepac check shopapi" in tech_out
+    assert "4 · shopapi — enforce it" not in tech_out
+    assert "5 · Ship it" in tech_out
+    assert "demo# sepac check shopapi" in tech_out
     assert_mentions(tech_out, "shopapi")
 
 
@@ -1040,10 +1034,10 @@ def test_demo_present_waits_for_enter() -> None:
 
     script = PROJECT_ROOT / "lab" / "demo_present.sh"
     args = [BASH, str(script), "--dry-run", "--no-type", "--acts", "1"]
-    # Enough Enters for the banner, four commands and the act pause.
+    # Enough Enters for the banner, part 1's two commands and its pause.
     ok = subprocess.run(args, cwd=PROJECT_ROOT, input="\n" * 10, capture_output=True, text=True)
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert ok.stdout.count("demo# ") == 4, ok.stdout
+    assert ok.stdout.count("demo# ") == 2, ok.stdout
 
     def run_with_open_stdin(extra: list[str]) -> str:
         # Two Enters, stdin left open: banner pause, then the first command.
@@ -1068,8 +1062,8 @@ def test_demo_present_waits_for_enter() -> None:
     assert stepped.count("(dry-run)") == 1, stepped
     assert stepped.count("demo# ") == 2, stepped
     nostep = run_with_open_stdin(["--no-step"])
-    # --no-step runs all four; only the act pause waits.
-    assert nostep.count("(dry-run)") == 4, nostep
+    # --no-step runs both; only the part's pause waits.
+    assert nostep.count("(dry-run)") == 2, nostep
 
 
 def _install_healthy_audit(bindir: Path) -> None:
@@ -1111,7 +1105,7 @@ def test_prod_soak_gate_and_lab_signing() -> None:
     """Prod soak curls /feature-spool, enforce refuses, then the fix. Lab signing stays gpgcheck=1."""
     mac = (PROJECT_ROOT / "lab" / "demo_e2e_mac.sh").read_text(encoding="utf-8")
     prod = (PROJECT_ROOT / "lab" / "demo_e2e_rhel_prod.sh").read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "guides" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     assert "LAST_VERIFIED:** 2026-10-09" in guide
     gate = mac.split("if [[ \"${mode}\" == \"soak_demo\" ]]; then", 1)[1].split("return 0", 1)[0]
     assert "/feature-spool" in gate
@@ -1235,7 +1229,7 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "/var/log/audit/audit.log" not in reset_text
     mac_text = mac.read_text(encoding="utf-8")
     prod_text = prod.read_text(encoding="utf-8")
-    guide_203 = (PROJECT_ROOT / "docs" / "demo" / "302-TECHNICAL.md").read_text(encoding="utf-8")
+    guide_203 = (PROJECT_ROOT / "docs" / "guides" / "302-TECHNICAL.md").read_text(encoding="utf-8")
     # No e2e_run line should pull or checkout main (would overwrite generated module with seed)
     for line in mac_text.splitlines():
         if "e2e_run" in line:
@@ -1256,8 +1250,11 @@ def test_demo_e2e_scripts_dry_run() -> None:
     assert "/Users/" not in guide_203
     # --all-urls in QA script enables /feature-spool during discovery
     qa_text = qa.read_text(encoding="utf-8")
-    assert "all_urls_cmd" in qa_text
-    assert "/feature-spool" in qa_text
+    assert "E2E_ALL_URLS" in qa_text
+    assert "sepac capture shopapi --full-audit --url /feature-spool" in qa_text
+    # Host prep is lab plumbing: quiet, not typed. The typed QA steps are sepac.
+    typed = re.findall(r'present_cmd "([^"]+)"', qa_text)
+    assert typed and all(cmd.startswith("sepac ") for cmd in typed), typed
 
     qa_run = subprocess.run(
         [BASH, str(qa), "--dry-run", "--no-type", "--auto", "--part", "app"],
@@ -1502,7 +1499,7 @@ def test_lab_env_required() -> None:
     assert "lab/lab.env" in gitignore
     assert "lab/lab.env.example" not in gitignore
     for rel in (
-        "lab/lib/e2e_demo.sh",
+        "lab/lib/talk.sh",
         "lab/reset_demo_vms.sh",
         "lab/sync_rhel_dev.sh",
         "lab/build_rpms_on_dev.sh",
@@ -1532,8 +1529,7 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
                 str(bindir / "bash"),
                 "-c",
                 'set -euo pipefail; cd "$1"; E2E_DRY=0; '
-                "source lab/lib/training_lab_runner.sh; "
-                "source lab/lib/e2e_demo.sh; "
+                "source lab/lib/talk.sh; "
                 "e2e_install_quiet_ssh; echo WRAP_OK",
                 "_",
                 str(PROJECT_ROOT),
@@ -1550,7 +1546,7 @@ def test_e2e_quiet_ssh_wrap_skips_when_ssh_missing() -> None:
 
 def test_narration_live_checks_and_enforce_paths() -> None:
     """Distro narration, one live-check list, and enforce-check uses the manifest."""
-    live = PROJECT_ROOT / "docs" / "LIVE_CHECKS.md"
+    live = PROJECT_ROOT / "docs" / "guides" / "LIVE_CHECKS.md"
     text = live.read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in text
     assert "ps -o label,args -C java" in text
@@ -1580,7 +1576,7 @@ def test_narration_live_checks_and_enforce_paths() -> None:
     assert "myapp.service" not in body
     assert "PATHS_CSV" in body
     assert "PRIMARY_SERVICE" in body
-    basics = (PROJECT_ROOT / "docs" / "training" / "102-COMMANDS.md").read_text(encoding="utf-8")
+    basics = (PROJECT_ROOT / "docs" / "guides" / "102-COMMANDS.md").read_text(encoding="utf-8")
     assert "matchpathcon /run/shopapi/no-such-file" in basics
     assert "ps -o label,args -C java" in basics
 
@@ -1632,7 +1628,7 @@ def test_selinux_booleans_and_app_ci() -> None:
     """Manifest booleans, packaged verify path, and app-repo CI call."""
     import yaml
 
-    guide = (PROJECT_ROOT / "docs" / "admin" / "401-OPERATIONS.md").read_text(
+    guide = (PROJECT_ROOT / "docs" / "shipping.md").read_text(
         encoding="utf-8"
     )
     assert "/usr/libexec/selinux-policy-ops/verify_file_contexts.sh" in guide
@@ -1968,7 +1964,7 @@ def test_promote_policy_version_from_te() -> None:
     import tempfile
 
     version_sh = PROJECT_ROOT / "scripts" / "lib" / "version.sh"
-    te_src = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te"
+    te_src = PROJECT_ROOT / "tests" / "fixtures" / "offline" / "generated" / "myapp.te"
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         policy_out = root / "policy_out"
@@ -2116,7 +2112,7 @@ def test_tracked_tree_has_no_model_client() -> None:
 
 def test_offline_fixture_sync() -> None:
     """Offline demo generated/ must match selinux/ (refresh_offline_fixture.sh)."""
-    fix = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated"
+    fix = PROJECT_ROOT / "tests" / "fixtures" / "offline" / "generated"
     for name in ("myapp.te", "myapp.fc"):
         assert (fix / name).read_text(encoding="utf-8") == (
             PROJECT_ROOT / "selinux" / "myapp" / name
@@ -2324,7 +2320,7 @@ def _run_deterministic_gen(
 
 def test_docs_match_the_store() -> None:
     """Training pages name the store files, the RHEL 9 guide, and the current doc numbers."""
-    c103 = (PROJECT_ROOT / "docs/training/103-CONFIG-FILES.md").read_text(encoding="utf-8")
+    c103 = (PROJECT_ROOT / "docs/guides/103-CONFIG-FILES.md").read_text(encoding="utf-8")
     assert "ports.local" in c103
     assert "file_contexts.local" in c103
     assert "booleans.local" in c103
@@ -2336,10 +2332,10 @@ def test_docs_match_the_store() -> None:
     assert "/etc/selinux/targeted/contexts/files/" in c103
     assert "not this file by itself" not in c103
 
-    c101 = (PROJECT_ROOT / "docs/training/101-CONCEPTS.md").read_text(encoding="utf-8")
+    c101 = (PROJECT_ROOT / "docs/guides/101-CONCEPTS.md").read_text(encoding="utf-8")
     assert "Java started from that shell runs as **`unconfined_java_t`**" in c101
 
-    c102 = (PROJECT_ROOT / "docs/training/102-COMMANDS.md").read_text(encoding="utf-8")
+    c102 = (PROJECT_ROOT / "docs/guides/102-COMMANDS.md").read_text(encoding="utf-8")
     assert "because `ausearch` reads stdin" in c102
     assert "`aureport -a` lists AVC events" in c102
     assert "`aureport -a --summary` counts them" in c102
@@ -2348,20 +2344,22 @@ def test_docs_match_the_store() -> None:
     assert "red_hat_enterprise_linux/9/html/using_selinux" in c102
     assert "red_hat_enterprise_linux/8/" not in c102
 
-    c104 = (PROJECT_ROOT / "docs/training/104-HAND-BUILT-MODULE.md").read_text(encoding="utf-8")
+    c104 = (PROJECT_ROOT / "docs/guides/104-HAND-BUILT-MODULE.md").read_text(encoding="utf-8")
     assert c104.count("--checkpoint") >= 3
     assert "sudo mvn" not in c104
     assert "shopapi_log_t:dir { search write add_name }" in c104
     assert "shopapi_var_lib_t:dir { search write add_name }" in c104
 
-    c301 = (PROJECT_ROOT / "docs/demo/301-CUSTOMER.md").read_text(encoding="utf-8")
-    assert "[203]" not in c301
-    assert "ran **104**" in c301
-    assert "JWS denies" in c301
-    assert "JWS tunes the host" in c301
-    assert "LAST_VERIFIED:** 2026-10-09" in c301
+    demo = (PROJECT_ROOT / "docs/demo.md").read_text(encoding="utf-8")
+    assert "LAST_VERIFIED:**" in demo
+    # Honest about the JWS/distro difference, and every on-screen step named.
+    assert "loaded_unconfined" in demo and "jws6_tomcat_t" in demo
+    for cmd in ("sepac triage tomcat", "sepac capture shopapi --full-audit",
+                "sepac generate shopapi --approve execmem --apply", "sepac check shopapi",
+                "sepac load shopapi --enforcing", "sepac status shopapi"):
+        assert cmd in demo, cmd
 
-    c401 = (PROJECT_ROOT / "docs/admin/401-OPERATIONS.md").read_text(encoding="utf-8")
+    c401 = (PROJECT_ROOT / "docs/shipping.md").read_text(encoding="utf-8")
     assert "/var/lib/selinux-policy-ops/<app>/selinux_soak_last_fail.json" in c401
     assert "/var/lib/<app>/" not in c401
     assert "203 talk" not in c401
@@ -2372,7 +2370,7 @@ def test_docs_match_the_store() -> None:
     assert '${fail_dir_shown}/selinux_soak_last_fail.json' in monitor
 
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
-    docs_readme = (PROJECT_ROOT / "docs/README.md").read_text(encoding="utf-8")
+    docs_readme = (PROJECT_ROOT / "docs/guides/README.md").read_text(encoding="utf-8")
     assert "(**204**)" not in readme
     assert "API key" not in readme
     assert "103-CONFIG-FILES.md" in readme
@@ -2380,7 +2378,7 @@ def test_docs_match_the_store() -> None:
     assert "103-CONFIG-FILES.md" in docs_readme
     assert "→ **202**" not in docs_readme
 
-    live = (PROJECT_ROOT / "docs/LIVE_CHECKS.md").read_text(encoding="utf-8")
+    live = (PROJECT_ROOT / "docs/guides/LIVE_CHECKS.md").read_text(encoding="utf-8")
     assert "ls /var/lib/selinux/targeted/active/" in live
     assert "ls -l /etc/selinux/targeted/contexts/files/" in live
     assert (
@@ -2391,7 +2389,7 @@ def test_docs_match_the_store() -> None:
 
 def test_baseline_fixture_rerun_does_not_append() -> None:
     """A baseline-only log writes no header and no version bump. A second run is byte-identical."""
-    case = PROJECT_ROOT / "docs/examples/fixtures/deterministic/05-baseline-covered"
+    case = PROJECT_ROOT / "tests/fixtures/deterministic/05-baseline-covered"
     gen = PROJECT_ROOT / "cli" / "deterministic_gen.py"
     manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
     te = PROJECT_ROOT / "selinux" / "myapp" / "myapp.te"
@@ -2439,7 +2437,7 @@ def test_baseline_fixture_rerun_does_not_append() -> None:
 
 def test_deterministic_verdict_fixture_coverage() -> None:
     """Every classification verdict has at least one golden fixture row."""
-    root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
+    root = PROJECT_ROOT / "tests" / "fixtures" / "deterministic"
     seen: set[str] = set()
     for case_dir in _deterministic_fixture_dirs(root):
         for row in json.loads((case_dir / "expected.json").read_text(encoding="utf-8")):
@@ -2483,7 +2481,7 @@ def test_needs_review_hits() -> None:
 
 def test_deterministic_fixture_classify() -> None:
     """Golden verdict checks for deterministic_gen --explain and full generation."""
-    root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic"
+    root = PROJECT_ROOT / "tests" / "fixtures" / "deterministic"
     default_manifest = PROJECT_ROOT / "config" / "myapp.manifest.yml"
     te = PROJECT_ROOT / "selinux" / "myapp" / "myapp.te"
     fc = PROJECT_ROOT / "selinux" / "myapp" / "myapp.fc"
@@ -2770,7 +2768,7 @@ def test_init_uses_daemon_domain() -> None:
     readme = (PROJECT_ROOT / "ansible" / "README.md").read_text(encoding="utf-8")
     assert "RHEL 9" in readme
     assert "FCOS" not in readme
-    generated = (PROJECT_ROOT / "docs" / "examples" / "fixtures" / "offline" / "generated" / "myapp.te").read_text(encoding="utf-8")
+    generated = (PROJECT_ROOT / "tests" / "fixtures" / "offline" / "generated" / "myapp.te").read_text(encoding="utf-8")
     assert generated == te
 
 
@@ -2993,7 +2991,7 @@ def test_runner_var_selects_rhel_host() -> None:
         assert "rhel9-utm" in str(job["container"])
         assert "quay.io/centos/centos:stream9" in str(job["container"])
         assert "fedora:41" not in path.read_text(encoding="utf-8")
-    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "guides" / "303-TESTING.md").read_text(encoding="utf-8")
     assert "rhel-ci" in guide
     assert "rhel-qa" in guide and "rhel-prod" in guide
     assert "make vm-check" in guide
@@ -3033,7 +3031,7 @@ def test_runner_container_expression_both_cases() -> None:
         )
         assert "sudo dnf install" in runs
         assert re.search(r"(?m)^dnf install", runs) is None
-    guide = (PROJECT_ROOT / "docs" / "demo" / "303-TESTING.md").read_text(encoding="utf-8")
+    guide = (PROJECT_ROOT / "docs" / "guides" / "303-TESTING.md").read_text(encoding="utf-8")
     assert "github-runner ALL=(ALL) NOPASSWD: /usr/bin/dnf, /usr/bin/bash" in guide
     ci = (PROJECT_ROOT / ".github/workflows/selinux-policy-ci.yml").read_text(encoding="utf-8")
     assert "sudo bash scripts/validate_policy_semantics.sh" in ci
@@ -3566,7 +3564,7 @@ def test_rhel_runtime_file_contexts() -> None:
     assert "/var/run/myapp(/.*)?" in myapp_fc
     shopapi_fc = (PROJECT_ROOT / "selinux" / "shopapi" / "shopapi.fc").read_text(encoding="utf-8")
     assert "/run/shopapi(/.*)?" in shopapi_fc
-    unit = (PROJECT_ROOT / "demo" / "shopapi" / "shopapi.service").read_text(encoding="utf-8")
+    unit = (PROJECT_ROOT / "lab" / "apps" / "shopapi" / "shopapi.service").read_text(encoding="utf-8")
     assert "NoNewPrivileges=false" in unit
     assert not any(line.startswith("SELinuxContext=") for line in unit.splitlines())
     assert "ExecStart=/opt/shopapi/bin/shopapi -jar /opt/shopapi/shopapi.jar" in unit
@@ -3590,7 +3588,7 @@ def _tune_report_env(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def test_tune_report() -> None:
-    fixture = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "tune_report" / "tomcat"
+    fixture = PROJECT_ROOT / "tests" / "fixtures" / "tune_report" / "tomcat"
     avc = fixture / "avc.log"
     expected = json.loads((fixture / "expected.json").read_text(encoding="utf-8"))
     script = PROJECT_ROOT / "scripts" / "dev_generate_policy.sh"
@@ -3717,7 +3715,7 @@ def test_force_reason_recorded() -> None:
     assert bare.returncode != 0, bare_out
     assert "reason" in bare_out.lower()
 
-    case_dir = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "deterministic" / "11-private-getopt"
+    case_dir = PROJECT_ROOT / "tests" / "fixtures" / "deterministic" / "11-private-getopt"
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)
         override_path = out_dir / "vendor_override.json"
@@ -3852,7 +3850,7 @@ def test_policy_rules_are_the_single_source() -> None:
 
 def test_compiled_policy_rejects_foreign_entrypoint() -> None:
     """entrypoint on a type this module does not declare fails the compiled check."""
-    fixture = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-policy"
+    fixture = PROJECT_ROOT / "tests" / "fixtures" / "compiled-policy"
     audit = PROJECT_ROOT / "cli" / "policy_audit.py"
     declared = fixture / "declared-types.txt"
     foreign = subprocess.run(
@@ -3963,7 +3961,7 @@ def test_compiled_bypass_fixtures_fail_closed() -> None:
         "can-write-shadow-passwords",
         "exec-bin-alias",
     ]
-    root = PROJECT_ROOT / "docs" / "examples" / "fixtures" / "compiled-bypasses"
+    root = PROJECT_ROOT / "tests" / "fixtures" / "compiled-bypasses"
     script = (PROJECT_ROOT / "scripts" / "reject_compiled_bypasses.sh").read_text(encoding="utf-8")
     semantics = (PROJECT_ROOT / "scripts" / "validate_policy_semantics.sh").read_text(encoding="utf-8")
     assert "was accepted" in script
@@ -4131,8 +4129,8 @@ def test_skip_soak_days_and_break_glass_reason() -> None:
     assert reason["ansible.builtin.fail"]
     assert any("break_glass_reason" in str(item) for item in reason["when"])
 
-    guide_201 = (PROJECT_ROOT / "docs/tool/201-TOOL-COMMANDS.md").read_text(encoding="utf-8")
-    guide_302 = (PROJECT_ROOT / "docs/demo/302-TECHNICAL.md").read_text(encoding="utf-8")
+    guide_201 = (PROJECT_ROOT / "docs/guides/201-TOOL-COMMANDS.md").read_text(encoding="utf-8")
+    guide_302 = (PROJECT_ROOT / "docs/guides/302-TECHNICAL.md").read_text(encoding="utf-8")
     for guide in (guide_201, guide_302):
         assert "skips only the day count and the daily history" in guide
         assert "skips the marker, the AVC gate, net-new, the report, the day count, and the daily history" in guide
@@ -4336,52 +4334,103 @@ def test_sepac_load_guardrail() -> None:
 
 
 def test_sepac_blocked_hint() -> None:
-    """When findings.json has a needs_review finding, print the one-line hint."""
-    sepac = PROJECT_ROOT / "cli" / "sepac.py"
+    """A needs_review block names the permission and the exact command to run after review."""
+    sys.path.insert(0, str(PROJECT_ROOT / "cli"))
+    import sepac as sepac_mod
+
     with tempfile.TemporaryDirectory() as td:
-        findings = {
+        fj = Path(td) / "findings.json"
+        fj.write_text(json.dumps({
             "generation_blocked": True,
             "findings": [
-                {
-                    "verdict": "needs_review",
-                    "perms": ["execmem"],
-                    "note": "domain-weakening: execmem",
-                },
+                {"verdict": "needs_review", "perms": ["execmem"]},
+                # exec_bin is unlocked only by the manifest, never by --approve
+                {"verdict": "needs_review", "perms": ["execute"], "review_key": "exec_bin"},
+                {"verdict": "forbidden", "perms": ["read"]},
             ],
-        }
-        # Write a fake findings.json in policy_out/
-        po = PROJECT_ROOT / "policy_out"
-        po.mkdir(exist_ok=True)
-        fj = po / "findings.json"
-        backup = None
-        if fj.is_file():
-            backup = fj.read_text(encoding="utf-8")
-        try:
-            fj.write_text(json.dumps(findings))
-            # We can't actually run generate (no ausearch), but we can
-            # import and test the hint logic directly
-            sys.path.insert(0, str(PROJECT_ROOT / "cli"))
-            import importlib
-            sepac_mod = importlib.import_module("sepac")
-            importlib.reload(sepac_mod)
-            # The hint is: "Blocked for review: execmem. After review: sepac generate ..."
-            # Verify the findings.json parsing
-            data = json.loads(fj.read_text(encoding="utf-8"))
-            needs = [
-                f for f in data.get("findings", [])
-                if f.get("verdict") == "needs_review" and not f.get("review_key")
-            ]
-            perms = sorted({p for f in needs for p in f.get("perms", [])})
-            assert perms == ["execmem"]
-            perm_str = " ".join(f"--approve {p}" for p in perms)
-            hint = f"Blocked for review: {', '.join(perms)}. After review: sepac generate shopapi {perm_str} --apply"
-            assert "execmem" in hint
-            assert "--approve execmem" in hint
-        finally:
-            if backup is not None:
-                fj.write_text(backup)
-            elif fj.is_file():
-                fj.unlink()
+        }), encoding="utf-8")
+        hint = sepac_mod.blocked_hint("shopapi", fj)
+        assert hint == (
+            "Blocked for review: execmem. "
+            "After review: sepac generate shopapi --approve execmem --apply"
+        ), hint
+        fj.write_text(json.dumps({"generation_blocked": False, "findings": []}), encoding="utf-8")
+        assert sepac_mod.blocked_hint("shopapi", fj) is None
+        assert sepac_mod.blocked_hint("shopapi", Path(td) / "missing.json") is None
+
+
+def test_sepac_global_flags_help_and_capture() -> None:
+    """--dry-run before the command is honoured; help hides internals; capture
+    sorts denials into expected (soak.ignore) and new; check skips compile
+    honestly without selinux-policy-devel; load never steals a port."""
+    sepac_py = PROJECT_ROOT / "cli" / "sepac.py"
+
+    def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, str(sepac_py), *args], capture_output=True,
+                              text=True, cwd=PROJECT_ROOT, env=env)
+
+    # A global --dry-run must never run the generator for real.
+    with tempfile.TemporaryDirectory() as td:
+        trap = Path(td) / "bash"
+        trap.write_text("#!/bin/sh\necho RAN >> " + str(Path(td) / "ran") + "\n", encoding="utf-8")
+        trap.chmod(0o755)
+        env = dict(os.environ)
+        env["PATH"] = f"{td}:{env.get('PATH', '')}"
+        for argv in (("--dry-run", "generate", "shopapi", "--apply"),
+                     ("generate", "shopapi", "--apply", "--dry-run"),
+                     ("--dry-run", "load", "shopapi", "--enforcing")):
+            r = run(*argv, env=env)
+            assert r.returncode == 0, r.stderr
+            assert "dev_generate_policy.sh" in r.stdout or "semodule -i" in r.stdout, r.stdout
+        assert not (Path(td) / "ran").exists(), "a --dry-run command executed bash"
+
+    out = run("--help").stdout
+    assert "SUPPRESS" not in out and "_complete" not in out and "_man" not in out, out
+    assert "capture" in out
+    out = run("--dry-run", "load", "shopapi", "--enforcing").stdout
+    assert "semanage permissive -d shopapi_t" in out
+    assert "semanage port -m" not in out
+    out = run("--dry-run", "capture", "shopapi", "--url", "/feature-spool", "--full-audit").stdout
+    for want in ("semodule -DB", "systemctl restart shopapi.service", "GET http://127.0.0.1:8091/health",
+                 "GET http://127.0.0.1:8091/feature-spool", "semodule_restore_dontaudit.sh --app shopapi"):
+        assert want in out, (want, out)
+    assert run("capture", "shopapi", "--url", "feature-spool;rm", "--dry-run").returncode == 2
+
+    sys.path.insert(0, str(PROJECT_ROOT / "cli"))
+    import sepac as sepac_mod
+
+    manifest = sepac_mod.load_manifest(PROJECT_ROOT / "config" / "shopapi.manifest.yml")
+    line = ('type=AVC msg=audit({e}.1:1): avc:  denied  {{ {p} }} for pid=1 path="{path}" '
+            'scontext=system_u:system_r:{s}:s0 tcontext=system_u:object_r:{t}:s0 tclass={c} permissive={m}')
+    lines = [
+        line.format(e=50, p="open", path="/old", s="shopapi_t", t="etc_t", c="file", m=0),
+        line.format(e=200, p="open read", path="/etc/passwd", s="shopapi_t", t="passwd_file_t", c="file", m=0),
+        line.format(e=200, p="open", path="/var/spool/shopapi/feature.log", s="shopapi_t", t="var_spool_t", c="file", m=0),
+        line.format(e=200, p="read", path="/x", s="tomcat_t", t="etc_t", c="file", m=1),
+    ]
+    summary = "\n".join(sepac_mod.capture_summary("shopapi", manifest, lines, 100))
+    assert "shopapi_t: 2 denials (enforcing: blocked)" in summary, summary
+    assert "passwd_file_t file" in summary  # expected: listed in soak.ignore
+    assert "{ open } on var_spool_t file  /var/spool/shopapi/feature.log" in summary, summary
+    assert "etc_t" not in summary and "tomcat" not in summary, summary
+    assert sepac_mod.capture_summary("shopapi", manifest, lines, 300) == ["shopapi_t: no denials"]
+
+    # check without selinux-policy-devel: manifest and forbidden patterns run,
+    # compile and semantics are reported as skipped, never as passed.
+    if not Path("/usr/share/selinux/devel/Makefile").is_file():
+        r = run("check", "shopapi")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "Forbidden-pattern checks passed for shopapi" in r.stdout + r.stderr
+        assert "SKIP compile and semantics" in r.stdout
+
+    # load: a port another application type owns is refused, never modified.
+    listing = "SELinux Port Type Proto Port Number\nother_port_t tcp 8091\n"
+    try:
+        sepac_mod.classify_port_assignment(listing, 8091, "tcp", "shopapi_port_t")
+    except ValueError as exc:
+        assert "Refusing to run semanage port -m" in str(exc)
+    else:
+        raise AssertionError("a port owned by another type must be refused")
 
 
 def test_sepac_allow_needs_review_perm_passthrough() -> None:
@@ -5059,6 +5108,44 @@ def test_inventory_examples_have_host_role() -> None:
         assert "selinux_pac_host_role" in inv, f"inventory.{name}.yml missing selinux_pac_host_role"
 
 
+def test_markdown_links_resolve() -> None:
+    """Every relative link in a tracked Markdown file points at a file that exists."""
+    import posixpath
+
+    tracked = subprocess.run(["git", "ls-files", "*.md"], capture_output=True, text=True,
+                             cwd=str(PROJECT_ROOT)).stdout.split()
+    broken = []
+    for rel in tracked:
+        path = PROJECT_ROOT / rel
+        if not path.is_file():
+            continue
+        text = re.sub(r"```.*?```", "", path.read_text(encoding="utf-8"), flags=re.S)
+        for match in re.finditer(r"\]\(([^)\s]+)\)", text):
+            target = match.group(1)
+            if re.match(r"^[a-z]+:", target) or target.startswith("#"):
+                continue
+            link = target.split("#", 1)[0]
+            if link and not (PROJECT_ROOT / posixpath.normpath(posixpath.join(posixpath.dirname(rel), link))).exists():
+                broken.append(f"{rel} -> {target}")
+    assert not broken, broken
+
+
+def test_docs_focus_on_sepac() -> None:
+    """The front page and the three main docs lead with sepac, not engine scripts."""
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    assert readme.splitlines()[0].startswith("# sepac")
+    for rel in ("README.md", "docs/sepac.md", "docs/shipping.md", "docs/demo.md"):
+        text = (PROJECT_ROOT / rel).read_text(encoding="utf-8")
+        blocks = re.findall(r"```bash\n(.*?)```", text, flags=re.S)
+        lines = [ln.strip() for b in blocks for ln in b.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+        engine = [ln for ln in lines if re.search(r"\b(ansible-playbook|scripts/|dev_generate_policy|compile_and_validate)\b", ln)]
+        assert not engine, (rel, engine)
+    tracked = subprocess.run(["git", "ls-files", "docs"], capture_output=True, text=True,
+                            cwd=str(PROJECT_ROOT)).stdout.split()
+    docs = sorted({rel.split("/")[1] for rel in tracked})
+    assert docs == ["demo.md", "guides", "sepac.md", "shipping.md"], docs
+
+
 def test_no_stale_old_paths() -> None:
     """After repo reorg, no tracked file should reference old pre-reorg paths.
 
@@ -5090,6 +5177,21 @@ def test_no_stale_old_paths() -> None:
         r"selinux/myapp\.te",
         r"selinux/myapp\.fc",
         r"selinux/policy_version\.txt",
+        # docs reorganised around sepac; demo apps moved under lab/apps
+        r"docs/training/",
+        r"docs/tool/",
+        r"docs/admin/",
+        r"docs/demo/",
+        r"docs/examples",
+        r"docs/LIVE_CHECKS",
+        r"config/README\.md",
+        r"(^|[^-/])demo/shopapi",
+        r"(^|[^-/])demo/tomcat",
+        r"e2e-demo/demo/",
+        r"lab/lib/training_lab_runner",
+        r"lab/lib/e2e_demo",
+        r"lab/lib/present\.sh",
+        r"demo_e2e_rhel_dev",
     ]
     allowed_files = {
         ".gitignore",
@@ -5136,6 +5238,9 @@ def main() -> int:
         ("vendor_policy_check", test_vendor_policy_check),
         ("demo_present_dry_run", test_demo_present_dry_run),
         ("demo_present_waits_for_enter", test_demo_present_waits_for_enter),
+        ("sepac_global_flags_help_and_capture", test_sepac_global_flags_help_and_capture),
+        ("markdown_links_resolve", test_markdown_links_resolve),
+        ("docs_focus_on_sepac", test_docs_focus_on_sepac),
         ("narration_live_checks_and_enforce_paths", test_narration_live_checks_and_enforce_paths),
         ("demo_e2e_scripts_dry_run", test_demo_e2e_scripts_dry_run),
         ("prod_soak_gate_and_lab_signing", test_prod_soak_gate_and_lab_signing),

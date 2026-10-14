@@ -10,7 +10,7 @@ on:
     branches:
       - main
     paths:
-      - "demo/**"
+      - "lab/apps/**"
       - "lab/demo_present.sh"
       - "lab/demo_bootstrap.sh"
       - "lab/lib/demo_estate.sh"
@@ -19,7 +19,7 @@ on:
       - ".github/workflows/demo-estate.yml"
   pull_request:
     paths:
-      - "demo/**"
+      - "lab/apps/**"
       - "lab/demo_present.sh"
       - "lab/demo_bootstrap.sh"
       - "lab/lib/demo_estate.sh"
@@ -62,7 +62,7 @@ jobs:
           java-version: "17"
           cache: maven
       - name: Package Spring Boot JAR
-        run: mvn -q -DskipTests -f demo/shopapi/pom.xml package
+        run: mvn -q -DskipTests -f lab/apps/shopapi/pom.xml package
 
   shopapi-policy:
     name: shopapi-policy-compile

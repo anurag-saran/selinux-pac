@@ -9,8 +9,8 @@ selinux/*.mod
 selinux/**/*.mod
 policy_out/avc.log
 policy_out/avc_summary.txt
-docs/examples/fixtures/deterministic/**/_out/
-docs/examples/fixtures/deterministic/**/_out2/
+tests/fixtures/deterministic/**/_out/
+tests/fixtures/deterministic/**/_out2/
 packaging/rpmbuild/
 dist/
 scripts/lab.env
@@ -25,7 +25,7 @@ __pycache__/
 .DS_Store
 .pytest_cache/
 .tmp-ansible/
-demo/shopapi/target/
+lab/apps/shopapi/target/
 policy_out/pr_body.md
 policy_out/pr_summary.md
 policy_out/findings.json

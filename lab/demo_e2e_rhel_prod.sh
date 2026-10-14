@@ -17,26 +17,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/lib/e2e_demo.sh" ]]; then
-    # shellcheck source=lib/training_lab_runner.sh
-    source "${SCRIPT_DIR}/lib/training_lab_runner.sh"
-    # shellcheck source=lib/e2e_demo.sh
-    source "${SCRIPT_DIR}/lib/e2e_demo.sh"
-    # shellcheck source=lib/present.sh
-    source "${SCRIPT_DIR}/lib/present.sh"
-elif [[ -f "${HOME}/e2e-demo/lib/e2e_demo.sh" ]]; then
-    # shellcheck source=lib/training_lab_runner.sh
-    source "${HOME}/e2e-demo/lib/training_lab_runner.sh"
-    # shellcheck source=lib/e2e_demo.sh
-    source "${HOME}/e2e-demo/lib/e2e_demo.sh"
-    # shellcheck source=lib/present.sh
-    source "${HOME}/e2e-demo/lib/present.sh"
-    SCRIPT_DIR="${HOME}/e2e-demo/scripts"
-    if [[ ! -d "${SCRIPT_DIR}" ]]; then
-        SCRIPT_DIR="${HOME}/e2e-demo"
-    fi
+if [[ -f "${SCRIPT_DIR}/lib/talk.sh" ]]; then
+    # shellcheck source=lib/talk.sh
+    source "${SCRIPT_DIR}/lib/talk.sh"
+elif [[ -f "${HOME}/e2e-demo/lib/talk.sh" ]]; then
+    # shellcheck source=lib/talk.sh
+    source "${HOME}/e2e-demo/lib/talk.sh"
+    SCRIPT_DIR="${HOME}/e2e-demo"
 else
-    echo "Cannot find lib/e2e_demo.sh. From the Mac, finish the shopapi scp, then re-run." >&2
+    echo "Cannot find lib/talk.sh. From the Mac, finish the shopapi scp, then re-run." >&2
     exit 1
 fi
 
@@ -55,14 +44,14 @@ Presenter script for the PROD VM (${PROD_HOST:-PROD_HOST}). Do not run this on t
 Do not git clone onto this box — shopapi files from scp, policy from RPMs.
 This is one window of the ~45 min three-host walkthrough (see demo_e2e_mac.sh).
 
-  --part app        Install shopapi only (no SELinux module, unconfined JVM)
-  --part rpms       Show dnf repo and GPG key (policy arrives from canary)
-  --part soak       Canary soak: curl /feature-spool, denial in audit log
-  --part soak-avc   Confirm soak_monitor wrote the fail file
-  --part soak-clean After the fix: /feature-spool 200, no new denial
-  --part fail       curl /feature-spool (expect 500) and export AVCs
-  --part restore    After emergency rollback: app 200 again
-  --part retest     curl /feature-spool (expect 200) after recanary
+  --part app        Prepare the host and install shopapi (no policy module, unconfined)
+  --part rpms       The signed repo (policy arrives with sepac canary)
+  --part soak       sepac capture with /feature-spool; the denial is logged
+  --part soak-avc   The soak gate's fail file
+  --part soak-clean After the fix: sepac capture, all 200, no new denials
+  --part fail       Enforcing: sepac capture shows the 500 and the denial
+  --part restore    After sepac rollback: sepac status
+  --part retest     After the recanary: sepac capture and sepac status
 
 $(e2e_usage_common)
 EOF
@@ -71,84 +60,78 @@ EOF
 e2e_parse_args "$@"
 e2e_require_rhel "the PROD VM (${PROD_HOST})"
 
+export_spool_avc() {
+    lab_quiet "Export the spool denial for rhel-qa (${AVC_EXPORT})" "sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | sudo tee ${AVC_EXPORT} >/dev/null && sudo chmod a+r ${AVC_EXPORT} && test -s ${AVC_EXPORT}"
+}
+
 part_app() {
-    e2e_banner "PROD VM — install shopapi (no git, no policy module)"
-    say "Set the hostname"
-    present_cmd "sudo hostnamectl set-hostname rhel-prod && hostname"
+    e2e_banner "PROD VM — shopapi, no git clone, no policy module yet"
     if [[ "${E2E_DRY}" -eq 0 ]]; then
         sudo timedatectl set-ntp true 2>/dev/null || true
         sudo chronyc makestep 2>/dev/null || true
     fi
-    tlab_pause
-
-    say "Java and SELinux tools"
-    present_cmd "sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml policycoreutils policycoreutils-python-utils"
-    tlab_pause
-
-    if [[ ! -f "${APP_BUNDLE}/lab/demo_bootstrap.sh" ]]; then
+    if [[ ! -f "${APP_BUNDLE}/lab/demo_bootstrap.sh" && "${E2E_DRY}" -eq 0 ]]; then
         echo "Missing ${APP_BUNDLE}/lab/demo_bootstrap.sh. On the Mac, finish the scp, then re-run --part app." >&2
         exit 1
     fi
-    say "JVM + unit, no shopapi_t yet (unconfined until the RPM)"
-    present_cmd "sudo bash ${APP_BUNDLE}/lab/demo_bootstrap.sh --shopapi-only --no-seed --unconfined"
-    say "shopapi is up unconfined"
-    present_cmd "sepac status shopapi && curl -sf http://127.0.0.1:${SHOP_PORT}/health && echo ' /health 200'"
+    lab_quiet "Hostname rhel-prod" "sudo hostnamectl set-hostname rhel-prod"
+    lab_quiet "Java and the SELinux tools" "sudo dnf install -y java-17-openjdk-headless python3 python3-pyyaml policycoreutils policycoreutils-python-utils setools-console audit"
+    lab_quiet "Install shopapi: JVM and unit, unconfined until the RPM arrives" "sudo bash ${APP_BUNDLE}/lab/demo_bootstrap.sh --shopapi-only --no-seed --unconfined"
+    say "shopapi answers; no policy on this host yet"
+    present_cmd "curl -sS -o /dev/null -w '/health %{http_code}\n' http://127.0.0.1:${SHOP_PORT}/health"
     tlab_checkpoint "shopapi is up. Policy is not installed yet. Go back to the Mac."
 }
 
 part_rpms() {
-    e2e_banner "PROD VM — policy arrives from the canary, not from a hand-installed RPM"
-    say "Policy tools for the soak monitor"
-    present_cmd "sudo dnf install -y policycoreutils policycoreutils-python-utils setools-console audit"
-    say "Repo is configured with gpgcheck=1; key is imported"
-    present_cmd "sudo dnf repolist && rpm -q gpg-pubkey && sepac status shopapi"
-    tlab_checkpoint "The process is still unconfined. Go back to the Mac for deploy_canary.yml."
+    e2e_banner "PROD VM — policy arrives from the canary, not by hand"
+    say "The internal repo is configured with gpgcheck=1 and its key imported"
+    present_cmd "sudo dnf repolist && rpm -q gpg-pubkey"
+    tlab_checkpoint "The process is still unconfined. Go back to the Mac for sepac canary."
 }
 
 part_soak() {
     e2e_banner "PROD VM — soak: /feature-spool is not in this module"
-    say "Curl all URLs — permissive lets the spool write succeed, but the denial is logged"
-    present_cmd "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sS -o /dev/null -w \"%{http_code}\\n\" \"http://127.0.0.1:${SHOP_PORT}\${path}\" || true; done"
-    say "The spool denial that fails the soak gate"
-    present_cmd "sepac denials shopapi --since boot --last 20 && sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null && sudo chmod a+r ${AVC_EXPORT} && wc -l ${AVC_EXPORT}"
-    tlab_checkpoint "A shopapi denial for /var/spool/shopapi is in ${AVC_EXPORT}. Go back to the Mac."
+    say "The canary installed sepac and the policy; call every endpoint and the new feature"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool"
+    say "The spool denial that will fail the soak gate"
+    present_cmd "sepac denials shopapi --since boot --last 5"
+    export_spool_avc
+    tlab_checkpoint "A shopapi denial for /var/spool/shopapi is logged. Go back to the Mac."
 }
 
 part_soak_avc() {
-    e2e_banner "PROD VM — soak monitor wrote the fail file"
+    e2e_banner "PROD VM — the soak gate kept its evidence"
+    say "sepac soak wrote the failing denials next to its verdict"
     present_cmd "sudo ls -l ${SOAK_FAIL_JSON} ${SOAK_FAIL_AVC}"
     tlab_checkpoint "The fail file is there. Go back to the Mac."
 }
 
 part_soak_clean() {
-    e2e_banner "PROD VM — clean soak after the spool allow"
-    say "All four URLs return 200 with the new module"
-    present_cmd "for path in /health /state /log /feature-spool; do echo \"=== GET \${path} ===\"; curl -sf \"http://127.0.0.1:${SHOP_PORT}\${path}\" >/dev/null && echo 200; done"
-    say "No new shopapi denial since this canary"
-    present_cmd "sepac denials shopapi --since boot --last 20"
-    tlab_checkpoint "HTTP 200 and clean AVC log. Go back to the Mac."
+    e2e_banner "PROD VM — clean soak after the fix"
+    say "Every endpoint and the spool feature, with the new module"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool"
+    tlab_checkpoint "HTTP 200 everywhere, no new denials. Go back to the Mac."
 }
 
 part_fail() {
-    e2e_banner "PROD VM — the new feature is denied after enforce"
-    say "/feature-spool writes /var/spool/shopapi — not in the first module"
-    present_cmd "curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool" fail
-    say "The denial and the AVC export for rhel-qa"
-    present_cmd "sepac denials shopapi --since boot --last 20 && sudo grep 'avc:  denied' /var/log/audit/audit.log | grep shopapi_t | grep -E 'var_spool_t|/var/spool/shopapi' | tail -20 | tee ${AVC_EXPORT} >/dev/null && sudo chmod a+r ${AVC_EXPORT} && wc -l ${AVC_EXPORT}"
-    tlab_checkpoint "HTTP 500 + AVC in ${AVC_EXPORT}. Go back to the Mac — rollback, then generate on rhel-qa."
+    e2e_banner "PROD VM — the new feature is blocked once enforcing"
+    say "/feature-spool writes /var/spool/shopapi, which the first module does not cover"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool"
+    export_spool_avc
+    tlab_checkpoint "HTTP 500 and the denial. Go back to the Mac: rollback, then generate on rhel-qa."
 }
 
 part_restore() {
-    e2e_banner "PROD VM — admin restore (domain permissive again)"
-    say "Host is Enforcing, app is up, policy is not fixed"
-    present_cmd "sepac status shopapi && curl -sf http://127.0.0.1:${SHOP_PORT}/health && echo ' /health 200' && curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool | head -c 120; echo"
-    tlab_checkpoint "Host is still Enforcing. App is up. Policy is not fixed."
+    e2e_banner "PROD VM — after the rollback"
+    say "Host Enforcing, shopapi_t permissive again, the app answers"
+    present_cmd "sepac status shopapi"
+    tlab_checkpoint "Host is still Enforcing. App is up. Policy is not fixed yet."
 }
 
 part_retest() {
     e2e_banner "PROD VM — the fix arrived as a new RPM"
-    say "HTTP 200 under the new module (enforcing)"
-    present_cmd "curl -sf http://127.0.0.1:${SHOP_PORT}/feature-spool && sepac status shopapi"
+    say "Enforcing, and the spool feature works"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool && sepac status shopapi"
     tlab_checkpoint "shopapi_t enforcing."
 }
 

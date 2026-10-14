@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-FIXTURE_ROOT="${PROJECT_ROOT}/docs/examples/fixtures/offline"
+FIXTURE_ROOT="${PROJECT_ROOT}/tests/fixtures/offline"
 POLICY_OUT="${PROJECT_ROOT}/policy_out"
 APP_NAME="${1:?Usage: stage_offline_fixture.sh APP_NAME}"
 SELINUX_DIR="${PROJECT_ROOT}/selinux"

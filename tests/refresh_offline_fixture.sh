@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 [[ -n "${APP_NAME}" ]] || { echo "[ERROR] --app NAME is required" >&2; exit 1; }
-DEST="${PROJECT_ROOT}/docs/examples/fixtures/offline/generated"
+DEST="${PROJECT_ROOT}/tests/fixtures/offline/generated"
 
 # shellcheck source=../scripts/lib/app_identity.sh
 source "${PROJECT_ROOT}/scripts/lib/app_identity.sh"
