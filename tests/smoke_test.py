@@ -954,7 +954,7 @@ def test_demo_present_dry_run() -> None:
     blocked = out.find("demo# " + gen + "\n")
     review = out.find(approved)
     load1 = out.find(load_cmd)
-    perm = out.find("sudo semanage permissive -d shopapi_t")
+    perm = out.find("sepac load shopapi --enforce")
     spool_fail = out.find("/feature-spool", perm)
     denials_enforced = out.find("sepac denials shopapi --enforced", perm)
     regen = out.find("sepac generate shopapi --apply", perm)
@@ -4252,6 +4252,12 @@ def test_sepac_dry_run_golden() -> None:
     assert "restorecon -Rv" in out
     assert "semanage port -a" in out
     assert "shopapi_port_t" in out
+    assert "semanage permissive -d" not in out
+
+    # load --enforce adds semanage permissive -d
+    out = dr("load", "shopapi", "--enforce")
+    assert "semodule -i" in out
+    assert "semanage permissive -d shopapi_t" in out
 
     # enforce without --ticket is refused
     r = subprocess.run(

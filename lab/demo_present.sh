@@ -385,7 +385,7 @@ act1_app_a() {
     else
         present_cmd "curl -sS ${page}" run "DENIED ${APP_A_FORBIDDEN_PATH}"
         say "The denial"
-        present_cmd "sudo ausearch -m avc -ts recent | grep ${domain} | tail -n 3" run \
+        present_cmd "sepac denials tomcat --last 3" run \
             "avc: denied { read } ... scontext=system_u:system_r:${domain}:s0 ... tclass=file"
         tlab_checkpoint "Red Hat's policy blocked it. We authored nothing."
     fi
@@ -470,7 +470,7 @@ act3_generate() {
     port="$(shop_port)"
     e2e_banner "shopapi · write the policy"
     say "shopapi runs in its own domain, permissive for now: logged, not blocked"
-    present_cmd "ps -o label=,comm= -C java" run "system_u:system_r:shopapi_t:s0  java"
+    present_cmd "sepac status shopapi" run "Host: Enforcing / Domain: shopapi_t permissive / Process: system_u:system_r:shopapi_t:s0"
     say "Use the app"
     present_cmd "for p in health state log; do curl -sS http://127.0.0.1:${port}/\$p; done" run \
         "OK / STATE /var/lib/shopapi/state.txt / LOG /var/log/shopapi/shopapi.log"
@@ -495,7 +495,7 @@ act6_enforce_payoff() {
     url="http://127.0.0.1:${port}"
     e2e_banner "shopapi · enforce"
     say "Turn enforcement on for shopapi"
-    present_cmd "sudo semanage permissive -d shopapi_t"
+    present_cmd "sepac load shopapi --enforce"
     say "Same calls, now enforced"
     present_cmd "for p in health state log; do curl -sS ${url}/\$p; done" run \
         "OK / STATE /var/lib/shopapi/state.txt / LOG /var/log/shopapi/shopapi.log"
