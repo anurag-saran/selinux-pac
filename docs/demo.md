@@ -1,18 +1,35 @@
 # The sepac demo
 
-About 20 minutes on one RHEL host, for a customer's first look. Three apps, one message: **use Red Hat's policy first, tune what Red Hat ships, and write new policy only from evidence, reviewed, while the host stays Enforcing.** Every tool step on screen is a `sepac` command.
+One RHEL host, one script, two profiles. The core story takes about 15 minutes.
+If there is more time, Part 5 shows a production-style policy failure, rollback,
+and recovery — another 8 minutes. Every step on screen is a `sepac` command.
 
-**LAST_VERIFIED:** 2026-10-09 for the previous version of this script, which used native commands. This sepac version has not run live yet; rehearse it once on the QA VM first.
+**LAST_VERIFIED:** 2026-10-19 for the previous version of this script. Rehearse once on the QA VM before a customer sees it.
+
+```bash
+bash lab/demo_present.sh --dry-run            # any laptop: commands + sample output
+bash lab/demo_present.sh --preflight          # on the RHEL host, before the audience
+bash lab/demo_present.sh                      # the core demo (parts 1-4)
+bash lab/demo_present.sh --profile full       # with the prod failure beat (parts 1-5)
+```
+
+| Profile | Parts | Time | Story |
+|---------|-------|------|-------|
+| `customer` (default) | 1–4 | ~15 min | Red Hat's policy first → tune → write from evidence → enforce |
+| `full` | 1–5 | ~22 min | + a new feature is blocked, rolled back, fixed, enforced |
+| `technical` | 1, 3, 5 | ~18 min | Skip triage/tune, jump to write + failure |
 
 | Part | On screen | The point |
 |------|-----------|-----------|
 | 1 Triage | `sepac triage tomcat`, `sepac triage shopapi` | Red Hat's policy first. Only shopapi needs new policy. |
 | 2 Tune | `sepac denials tomcat --why` (JWS: `sepac tune tomcat`) | Vendor-confined apps get host fixes, never a module |
 | 3 Write | `sepac status`, `capture`, `generate` twice, `check`, `load` | Policy from evidence; `execmem` needs a reviewer; `/etc/passwd` is refused; the CI gate |
-| 4 Enforce | `sepac load --enforcing`, `capture --url /feature-spool`, `generate`, `load`, `status` | A new feature is blocked, fixed from evidence with a label, still enforcing |
-| 5 Ship | Five commands on screen, not run | The same tool takes it to production: build, canary, soak, enforce, rollback |
+| 4 Enforce | `sepac load --enforcing`, `capture`, `status` | Enforce it. Known endpoints work. The host stays Enforcing. |
+| 5 Prod fail | `capture --url /feature-spool` → 500, `--permissive`, `generate`, `load --enforcing` | A new feature is blocked, rolled back, fixed from evidence, enforced again |
 
-The two-host version (Mac + rhel-qa + rhel-prod, about 45 minutes) shows part 5 live, with the soak refusing, a break-glass enforce, an outage, a rollback and the fix: [guides/302-TECHNICAL.md](guides/302-TECHNICAL.md).
+The three-host version (Mac + rhel-qa + rhel-prod, about 45 minutes) shows the
+full shipping lifecycle live: build → canary → soak → enforce, with a real outage
+and rollback. See [guides/302-TECHNICAL.md](guides/302-TECHNICAL.md).
 
 ## The three apps
 
@@ -39,16 +56,18 @@ On the RHEL host, from the repo root. The bootstrap installs App A, App B and sh
 ```bash
 sudo bash lab/demo_bootstrap.sh
 bash lab/demo_present.sh --preflight         # want: Preflight PASSED
-bash lab/demo_present.sh                     # the demo
+bash lab/demo_present.sh                     # the core demo
+bash lab/demo_present.sh --profile full      # with prod failure
 ```
 
 On a laptop with no RHEL, `bash lab/demo_present.sh --dry-run` types every command with a sample of the good output and runs nothing. `--variant jws` shows the JWS host.
 
 | Option | Meaning |
 |--------|---------|
-| (none) | Parts 1–5 |
-| `--profile technical` | Parts 1, 2, 3 and 5. With `--open-pr`, part 5 opens the pull request. |
-| `--acts 3,4` | Just those parts |
+| `--profile customer` | Parts 1–4 (default) |
+| `--profile full` | Parts 1–5 (with prod failure) |
+| `--profile technical` | Parts 1, 3, 5 |
+| `--acts LIST` | Comma-separated part numbers (overrides `--profile`) |
 | `--preflight` | The pass/fail table, then exit |
 | `--no-step` | Run each command as soon as it is typed |
 | `--auto`, `--no-type` | No Enter at all; instant typing (CI) |
@@ -128,28 +147,61 @@ sepac load shopapi --enforcing
 shopapi_t comes off the permissive list. The module is unchanged, so sepac skips the reload.
 
 ```bash
+sepac capture shopapi --no-restart
+```
+
+Every known endpoint answers 200 under enforcement: the policy from Part 3 covers them. No denials.
+
+```bash
+sepac status shopapi
+```
+
+Host Enforcing, module matching the repo build, domain enforcing, labels ok.
+
+Say: what runs next is `sepac build`, `sepac canary`, `sepac soak`, `sepac enforce`, `sepac rollback`. The two-host demo shows them live.
+
+## Part 5 — A new feature hits production (optional)
+
+*Show this part with `--profile full`. It adds about 8 minutes.*
+
+A developer ships `/feature-spool`, which writes to `/var/spool/shopapi`. The policy has never seen that path.
+
+```bash
 sepac capture shopapi --no-restart --url /feature-spool
 ```
 
-The same three endpoints answer 200 under enforcement: the policy from part 3 covers them. `/feature-spool` is a feature the policy has never seen. It writes to `/var/spool/shopapi`, gets a 500, and capture shows the one new denial: `open` on `var_spool_t`, blocked. Confinement doing its job.
+`/feature-spool` returns 500. Capture shows the denial: `{ open }` on `var_spool_t` for `/var/spool/shopapi/feature.log`. Confinement doing its job.
+
+```bash
+sepac load shopapi --permissive
+```
+
+Rollback: `shopapi_t` goes back to permissive so the service runs again. The host is still Enforcing. In production this would be `sepac rollback --env production`.
+
+```bash
+sepac capture shopapi --no-restart --url /feature-spool
+```
+
+`/feature-spool` returns 200 (permissive). The denial is logged, not blocked.
 
 ```bash
 sepac generate shopapi --apply
 ```
 
-No `--approve` this time: `execmem` is already in the module, and anything new and risky would stop again. The fix is a **label**, not a wider rule: `/var/spool/shopapi` becomes `shopapi_var_lib_t`, the type shopapi already writes its state with. Allowing the generic `var_spool_t` would have opened every other program's spool.
+Fix: the spool path becomes `shopapi_var_lib_t` — a **label**, not a wider rule. Allowing the generic `var_spool_t` would open every other program's spool.
 
 ```bash
 sepac load shopapi --enforcing
+```
+
+Loads the fix, relabels `/var/spool/shopapi`, enforces.
+
+```bash
 sepac capture shopapi --no-restart --url /feature-spool
 sepac status shopapi
 ```
 
-The load relabels `/var/spool/shopapi` and prints each file. The feature now returns 200 with no new denials. Status: host Enforcing, module matching the repo build, domain enforcing, labels ok.
-
-## Part 5 — Ship it
-
-Not run, five lines on screen: after the pull request merges, `sepac build` and `publish` make signed RPMs, `sepac canary` installs them with the domain permissive and starts the soak, `sepac soak` gates on net-new denials, `sepac enforce` needs a clean soak and a change ticket, `sepac rollback` puts the domain back to permissive without touching `setenforce`. The two-host demo runs them.
+200 everywhere. Host Enforcing, domain enforcing, labels ok. The host never left Enforcing.
 
 ## If something goes wrong
 

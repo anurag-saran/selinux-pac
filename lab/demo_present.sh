@@ -32,8 +32,9 @@ STEP=1
 DEMO_DRY_VARIANT="distro"
 DEMO_DRY_UNCONFINED=1
 
-CUSTOMER_ACTS="1,2,3,4,5"
-TECHNICAL_ACTS="1,2,3,5"
+CUSTOMER_ACTS="1,2,3,4"
+FULL_ACTS="1,2,3,4,5"
+TECHNICAL_ACTS="1,3,5"
 
 usage() {
     cat <<EOF
@@ -43,13 +44,13 @@ The customer demo of sepac on one RHEL host (~20 min):
   1 Triage    sepac triage: Red Hat's policy first. Only shopapi needs new policy.
   2 Tune      Inherited Tomcat: sepac denials --why, sepac tune. No policy module.
   3 Write     shopapi: sepac capture → generate (stops for review) → check → load.
-  4 Enforce   sepac load --enforcing, a new feature is blocked, fixed from evidence.
-  5 Ship      What runs next: sepac build, canary, soak, enforce (the two-host demo).
+  4 Enforce   sepac load --enforcing, verify all endpoints pass under enforcement.
+  5 Prod fail A new feature is blocked, rollback, fix from evidence, enforce again.
 
   Guide: docs/demo.md. Two hosts (Mac + rhel-qa + rhel-prod): bash lab/demo_e2e_mac.sh
 
 Options:
-  --profile customer|technical   customer = parts 1-5; technical = 1,2,3,5 (with --open-pr)
+  --profile customer|full|technical  customer = 1-4; full = 1-5 (with prod failure); technical = 1,3,5
   --acts LIST                    Comma-separated part numbers (overrides --profile)
   --preflight                    Check the host and exit (pass/fail table)
   --dry-run                      Type the commands and a sample result; execute nothing
@@ -101,8 +102,9 @@ export DEMO_TOMCAT_VARIANT
 if [[ -z "${ACTS}" ]]; then
     case "${PROFILE}" in
         customer) ACTS="${CUSTOMER_ACTS}" ;;
+        full) ACTS="${FULL_ACTS}" ;;
         technical) ACTS="${TECHNICAL_ACTS}" ;;
-        *) echo "Unknown --profile ${PROFILE} (use customer|technical)" >&2; exit 2 ;;
+        *) echo "Unknown --profile ${PROFILE} (use customer|full|technical)" >&2; exit 2 ;;
     esac
 fi
 
@@ -403,38 +405,51 @@ part4_enforce() {
     say "Turn enforcement on for shopapi"
     present_cmd "sepac load shopapi --enforcing" run \
         "shopapi 1.0.1 is already loaded · shopapi_t: enforcing (removed from the permissive list)"
-    say "Same calls, now enforced, plus a feature the policy has never seen"
-    present_cmd "sepac capture shopapi --no-restart --url /feature-spool" run \
-        "/health 200 · /state 200 · /log 200 · /feature-spool 500 · new: { open } on var_spool_t file /var/spool/shopapi/feature.log"
-    say "Fix it from the evidence"
-    present_cmd "sepac generate shopapi --apply" run \
-        "LABELING FIXES: /var/spool/shopapi(/.*)? shopapi_var_lib_t (a label, not a wider rule)"
-    say "Load, relabel, stay enforcing"
-    present_cmd "sepac load shopapi --enforcing" run \
-        "Loaded shopapi 1.0.2 · Relabeled /var/spool/shopapi … to shopapi_var_lib_t · shopapi_t: already enforcing"
-    say "Again"
-    present_cmd "sepac capture shopapi --no-restart --url /feature-spool" run \
-        "/feature-spool 200 · shopapi_t: no denials"
+    say "Every known endpoint, now under enforcement"
+    present_cmd "sepac capture shopapi --no-restart" run \
+        "/health 200 · /state 200 · /log 200 · shopapi_t: no denials"
     say "Where it stands"
     present_cmd "sepac status shopapi" run \
-        "Host Enforcing · Module shopapi 1.0.2, matches the repo build · Domain shopapi_t enforcing · Labels ok"
-    tlab_checkpoint "Blocked, fixed from evidence, enforcing. The host never left Enforcing."
+        "Host Enforcing · Module shopapi 1.0.1, matches the repo build · Domain shopapi_t enforcing · Labels ok"
+    tlab_checkpoint "Enforcing. Every known endpoint passes. The host never left Enforcing."
+    echo -e "${TLAB_DIM}# What runs next: sepac build → publish (signed RPMs), sepac canary, soak, enforce, rollback.${TLAB_NC}"
+    echo -e "${TLAB_DIM}# The two-host demo (bash lab/demo_e2e_mac.sh) shows them live.${TLAB_NC}"
     tlab_pause
 }
 
-part5_ship() {
-    e2e_banner "5 · Ship it — the same tool, every environment"
+part5_prod_failure() {
+    e2e_banner "5 · A new feature hits production"
+    say "A developer deploys /feature-spool. It writes to /var/spool/shopapi."
+    say "The policy has never seen that path."
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool" run \
+        "/health 200 · /state 200 · /log 200 · /feature-spool 500 · new: { open } on var_spool_t file /var/spool/shopapi/feature.log"
+    tlab_checkpoint "Confinement doing its job: the new code path is blocked."
+    tlab_pause
+
+    say "Rollback: shopapi_t back to permissive so the app runs. The host stays Enforcing."
+    present_cmd "sepac load shopapi --permissive" run \
+        "shopapi_t: permissive (added to the permissive list)"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool" run \
+        "/feature-spool 200 · shopapi_t: 1 denial (permissive: logged, not blocked)"
+    tlab_checkpoint "The service is back, permissive. Now fix the policy from the evidence."
+    tlab_pause
+
+    say "Generate the fix from the evidence"
+    present_cmd "sepac generate shopapi --apply" run \
+        "LABELING FIXES: /var/spool/shopapi(/.*)? shopapi_var_lib_t (a label, not a wider rule)"
+    say "Load and re-enforce"
+    present_cmd "sepac load shopapi --enforcing" run \
+        "Loaded shopapi 1.0.2 · Relabeled /var/spool/shopapi … to shopapi_var_lib_t · shopapi_t: already enforcing"
+    say "Verify"
+    present_cmd "sepac capture shopapi --no-restart --url /feature-spool" run \
+        "/feature-spool 200 · shopapi_t: no denials"
+    present_cmd "sepac status shopapi" run \
+        "Host Enforcing · Module shopapi 1.0.2, matches the repo build · Domain shopapi_t enforcing · Labels ok"
     if [[ "${OPEN_PR}" -eq 1 ]]; then
-        say "Open the pull request; CI runs sepac check"
+        say "Open the updated PR; CI runs sepac check"
         present_cmd "bash lab/demo_open_generated_pr.sh"
     fi
-    echo -e "${TLAB_DIM}# After the pull request merges, where Ansible runs (the two-host demo shows it live):${TLAB_NC}"
-    echo "  sepac build && sepac publish                       signed RPMs in the internal repo"
-    echo "  sepac canary  --env production --limit canary      installed, shopapi_t permissive, soak starts"
-    echo "  sepac soak    --env production --status            net-new denials against the installed policy"
-    echo "  sepac enforce --env production --ticket CHG123     only after a clean soak, with a change ticket"
-    echo "  sepac rollback --env production                    shopapi_t back to permissive; no setenforce 0"
-    echo
+    tlab_checkpoint "Blocked, rolled back, fixed from evidence, enforcing. The host never left Enforcing."
     tlab_pause
 }
 
@@ -444,7 +459,7 @@ run_act() {
         2) part2_tune ;;
         3) part3_write ;;
         4) part4_enforce ;;
-        5) part5_ship ;;
+        5) part5_prod_failure ;;
         *) echo "Unknown part $1 (use 1-5)" >&2; exit 2 ;;
     esac
 }
